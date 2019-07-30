@@ -1,12 +1,12 @@
 import os.path as op
-import pykitti
 import cv2
 import numpy as np
 import quaternion
 
 import settings
 from config import opts
-import prepare_data.kitti_depth_util as kdu
+import prepare_data.kitti_depth_generator as kdg
+import prepare_data.kitti_util as ku
 
 
 class KittiDataLoader:
@@ -19,9 +19,9 @@ class KittiDataLoader:
 
     def kitti_util_factory(self, dataset, split):
         if dataset == "kitti_raw" and split == "train":
-            return KittiRawTrainUtil()
+            return ku.KittiRawTrainUtil()
         elif dataset == "kitti_raw" and split == "test":
-            return KittiRawTestUtil()
+            return ku.KittiRawTestUtil()
         else:
             raise ValueError()
 
@@ -30,10 +30,10 @@ class KittiDataLoader:
         self.drive_path = op.join(self.base_path, drive[0], f"{drive[0]}_drive_{drive[1]}_sync")
 
     def snippet_generator(self, snippet_len):
-        num_frames = len(self.drive_loader)
-        frame_inds = self.kitti_util.frame_indices(num_frames, snippet_len)
+        print("=" * 50)
+        frame_inds = self.kitti_util.frame_indices(self.drive_path, snippet_len)
         for ind in frame_inds:
-            print("=" * 20, ind)
+            print("=" * 10, ind)
             example = dict()
             example["frames"], raw_img_shape = self.load_snippet_frames(ind, snippet_len)
             example["gt_poses"] = self.load_snippet_poses(ind, snippet_len)
@@ -70,7 +70,7 @@ class KittiDataLoader:
     def load_frame_depth(self, frindex, drive_path, raw_img_shape):
         calib_dir = op.dirname(drive_path)
         velo_data = self.drive_loader.get_velo(frindex)
-        depth_map = kdu.generate_depth_map(velo_data, calib_dir, raw_img_shape)
+        depth_map = kdg.generate_depth_map(velo_data, calib_dir, raw_img_shape)
         print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
         return depth_map
 
@@ -86,37 +86,6 @@ class KittiDataLoader:
         out[1, 2] *= sy
         print("intrinsic after\n", out)
         return 0
-
-
-class KittiUtil:
-    def list_drives(self, dataset, split):
-        raise NotImplementedError()
-
-    def create_drive_loader(self, base_path, drive):
-        raise NotImplementedError()
-
-    def frame_indices(self, num_frames, snippet_len):
-        raise NotImplementedError()
-
-
-class KittiRawTrainUtil(KittiUtil):
-    def list_drives(self, dataset, split):
-        filename = f"resources/{dataset}_{split}_scenes.txt"
-        with open(filename, "r") as f:
-            drives = f.readlines()
-            drives = [tuple(drive.strip("\n").split()) for drive in drives]
-            return drives
-
-    def create_drive_loader(self, base_path, drive):
-        date, drive_id = drive
-        return pykitti.raw(base_path, date, drive_id)
-
-    def frame_indices(self, num_frames, snippet_len):
-        return range(snippet_len//2, num_frames - snippet_len//2)
-
-
-class KittiRawTestUtil(KittiUtil):
-    pass
 
 
 def test():
