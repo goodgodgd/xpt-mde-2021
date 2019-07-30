@@ -78,7 +78,6 @@ class KittiDataLoader:
         intrinsic = self.drive_loader.calib.P_rect_20[:, :3]
         sx = opts.IM_WIDTH / raw_img_shape[1]
         sy = opts.IM_HEIGHT / raw_img_shape[0]
-        print("intrinsic before\n", intrinsic)
         out = intrinsic.copy()
         out[0, 0] *= sx
         out[0, 2] *= sx
@@ -90,7 +89,7 @@ class KittiDataLoader:
 
 def test():
     np.set_printoptions(precision=3, suppress=True)
-    loader = KittiDataLoader(opts.RAW_DATASET_PATH, "kitti_raw", "train")
+    loader = KittiDataLoader(opts.RAW_DATASET_PATH, "kitti_raw", "test")
 
     for drive in loader.drive_list:
         print("drive:", drive)
