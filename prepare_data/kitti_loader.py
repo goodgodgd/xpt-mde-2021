@@ -1,7 +1,6 @@
 import os.path as op
 import cv2
 import numpy as np
-import quaternion
 
 import settings
 from config import opts
@@ -13,7 +12,7 @@ class KittiDataLoader:
     def __init__(self, base_path, dataset, split):
         self.base_path = base_path
         self.kitti_util = self.kitti_util_factory(dataset, split)
-        self.drive_list = self.kitti_util.list_drives(dataset, split)
+        self.drive_list = self.kitti_util.list_drives(split)
         self.drive_loader = None
         self.drive_path = ""
 
@@ -22,12 +21,16 @@ class KittiDataLoader:
             return ku.KittiRawTrainUtil()
         elif dataset == "kitti_raw" and split == "test":
             return ku.KittiRawTestUtil()
+        elif dataset == "kitti_odom" and split == "train":
+            return ku.KittiOdomTrainUtil()
+        elif dataset == "kitti_odom" and split == "test":
+            return ku.KittiOdomTestUtil()
         else:
             raise ValueError()
 
     def load_drive(self, drive):
         self.drive_loader = self.kitti_util.create_drive_loader(self.base_path, drive)
-        self.drive_path = op.join(self.base_path, drive[0], f"{drive[0]}_drive_{drive[1]}_sync")
+        self.drive_path = self.kitti_util.get_drive_path(self.base_path, drive)
 
     def snippet_generator(self, snippet_len):
         print("=" * 50)
@@ -59,15 +62,16 @@ class KittiDataLoader:
         halflen = snippet_len//2
         poses = []
         for ind in range(frindex-halflen, frindex+halflen+1):
-            tmat = self.drive_loader.oxts[ind].T_w_imu
-            quat = quaternion.from_rotation_matrix(tmat[:3, :3])
-            pose = np.concatenate([tmat[:3, 3].T, quaternion.as_float_array(quat)])
+            pose = self.kitti_util.get_pose(self.drive_loader, ind)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
         return poses
 
     def load_frame_depth(self, frindex, drive_path, raw_img_shape):
+        # if dataset is kitti_odom, no depth available
+        if drive_path.split("/")[-2] == "sequences":
+            return None
         calib_dir = op.dirname(drive_path)
         velo_data = self.drive_loader.get_velo(frindex)
         depth_map = kdg.generate_depth_map(velo_data, calib_dir, raw_img_shape)
@@ -83,13 +87,13 @@ class KittiDataLoader:
         out[0, 2] *= sx
         out[1, 1] *= sy
         out[1, 2] *= sy
-        print("intrinsic after\n", out)
+        print(f"scaled intrinsic: sx={sx:1.4f}, sy={sy:1.4f}\n", out)
         return 0
 
 
 def test():
-    np.set_printoptions(precision=3, suppress=True)
-    loader = KittiDataLoader(opts.RAW_DATASET_PATH, "kitti_raw", "test")
+    np.set_printoptions(precision=3, suppress=True, linewidth=100)
+    loader = KittiDataLoader(opts.RAW_DATASET_PATH, opts.DATASET, "train")
 
     for drive in loader.drive_list:
         print("drive:", drive)
@@ -99,7 +103,7 @@ def test():
             poses = snippet["gt_poses"]
             depths = snippet["gt_depth"]
             intrinsic = snippet["intrinsic"]
-            print(f"frame: concat image shape={frames.shape}, pose shape={poses.shape}")
+            print(f"frame: concatenated image shape={frames.shape}, pose shape={poses.shape}")
             print(poses[:3, :])
             cv2.imshow("frame", frames)
             key = cv2.waitKey(1000)

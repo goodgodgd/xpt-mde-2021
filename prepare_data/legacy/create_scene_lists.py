@@ -1,11 +1,12 @@
-import os
+import os.path as op
 from glob import glob
+import numpy as np
 from config import opts
 
 
-def list_raw_scenes(base_path):
+def create_scene_split_files(base_path):
     all_drives = glob(base_path + "/*/*")
-    all_drives = [drive.replace(base_path, "").strip("/") for drive in all_drives if os.path.isdir(drive)]
+    all_drives = [drive.replace(base_path, "").strip("/") for drive in all_drives if op.isdir(drive)]
     all_drives = [drive[11:].replace("_sync", "").replace("_drive_", " ") + "\n" for drive in all_drives]
     print("all drives:  ", len(all_drives), all_drives)
     with open("test_scenes_eigen.txt", "r") as fr:
@@ -24,7 +25,7 @@ def list_raw_scenes(base_path):
             fw.writelines(test_drives)
 
 
-def list_static_frames():
+def convert_static_frame_format():
     with open("static_frames.txt", "r") as fr:
         lines = fr.readlines()
         new_lines = []
@@ -32,11 +33,11 @@ def list_static_frames():
             date, drive, frame = line.split(" ")
             new_lines.append(f"{date} {drive[17:21]} {frame}")
 
-        with open("../resources/kitti_static_frames.txt", "w") as fw:
+        with open("../resources/kitti_raw_static_frames.txt", "w") as fw:
             fw.writelines(new_lines)
 
 
-def list_test_frames():
+def convert_test_frames_format():
     with open("test_files_eigen.txt", "r") as fr:
         lines = fr.readlines()
         new_lines = []
@@ -49,8 +50,24 @@ def list_test_frames():
             fw.writelines(new_lines)
 
 
+def create_false_trajectories():
+    odom_path = "/media/ian/IanPrivatePP/Datasets/kitti_odometry"
+    for drive in range(11, 22):
+        frame_pattern = op.join(odom_path, "sequences", f"{drive:02d}", "image_2", "*.png")
+        print("file pattern", frame_pattern)
+        num_frames = len(glob(frame_pattern))
+        print("num_frames", num_frames)
+        one_pose = np.concatenate([np.identity(3), np.zeros((3,1))], axis=1).reshape(-1)
+        print(one_pose)
+        poses = np.tile(one_pose, (num_frames, 1))
+        print("shape:", poses.shape)
+        print(poses[:5])
+        np.savetxt(op.join(odom_path, "poses", f"{drive:02d}.txt"), poses, fmt="%.6e")
+
+
 if __name__ == "__main__":
     raw_data_path = "/media/ian/iandata/datasets/kitti_raw_data"
-    # list_raw_scenes(raw_data_path)
-    # list_static_frames()
-    list_test_frames()
+    # create_scene_split_files(raw_data_path)
+    # convert_static_frame_format()
+    # convert_test_frames_format()
+    create_false_trajectories()

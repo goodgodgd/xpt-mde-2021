@@ -16,7 +16,7 @@ class VodeOptions(PriorOptions):
         if self.DATASET == "kitti_raw":
             self.RAW_DATASET_PATH = "/media/ian/iandata/datasets/kitti_raw_data"
         elif self.DATASET == "kitti_odom":
-            self.RAW_DATASET_PATH = "/media/ian/iandata/datasets/kitti_odometry"
+            self.RAW_DATASET_PATH = "/media/ian/iandata/datasets/kitti_odometry/sequences"
 
         self.SNIPPET_PATH = op.join(self.DATA_PATH, "snippets", self.DATASET)
 
