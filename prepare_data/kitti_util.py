@@ -36,8 +36,14 @@ class KittiUtil:
     def frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def get_pose(self, drive_loader, index):
+    def get_quat_pose(self, drive_loader, index):
         raise NotImplementedError()
+
+    def matrix_to_quaternion_pose(self, tmat):
+        # quaternion format: qw qx qy qz
+        quat = quaternion.from_rotation_matrix(tmat[:3, :3])
+        pose = np.concatenate([tmat[:3, 3].T, quaternion.as_float_array(quat)])
+        return pose
 
 
 class KittiRawUtil(KittiUtil):
@@ -68,11 +74,9 @@ class KittiRawUtil(KittiUtil):
     def frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def get_pose(self, drive_loader, index):
+    def get_quat_pose(self, drive_loader, index):
         tmat = drive_loader.oxts[index].T_w_imu
-        quat = quaternion.from_rotation_matrix(tmat[:3, :3])
-        pose = np.concatenate([tmat[:3, 3].T, quaternion.as_float_array(quat)])
-        return pose
+        return self.matrix_to_quaternion_pose(tmat)
 
 
 class KittiRawTrainUtil(KittiRawUtil):
@@ -176,8 +180,9 @@ class KittiOdomUtil(KittiUtil):
         print("[frame_indices] frame ids:", frame_inds[0:-1:10])
         return frame_inds
 
-    def get_pose(self, drive_loader, index):
-        return self.poses[index]
+    def get_quat_pose(self, drive_loader, index):
+        tmat = self.poses[index].reshape((3, 4))
+        return self.matrix_to_quaternion_pose(tmat)
 
 
 class KittiOdomTrainUtil(KittiOdomUtil):

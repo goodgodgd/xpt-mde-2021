@@ -38,6 +38,7 @@ class KittiDataLoader:
         for ind in frame_inds:
             print("=" * 10, ind)
             example = dict()
+            example["index"] = ind
             example["frames"], raw_img_shape = self.load_snippet_frames(ind, snippet_len)
             example["gt_poses"] = self.load_snippet_poses(ind, snippet_len)
             example["gt_depth"] = self.load_frame_depth(ind, self.drive_path, raw_img_shape)
@@ -62,7 +63,7 @@ class KittiDataLoader:
         halflen = snippet_len//2
         poses = []
         for ind in range(frindex-halflen, frindex+halflen+1):
-            pose = self.kitti_util.get_pose(self.drive_loader, ind)
+            pose = self.kitti_util.get_quat_pose(self.drive_loader, ind)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
@@ -99,11 +100,12 @@ def test():
         print("drive:", drive)
         loader.load_drive(drive)
         for snippet in loader.snippet_generator(opts.SNIPPET_LEN):
+            index = snippet["index"]
             frames = snippet["frames"]
             poses = snippet["gt_poses"]
             depths = snippet["gt_depth"]
             intrinsic = snippet["intrinsic"]
-            print(f"frame: concatenated image shape={frames.shape}, pose shape={poses.shape}")
+            print(f"frame {index}: concatenated image shape={frames.shape}, pose shape={poses.shape}")
             print(poses[:3, :])
             cv2.imshow("frame", frames)
             key = cv2.waitKey(1000)
