@@ -4,8 +4,8 @@ import numpy as np
 
 import settings
 from config import opts
-import prepare_data.kitti_depth_generator as kdg
 import prepare_data.kitti_util as ku
+from utils.util_funcs import print_progress
 
 
 class KittiDataLoader:
@@ -35,8 +35,9 @@ class KittiDataLoader:
     def snippet_generator(self, snippet_len):
         print("=" * 50)
         frame_inds = self.kitti_util.frame_indices(self.drive_path, snippet_len)
+        print_progress(frame_inds[-1], True)
         for ind in frame_inds:
-            print("=" * 10, ind)
+            print_progress(ind)
             example = dict()
             example["index"] = ind
             example["frames"], raw_img_shape = self.load_snippet_frames(ind, snippet_len)
@@ -45,38 +46,34 @@ class KittiDataLoader:
             example["intrinsic"] = self.load_intrinsic(raw_img_shape)
             yield example
 
-    def load_snippet_frames(self, frindex, snippet_len):
+    def load_snippet_frames(self, frame_idx, snippet_len):
         halflen = snippet_len//2
         frames = []
         raw_img_shape = ()
-        for ind in range(frindex-halflen, frindex+halflen+1):
+        for ind in range(frame_idx-halflen, frame_idx+halflen+1):
             frame = self.drive_loader.get_rgb(ind)
             frame = np.array(frame[0])
             raw_img_shape = frame.shape[:2]
             frame = cv2.resize(frame, dsize=(opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
+            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             frames.append(frame)
 
         frames = np.concatenate(frames, axis=0)
         return frames, raw_img_shape
 
-    def load_snippet_poses(self, frindex, snippet_len):
+    def load_snippet_poses(self, frame_idx, snippet_len):
         halflen = snippet_len//2
         poses = []
-        for ind in range(frindex-halflen, frindex+halflen+1):
+        for ind in range(frame_idx-halflen, frame_idx+halflen+1):
             pose = self.kitti_util.get_quat_pose(self.drive_loader, ind)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
         return poses
 
-    def load_frame_depth(self, frindex, drive_path, raw_img_shape):
-        # if dataset is kitti_odom, no depth available
-        if drive_path.split("/")[-2] == "sequences":
-            return None
-        calib_dir = op.dirname(drive_path)
-        velo_data = self.drive_loader.get_velo(frindex)
-        depth_map = kdg.generate_depth_map(velo_data, calib_dir, raw_img_shape)
-        print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
+    def load_frame_depth(self, frame_idx, drive_path, raw_img_shape):
+        depth_map = self.kitti_util.generate_depth_map(self.drive_loader, frame_idx,
+                                                       drive_path, raw_img_shape)
         return depth_map
 
     def load_intrinsic(self, raw_img_shape):
@@ -89,12 +86,13 @@ class KittiDataLoader:
         out[1, 1] *= sy
         out[1, 2] *= sy
         print(f"scaled intrinsic: sx={sx:1.4f}, sy={sy:1.4f}\n", out)
-        return 0
+        return out
 
 
 def test():
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    loader = KittiDataLoader(opts.RAW_DATASET_PATH, opts.DATASET, "train")
+    dataset = "kitti_odom"
+    loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, "train")
 
     for drive in loader.drive_list:
         print("drive:", drive)
@@ -106,7 +104,8 @@ def test():
             depths = snippet["gt_depth"]
             intrinsic = snippet["intrinsic"]
             print(f"frame {index}: concatenated image shape={frames.shape}, pose shape={poses.shape}")
-            print(poses[:3, :])
+            print("pose", poses[:3, :])
+            print("intrinsic", intrinsic)
             cv2.imshow("frame", frames)
             key = cv2.waitKey(1000)
             if key == ord('q'):

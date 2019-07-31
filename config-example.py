@@ -5,21 +5,26 @@ class PriorOptions:
     def __init__(self):
         self.DATASET = "kitti_raw"
         self.SNIPPET_LEN = 5
-        self.DATA_PATH = "/media/ian/iandata/vode_data"
+        self.RESULT_PATH = "/media/ian/IanPrivatePP/Datasets/vode_data"
         self.IM_WIDTH = 416
         self.IM_HEIGHT = 128
+        assert(op.isdir(self.RESULT_PATH))
 
 
 class VodeOptions(PriorOptions):
     def __init__(self):
         super().__init__()
-        if self.DATASET == "kitti_raw":
-            self.RAW_DATASET_PATH = "/media/ian/iandata/datasets/kitti_raw_data"
-        elif self.DATASET == "kitti_odom":
-            self.RAW_DATASET_PATH = "/media/ian/iandata/datasets/kitti_odometry/sequences"
+        self.KITTI_RAW_PATH = "/media/ian/IanPrivatePP/Datasets/kitti_raw_data"
+        self.KITTI_ODOM_PATH = "/media/ian/IanPrivatePP/Datasets/kitti_odometry"
+        assert(op.isdir(self.KITTI_RAW_PATH))
+        assert (op.isdir(self.KITTI_ODOM_PATH))
+        self.SNIPPET_PATH = op.join(self.RESULT_PATH, "snippets", self.DATASET)
 
-        self.SNIPPET_PATH = op.join(self.DATA_PATH, "snippets", self.DATASET)
+    def get_dataset_path(self):
+        if self.DATASET == "kitti_raw":
+            return self.KITTI_RAW_PATH
+        elif self.DATASET == "kitti_odom":
+            return self.KITTI_ODOM_PATH
 
 
 opts = VodeOptions()
-

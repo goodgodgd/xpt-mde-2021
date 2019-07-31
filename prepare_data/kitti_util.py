@@ -4,6 +4,8 @@ import numpy as np
 import pykitti
 import quaternion
 
+import prepare_data.kitti_depth_generator as kdg
+
 
 class KittiUtil:
     def __init__(self):
@@ -45,6 +47,9 @@ class KittiUtil:
         pose = np.concatenate([tmat[:3, 3].T, quaternion.as_float_array(quat)])
         return pose
 
+    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+        raise NotImplementedError()
+
 
 class KittiRawUtil(KittiUtil):
     def __init__(self):
@@ -77,6 +82,13 @@ class KittiRawUtil(KittiUtil):
     def get_quat_pose(self, drive_loader, index):
         tmat = drive_loader.oxts[index].T_w_imu
         return self.matrix_to_quaternion_pose(tmat)
+
+    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+        calib_dir = op.dirname(drive_path)
+        velo_data = drive_loader.get_velo(frame_idx)
+        depth_map = kdg.generate_depth_map(velo_data, calib_dir, raw_img_shape)
+        print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
+        return depth_map
 
 
 class KittiRawTrainUtil(KittiRawUtil):
@@ -183,6 +195,10 @@ class KittiOdomUtil(KittiUtil):
     def get_quat_pose(self, drive_loader, index):
         tmat = self.poses[index].reshape((3, 4))
         return self.matrix_to_quaternion_pose(tmat)
+
+    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+        # no depth available for kitti_odom
+        return None
 
 
 class KittiOdomTrainUtil(KittiOdomUtil):
