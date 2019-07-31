@@ -84,11 +84,7 @@ class KittiRawUtil(KittiUtil):
         return self.matrix_to_quaternion_pose(tmat)
 
     def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
-        calib_dir = op.dirname(drive_path)
-        velo_data = drive_loader.get_velo(frame_idx)
-        depth_map = kdg.generate_depth_map(velo_data, calib_dir, raw_img_shape)
-        print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
-        return depth_map
+        raise NotImplementedError()
 
 
 class KittiRawTrainUtil(KittiRawUtil):
@@ -113,8 +109,12 @@ class KittiRawTrainUtil(KittiRawUtil):
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
         frame_inds.sort()
         frame_inds = np.array(frame_inds, dtype=int)
-        print("[frame_indices] frame ids:", frame_inds)
+        print("[frame_indices] frame ids:", frame_inds[0:-1:5])
         return frame_inds
+
+    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+        # depth is NOT required for training
+        return None
 
 
 class KittiRawTestUtil(KittiRawUtil):
@@ -143,6 +143,13 @@ class KittiRawTestUtil(KittiRawUtil):
             frame_inds = np.array(frame_inds, dtype=int)
             print("test frames:", frame_inds)
             return frame_inds
+
+    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+        calib_dir = op.dirname(drive_path)
+        velo_data = drive_loader.get_velo(frame_idx)
+        depth_map = kdg.generate_depth_map(velo_data, calib_dir, raw_img_shape)
+        # print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
+        return depth_map
 
 
 class KittiOdomUtil(KittiUtil):

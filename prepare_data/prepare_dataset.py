@@ -5,6 +5,7 @@ import numpy as np
 
 from config import opts
 from kitti_loader import KittiDataLoader
+from utils.util_funcs import print_progress
 
 # TODO: odometry에 static frame 목록 만들기
 '''
@@ -35,12 +36,18 @@ def prepare_and_save_snippets(loader, dataset, split):
             print("this drive has already prepared")
             continue
 
+        frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
+        if frame_indices.size == 0:
+            print("this drive is EMPTY")
+            continue
+
         os.makedirs(snippet_path, exist_ok=True)
         os.makedirs(pose_path, exist_ok=True)
         os.makedirs(depth_path, exist_ok=True)
-        loader.load_drive(drive)
 
-        for snippet in loader.snippet_generator(opts.SNIPPET_LEN):
+        print_progress(len(frame_indices), True)
+        for index, i in enumerate(frame_indices):
+            snippet = loader.snippet_generator(index, opts.SNIPPET_LEN)
             index = snippet["index"]
             frames = snippet["frames"]
             filename = op.join(snippet_path, f"{index:06d}.png")
@@ -51,9 +58,11 @@ def prepare_and_save_snippets(loader, dataset, split):
             np.savetxt(filename, poses, fmt="%3.5f")
 
             depth = snippet["gt_depth"]
+            mean_depth = 0
             if depth is not None:
                 filename = op.join(depth_path, f"{index:06d}.npy")
                 np.savetxt(filename, depth, fmt="%3.5f")
+                mean_depth = np.mean(depth)
 
             intrinsic = snippet["intrinsic"]
             if not op.isfile(filename):
@@ -63,6 +72,7 @@ def prepare_and_save_snippets(loader, dataset, split):
 
             cv2.imshow("snippet frames", frames)
             cv2.waitKey(1)
+            print_progress(f"mean depth={mean_depth:0.3f}, {i}")
 
 
 def get_destination_paths(dstpath, dataset, drive):

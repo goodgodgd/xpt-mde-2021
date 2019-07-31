@@ -5,7 +5,6 @@ import numpy as np
 import settings
 from config import opts
 import prepare_data.kitti_util as ku
-from utils.util_funcs import print_progress
 
 
 class KittiDataLoader:
@@ -15,6 +14,7 @@ class KittiDataLoader:
         self.drive_list = self.kitti_util.list_drives(split)
         self.drive_loader = None
         self.drive_path = ""
+        self.frame_inds = []
 
     def kitti_util_factory(self, dataset, split):
         if dataset == "kitti_raw" and split == "train":
@@ -28,23 +28,21 @@ class KittiDataLoader:
         else:
             raise ValueError()
 
-    def load_drive(self, drive):
+    def load_drive(self, drive, snippet_len):
+        print("=" * 50)
         self.drive_loader = self.kitti_util.create_drive_loader(self.base_path, drive)
         self.drive_path = self.kitti_util.get_drive_path(self.base_path, drive)
+        self.frame_inds = self.kitti_util.frame_indices(self.drive_path, snippet_len)
+        return self.frame_inds
 
-    def snippet_generator(self, snippet_len):
-        print("=" * 50)
-        frame_inds = self.kitti_util.frame_indices(self.drive_path, snippet_len)
-        print_progress(frame_inds[-1], True)
-        for ind in frame_inds:
-            print_progress(ind)
-            example = dict()
-            example["index"] = ind
-            example["frames"], raw_img_shape = self.load_snippet_frames(ind, snippet_len)
-            example["gt_poses"] = self.load_snippet_poses(ind, snippet_len)
-            example["gt_depth"] = self.load_frame_depth(ind, self.drive_path, raw_img_shape)
-            example["intrinsic"] = self.load_intrinsic(raw_img_shape)
-            yield example
+    def snippet_generator(self, index, snippet_len):
+        example = dict()
+        example["index"] = index
+        example["frames"], raw_img_shape = self.load_snippet_frames(index, snippet_len)
+        example["gt_poses"] = self.load_snippet_poses(index, snippet_len)
+        example["gt_depth"] = self.load_frame_depth(index, self.drive_path, raw_img_shape)
+        example["intrinsic"] = self.load_intrinsic(raw_img_shape)
+        return example
 
     def load_snippet_frames(self, frame_idx, snippet_len):
         halflen = snippet_len//2
@@ -85,7 +83,6 @@ class KittiDataLoader:
         out[0, 2] *= sx
         out[1, 1] *= sy
         out[1, 2] *= sy
-        print(f"scaled intrinsic: sx={sx:1.4f}, sy={sy:1.4f}\n", out)
         return out
 
 
@@ -95,9 +92,13 @@ def test():
     loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, "train")
 
     for drive in loader.drive_list:
-        print("drive:", drive)
-        loader.load_drive(drive)
-        for snippet in loader.snippet_generator(opts.SNIPPET_LEN):
+        frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
+        if frame_indices.size == 0:
+            print("this drive is EMPTY")
+            continue
+
+        for index, i in enumerate(frame_indices):
+            snippet = loader.snippet_generator(index, opts.SNIPPET_LEN)
             index = snippet["index"]
             frames = snippet["frames"]
             poses = snippet["gt_poses"]
