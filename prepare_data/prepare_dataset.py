@@ -7,16 +7,6 @@ from config import opts
 from kitti_loader import KittiDataLoader
 from utils.util_funcs import print_progress
 
-# TODO: odometry에 static frame 목록 만들기
-'''
-https://github.com/opencv/opencv/blob/master/samples/python/opt_flow.py
-def draw_flow(img, flow, step=16):
-    ...
-
-https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_video/py_lucas_kanade/py_lucas_kanade.html
-https://eehoeskrap.tistory.com/124
-'''
-
 
 def prepare_input_data():
     for dataset in ["kitti_raw", "kitti_odom"]:

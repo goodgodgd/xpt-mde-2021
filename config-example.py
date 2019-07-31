@@ -20,11 +20,18 @@ class VodeOptions(PriorOptions):
         assert (op.isdir(self.KITTI_ODOM_PATH))
         self.SNIPPET_PATH = op.join(self.RESULT_PATH, "snippets", self.DATASET)
 
-    def get_dataset_path(self):
-        if self.DATASET == "kitti_raw":
+    def get_dataset_path(self, dataset=None):
+        if dataset is None:
+            if self.DATASET == "kitti_raw":
+                return self.KITTI_RAW_PATH
+            elif self.DATASET == "kitti_odom":
+                return self.KITTI_ODOM_PATH
+        elif dataset == "kitti_raw":
             return self.KITTI_RAW_PATH
-        elif self.DATASET == "kitti_odom":
+        elif dataset == "kitti_odom":
             return self.KITTI_ODOM_PATH
+        else:
+            raise ValueError()
 
 
 opts = VodeOptions()

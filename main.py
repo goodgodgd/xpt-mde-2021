@@ -4,7 +4,7 @@ from prepare_data.prepare_data import prepare_input_data
 def select_task():
     while True:
         print("Please type a number according to the task you like to run")
-        print("1) prepare raw kitti data in model input form")
+        print("1) prepare raw kitti data in model input form -> see prepare_data/prepare_dataset")
         print("2) convert model input data to tfrecords format")
         print("3) play tfrecords files to check data")
         print("4) train sfmlearner model")
