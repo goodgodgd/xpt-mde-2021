@@ -164,19 +164,12 @@ class KittiOdomUtil(KittiUtil):
     def list_drives(self, split):
         raise NotImplementedError()
 
+    def create_drive_loader(self, base_path, drive):
+        raise NotImplementedError()
+
     def get_drive_path(self, base_path, drive):
         drive_path = op.join(base_path, "sequences", drive)
         return drive_path
-
-    def create_drive_loader(self, base_path, drive):
-        self.poses = self.read_poses(base_path, drive)
-        return pykitti.odometry(base_path, drive)
-
-    def read_poses(self, base_path, drive):
-        pose_file = op.join(base_path, "poses", drive+".txt")
-        poses = np.loadtxt(pose_file)
-        print("read poses\n", poses[:3])
-        return poses
 
     def frame_indices(self, drive_path, snippet_len):
         print("drive path", drive_path)
@@ -215,6 +208,14 @@ class KittiOdomTrainUtil(KittiOdomUtil):
     def list_drives(self, split):
         return [f"{i:02d}" for i in range(11, 22)]
 
+    def create_drive_loader(self, base_path, drive):
+        loader = pykitti.odometry(base_path, drive)
+        nframes = len(loader)
+        one_pose = np.concatenate([np.identity(3), np.zeros((3,1))], axis=1).reshape(-1)
+        self.poses = np.tile(one_pose, (nframes, 1))
+        print("zeros pose:", self.poses.shape)
+        return loader
+
 
 class KittiOdomTestUtil(KittiOdomUtil):
     def __init__(self):
@@ -223,3 +224,8 @@ class KittiOdomTestUtil(KittiOdomUtil):
     def list_drives(self, split):
         return [f"{i:02d}" for i in range(0, 11)]
 
+    def create_drive_loader(self, base_path, drive):
+        pose_file = op.join(base_path, "poses", drive+".txt")
+        self.poses = np.loadtxt(pose_file)
+        print("read pose file:", pose_file)
+        return pykitti.odometry(base_path, drive)

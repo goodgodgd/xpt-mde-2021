@@ -37,12 +37,12 @@ def list_kitti_odom_static_frames():
                 flow2 = cv2.calcOpticalFlowFarneback(frame_cur, frame_aft,
                                             flow=None, pyr_scale=0.5, levels=3, winsize=15,
                                             iterations=3, poly_n=5, poly_sigma=1.1, flags=0)
-                vis = draw_flow(frame_cur, flow1)
-                cv2.imshow("flow", vis)
-                if cv2.waitKey(500) == ord('q'):
-                    return
-                if cv2.waitKey(500) == ord('s'):
-                    break
+                # vis = draw_flow(frame_cur, flow1)
+                # cv2.imshow("flow", vis)
+                # if cv2.waitKey(500) == ord('q'):
+                #     return
+                # if cv2.waitKey(500) == ord('s'):
+                #     break
 
                 flow1_dist = np.sqrt(flow1[:, :, 0] * flow1[:, :, 0] + flow1[:, :, 1] * flow1[:, :, 1])
                 flow2_dist = np.sqrt(flow2[:, :, 0] * flow2[:, :, 0] + flow2[:, :, 1] * flow2[:, :, 1])
