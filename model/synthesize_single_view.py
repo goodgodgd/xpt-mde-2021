@@ -146,8 +146,9 @@ def reconstruct_image_roundup(pixel_coords, image, depth):
     flat_image = tf.gather_nd(padded_image, pixel_coords)
     # set black in depth-zero region
     depth_vec = tf.reshape(depth, shape=(-1, 1))
-    depth_validity = tf.cast(tf.clip_by_value(depth_vec*1000, 0, 1), tf.uint8)
-    flat_image = flat_image * depth_validity
+    depth_invalid_mask = tf.math.equal(depth_vec, 0)
+    zeros = tf.zeros(flat_image.get_shape(), dtype=tf.uint8)
+    flat_image = tf.where(depth_invalid_mask, zeros, flat_image)
     recon_image = tf.reshape(flat_image, shape=(ih, iw, ic))
 
     return recon_image
