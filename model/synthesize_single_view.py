@@ -5,21 +5,19 @@ import quaternion
 
 
 def load_data():
-    srcidx = 1020
-    tgtidx = 1040
-    data_path = "/home/ian/workspace/vode-ss-19/data/aug-icl-nuim"
-    src_image = cv2.imread(f"{data_path}/livingroom1-color/{srcidx:05d}.jpg")
-    tgt_image = cv2.imread(f"{data_path}/livingroom1-color/{tgtidx:05d}.jpg")
-    tgt_depth = cv2.imread(f"{data_path}/livingroom1-depth-clean/{tgtidx:05d}.png", cv2.IMREAD_ANYDEPTH)
+    srcidx = 1430
+    tgtidx = 1450
+    src_image = cv2.imread(f"samples/color/{srcidx:05d}.jpg")
+    tgt_image = cv2.imread(f"samples/color/{tgtidx:05d}.jpg")
+    tgt_depth = cv2.imread(f"samples/depth/{tgtidx:05d}.png", cv2.IMREAD_ANYDEPTH)
     tgt_depth = tgt_depth/1000.
 
-    src_pose = np.loadtxt(f"{data_path}/pose_{srcidx:05d}.txt")
-    tgt_pose = np.loadtxt(f"{data_path}/pose_{tgtidx:05d}.txt")
-    print(src_pose)
+    src_pose = np.loadtxt(f"samples/pose/pose_{srcidx:05d}.txt")
+    tgt_pose = np.loadtxt(f"samples/pose/pose_{tgtidx:05d}.txt")
 
-    intrinsic = np.loadtxt(f"{data_path}/intrinsic.txt")
+    intrinsic = np.loadtxt("samples/intrinsic.txt")
     t2s_pose = np.matmul(np.linalg.inv(src_pose), tgt_pose)
-    print("t2s_pose", t2s_pose)
+    print("target to source pose matrix", t2s_pose)
     # t2s_pose = np.identity(4)
     print(f"loaded data shapes: src img={src_image.shape}, tgt img={tgt_image.shape}, "
           f"depth={tgt_depth.shape}, {tgt_depth.dtype}, pose={t2s_pose.shape}, "
