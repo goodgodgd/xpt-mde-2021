@@ -156,9 +156,12 @@ def reconstruct_image_roundup(pixel_coords, image, depth):
 def main():
     np.set_printoptions(precision=3, suppress=True)
     src_image, tgt_image, tgt_depth, t2s_pose, intrinsic = load_data()
+
     tgt_recon_image = synthesize_view(src_image, tgt_depth, t2s_pose, intrinsic)
+
+    cv2.imwrite(f"samples/synthesized.jpg", tgt_recon_image)
     result = np.concatenate([src_image, tgt_recon_image, tgt_image], axis=1)
-    cv2.imshow("recon", result)
+    cv2.imshow("synthesized", result)
     cv2.waitKey()
 
 
