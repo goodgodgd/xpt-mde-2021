@@ -31,17 +31,6 @@ def load_data():
     return src_image, tgt_image, tgt_depth, t2s_pose, intrinsic
 
 
-def pose_quat2mat(pose):
-    t = np.expand_dims(pose[:3], axis=1)
-    q = pose[3:]
-    q = quaternion.from_float_array(q)
-    rot = quaternion.as_rotation_matrix(q).T
-    mat = np.concatenate([rot, t], axis=1)
-    mat = np.concatenate([mat, np.array([[0, 0, 0, 1]])], axis=0)
-    # mat = np.linalg.inv(mat)
-    return mat
-
-
 def synthesize_view(src_image, tgt_depth, pose, intrinsic):
     """
     synthesize target view images from source view image

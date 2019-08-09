@@ -54,10 +54,10 @@ def prepare_and_save_snippets(loader, dataset, split):
                 np.savetxt(filename, depth, fmt="%3.5f")
                 mean_depth = np.mean(depth)
 
-            intrinsic = snippet["intrinsic"]
+            filename = op.join(snippet_path, "intrinsic.txt")
             if not op.isfile(filename):
+                intrinsic = snippet["intrinsic"]
                 print("##### intrinsic parameters\n", intrinsic)
-                filename = op.join(snippet_path, "intrinsic.txt")
                 np.savetxt(filename, intrinsic, fmt="%3.5f")
 
             cv2.imshow("snippet frames", frames)
@@ -79,4 +79,5 @@ def get_destination_paths(dstpath, dataset, drive):
 
 
 if __name__ == "__main__":
+    np.set_printoptions(precision=3, suppress=True)
     prepare_input_data()

@@ -8,12 +8,6 @@ import settings
 import model.synthesize_single_view as sv
 
 
-def test_pose_quat2mat():
-    mat = sv.pose_quat2mat(np.array([0, 0, 0, 1, 0, 0, 0]))
-    assert (np.isclose(np.identity(4), mat).all())
-    print("test_pose_quat2mat passed")
-
-
 def test_linspace():
     # tf ops must take float variables
     # better use np.linspace instead

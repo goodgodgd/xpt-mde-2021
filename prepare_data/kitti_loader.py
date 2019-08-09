@@ -1,10 +1,12 @@
 import os.path as op
 import cv2
 import numpy as np
+import quaternion
 
 import settings
 from config import opts
 import prepare_data.kitti_util as ku
+import utils.util_funcs as uf
 
 
 class KittiDataLoader:
@@ -67,7 +69,20 @@ class KittiDataLoader:
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
+        poses = self.to_local_pose(poses, halflen)
         return poses
+
+    def to_local_pose(self, poses, origin_index):
+        local_poses = []
+        origin_pose_mat = uf.pose_quat2mat(poses[origin_index])
+        for pose in poses:
+            cur_pose_mat = uf.pose_quat2mat(pose)
+            local_pose_mat = np.matmul(np.linalg.inv(cur_pose_mat), origin_pose_mat)
+            local_pose_quat = uf.pose_mat2quat(local_pose_mat)
+            local_poses.append(local_pose_quat)
+
+        local_poses = np.stack(local_poses, axis=0)
+        return local_poses
 
     def load_frame_depth(self, frame_idx, drive_path, raw_img_shape):
         depth_map = self.kitti_util.generate_depth_map(self.drive_loader, frame_idx,
