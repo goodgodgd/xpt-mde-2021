@@ -6,7 +6,7 @@ verify_ssl = true
 [dev-packages]
 
 [packages]
-numpy = "*"
+numpy = "<1.17"
 tensorflow-gpu = "==2.0.0-beta1"
 pykitti = "*"
 opencv-python = "*"
