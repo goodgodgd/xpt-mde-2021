@@ -23,7 +23,7 @@ def prepare_and_save_snippets(loader, dataset, split):
         snippet_path, pose_path, depth_path = get_destination_paths(dstpath, dataset, drive)
         print("drive path:", snippet_path)
         if op.isdir(snippet_path):
-            print("this drive has already prepared")
+            print(f"this drive may have already prepared, check this path completed: {snippet_path}")
             continue
 
         frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
@@ -36,7 +36,7 @@ def prepare_and_save_snippets(loader, dataset, split):
         os.makedirs(depth_path, exist_ok=True)
 
         print_progress(len(frame_indices), True)
-        for index, i in enumerate(frame_indices):
+        for i, index in enumerate(frame_indices):
             snippet = loader.snippet_generator(index, opts.SNIPPET_LEN)
             index = snippet["index"]
             frames = snippet["frames"]
