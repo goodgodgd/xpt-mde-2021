@@ -4,7 +4,8 @@ import tensorflow as tf
 
 class FeederBase:
     def __init__(self):
-        self.type = ""
+        self.parse_type = ""
+        self.decode_type = ""
         self.shape = []
     
     def __len__(self):
@@ -19,17 +20,18 @@ class FeederBase:
     def set_type_and_shape(self, value):
         if isinstance(value, np.ndarray):
             if value.dtype == np.uint8:
-                self.type = "tf.uint8"
+                self.decode_type = "tf.uint8"
             elif value.dtype == np.float64:
-                self.type = "tf.float64"
+                self.decode_type = "tf.float64"
             else:
                 print("numpy type:", value.dtype)
                 raise TypeError()
+            self.parse_type = "tf.string"
             self.shape = list(value.shape)
 
         elif isinstance(value, int):
-            self.type = "tf.int64"
-            self.shape = [0]
+            self.parse_type = "tf.int64"
+            self.shape = None
 
         else:
             print("type:", type(value))

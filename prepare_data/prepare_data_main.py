@@ -22,7 +22,7 @@ def prepare_and_save_snippets(loader, dataset, split):
 
     for drive in loader.drive_list:
         snippet_path, pose_path, depth_path = get_destination_paths(dstpath, dataset, drive)
-        print("drive path:", snippet_path)
+        print("\ndrive path:", snippet_path)
         if op.isdir(snippet_path):
             print(f"this drive may have already prepared, check this path completed: {snippet_path}")
             continue
@@ -52,7 +52,7 @@ def prepare_and_save_snippets(loader, dataset, split):
             depth = snippet["gt_depth"]
             mean_depth = 0
             if depth is not None:
-                filename = op.join(depth_path, f"{index:06d}.npy")
+                filename = op.join(depth_path, f"{index:06d}.txt")
                 np.savetxt(filename, depth, fmt="%3.5f")
                 mean_depth = np.mean(depth)
 

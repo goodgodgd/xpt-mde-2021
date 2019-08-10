@@ -47,6 +47,7 @@ class TfrecordMaker():
             return cv2.imread(filename)
 
         def npy_reader(filename):
+            print("npy reader", filename)
             data = np.load(filename)
             return data.astype(np.float64)
 
@@ -69,7 +70,8 @@ class TfrecordMaker():
     def list_sequence_files(self):
         image_files = glob(op.join(self.srcpath, "*/*.png"))
         if self.depth_avail:
-            depth_files = [op.join(op.dirname(file_path), "depth", op.basename(file_path))
+            depth_files = [op.join(op.dirname(file_path), "depth",
+                                   op.basename(file_path).replace(".png", ".npy"))
                            for file_path in image_files]
         else:
             depth_files = []
@@ -95,7 +97,7 @@ class TfrecordMaker():
     def write_tfrecord_config(self, feeders):
         config = dict()
         for key, feeder in feeders.items():
-            single_config = {"type": feeder.type, "shape": feeder.shape}
+            single_config = {"parse_type": feeder.parse_type, "decode_type": feeder.decode_type, "shape": feeder.shape}
             config[key] = single_config
 
         print("=== config", config)
