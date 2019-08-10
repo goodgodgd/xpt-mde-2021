@@ -3,6 +3,7 @@ import os.path as op
 import cv2
 import numpy as np
 
+import settings
 from config import opts
 from kitti_loader import KittiDataLoader
 from utils.util_funcs import print_progress
@@ -16,7 +17,7 @@ def prepare_input_data():
 
 
 def prepare_and_save_snippets(loader, dataset, split):
-    dstpath = op.join(opts.RESULT_PATH, "srcdata", f"{dataset}_{split}")
+    dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
     os.makedirs(dstpath, exist_ok=True)
 
     for drive in loader.drive_list:
@@ -44,8 +45,9 @@ def prepare_and_save_snippets(loader, dataset, split):
             cv2.imwrite(filename, frames,)
 
             poses = snippet["gt_poses"]
-            filename = op.join(pose_path, f"{index:06d}.txt")
-            np.savetxt(filename, poses, fmt="%3.5f")
+            if poses is not None:
+                filename = op.join(pose_path, f"{index:06d}.txt")
+                np.savetxt(filename, poses, fmt="%3.5f")
 
             depth = snippet["gt_depth"]
             mean_depth = 0

@@ -16,9 +16,8 @@ class VodeOptions(PriorOptions):
         super().__init__()
         self.KITTI_RAW_PATH = "/media/ian/IanPrivatePP/Datasets/kitti_raw_data"
         self.KITTI_ODOM_PATH = "/media/ian/IanPrivatePP/Datasets/kitti_odometry"
-        assert(op.isdir(self.KITTI_RAW_PATH))
+        assert (op.isdir(self.KITTI_RAW_PATH))
         assert (op.isdir(self.KITTI_ODOM_PATH))
-        self.SNIPPET_PATH = op.join(self.RESULT_PATH, "snippets", self.DATASET)
 
     def get_dataset_path(self, dataset=None):
         if dataset is None:
