@@ -64,7 +64,10 @@ class TfrecordGenerator:
 
             if feat_conf["shape"] is not None:
                 decoded[key] = tf.reshape(decoded[key], shape=feat_conf["shape"])
-        return decoded
+
+        x = {"image": decoded["image"], "intrinsic": decoded["intrinsic"]}
+        y = {"pose_gt": decoded["pose"], "depth_gt": decoded["depth"]}
+        return x, y
 
     def dataset_process(self, dataset):
         if self.shuffle:
@@ -81,12 +84,14 @@ class TfrecordGenerator:
 def test():
     tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_odom_train"))
     dataset = tfrgen.get_generator()
-    for features in dataset:
-        print(features.keys())
-        for key, value in features.items():
-            print(f"shape and type: {key}={features[key].shape}, {features[key].dtype}")
+    for x, y in dataset:
+        print(x.keys(), y.keys())
+        for key, value in x.items():
+            print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
+        for key, value in y.items():
+            print(f"y shape and type: {key}={y[key].shape}, {y[key].dtype}")
 
-        image = features["image"].numpy()
+        image = x["image"].numpy()
         cv2.imshow("image", image[0])
         cv2.waitKey(100)
 

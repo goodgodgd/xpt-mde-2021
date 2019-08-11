@@ -51,78 +51,7 @@ def save_pred_depths(depths, output_root, modelname):
     print("predicted depths were saved!! shape=", depths.shape)
 
 
-###############################################################################
-# KITTI
-
-width_to_focal = dict()
-width_to_focal[1242] = 721.5377
-width_to_focal[1241] = 718.856
-width_to_focal[1224] = 707.0493
-width_to_focal[1238] = 718.3351
-
-
-def convert_disps_to_depths_kitti(gt_disparities, pred_disparities):
-    gt_depths = []
-    pred_depths = []
-    pred_disparities_resized = []
-
-    for i in range(len(gt_disparities)):
-        gt_disp = gt_disparities[i]
-        height, width = gt_disp.shape
-
-        pred_disp = pred_disparities[i]
-        pred_disp = width * cv2.resize(pred_disp, (width, height), interpolation=cv2.INTER_LINEAR)
-
-        pred_disparities_resized.append(pred_disp)
-
-        mask = gt_disp > 0
-
-        gt_depth = width_to_focal[width] * 0.54 / (gt_disp + (1.0 - mask))
-        pred_depth = width_to_focal[width] * 0.54 / pred_disp
-
-        gt_depths.append(gt_depth)
-        pred_depths.append(pred_depth)
-    return gt_depths, pred_depths, pred_disparities_resized
-
-
-###############################################################################
-# EIGEN
-
-def read_file_data(files, data_root):
-    gt_files = []
-    gt_calib = []
-    im_sizes = []
-    im_files = []
-    cams = []
-    num_probs = 0
-    for i, filename in enumerate(files):
-        filename = filename.split()[0]
-        splits = filename.split('/')
-        #         camera_id = filename[-1]   # 2 is left, 3 is right
-        date = splits[0]
-        im_id = splits[4][:10]
-        vel = '{}/{}/velodyne_points/data/{}.bin'.format(splits[0], splits[1], im_id)
-        imfile = os.path.join(data_root, filename)
-
-        if os.path.isfile(imfile):
-            gt_files.append(os.path.join(data_root, vel))
-            gt_calib.append(os.path.join(data_root, date))
-            im_sizes.append(cv2.imread(imfile).shape[:2])
-            im_files.append(imfile)
-            cams.append(2)
-        else:
-            num_probs += 1
-            print('{} missing'.format(imfile))
-    # print(num_probs, 'files missing')
-    return gt_files, gt_calib, im_sizes, im_files, cams
-
-
-def load_velodyne_points(file_name):
-    # adapted from https://github.com/hunse/kitti
-    points = np.fromfile(file_name, dtype=np.float32).reshape(-1, 4)
-    points[:, 3] = 1.0  # homogeneous
-    return points
-
+# ==================================================
 
 def lin_interp(shape, xyd):
     # taken from https://github.com/hunse/kitti
