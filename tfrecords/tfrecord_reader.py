@@ -64,6 +64,7 @@ class TfrecordGenerator:
             if feat_conf["shape"] is not None:
                 decoded[key] = tf.reshape(decoded[key], shape=feat_conf["shape"])
 
+        decoded["image"] = tf.cast(decoded["image"], tf.float32)
         x = {"image": decoded["image"], "pose_gt": decoded["pose"],
              "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
         y = tf.constant(0)
@@ -110,6 +111,7 @@ def test():
         for key, value in x.items():
             print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
 
+        x["image"] = tf.cast(x["image"], tf.uint8)
         image = x["image"].numpy()
         cv2.imshow("image", image[0])
         cv2.waitKey(100)

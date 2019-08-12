@@ -1,25 +1,56 @@
+import os.path as op
+import cv2
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import layers
 
 import settings
 from config import opts
 import utils.util_funcs as uf
 
 
-def synthesize_view_multi_scale(src_images, tgt_depth_ms, poses_rvec, intrinsic):
+def synthesize_view_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_pose):
+    """
+    :param stacked_image: [batch, height*5, width, 3]
+    :param intrinsic: [batch, 3, 3]
+    :param pred_depth_ms: predicted depth in multi scale [batch, height*scale, width*scale, 1]
+    :param pred_pose: predicted pose [batch, 4, 6]
+    :return: reconstructed target view
+    """
+    width_ori = stacked_image.get_shape().as_list()[2]
+    poses_matr = uf.pose_rvec2matr_batch(pred_pose)
     recon_images = []
-    print("[synthesize_view_multi_scale]")
-    for key, depth_sc in tgt_depth_ms.items():
-        batch, height_sc, width_sc, _ = depth_sc.get_shape().as_list()
-        scale = height_sc // opts.IM_HEIGHT
-        intrinsic_sc = tf.identity(intrinsic) * scale
-        src_images_sc = tf.image.resize(src_images, size=[height_sc, width_sc], method="bilinear")
-        poses_matr = uf.pose_rvec2matr_batch(poses_rvec)
-        for si in range(opts.SNIPPET_LEN-1):
-            source_sc = tf.slice(src_images_sc, (-1, -1, -1, si*3), (-1, -1, -1, 3))
-            recon_target = synthesize_batch_view(source_sc, depth_sc, poses_matr[:, si, :, :], intrinsic_sc)
-            recon_images.append({"scale": scale, "srcidx": si, "recon_target": recon_target})
+    for depth_sc in pred_depth_ms.items():
+        batch, height_sc, width_sc, _ = pred_depth_ms[0].get_shape().as_list()
+        scale = int(width_ori / width_sc)
+        intrinsic_sc = scale_intrinsic(intrinsic, scale)
 
-    return poses
+        source_images_sc = layers.Lambda(lambda image: reshape_source_images(image, scale),
+                                      name="reorder_source")(stacked_image)
+        print("[synthesize_view_multi_scale] source image shape=", source_images_sc.get_shape())
+        recon_image_sc = synthesize_batch_view(source_images_sc, depth_sc, poses_matr, intrinsic_sc)
+
+    return recon_images
+
+
+def scale_intrinsic(intrinsic, scale):
+    # intrinsic_sc = tf.identity(intrinsic) * scale
+    # TODO
+    pass
+
+
+def reshape_source_images(stacked_image, scale):
+    batch, stheight, stwidth, _ = stacked_image.get_shape().as_list()
+    scaled_size = (int(stheight//scale), int(stwidth//scale))
+    scaled_image = tf.image.resize(stacked_image, size=scaled_size, method="bilinear")
+
+    scaled_image = tf.cast(scaled_image, dtype=tf.uint8)
+
+    batch, scheight, scwidth, _ = scaled_image.get_shape().as_list()
+    scheight = int(scheight // opts.SNIPPET_LEN)
+    source_images = tf.slice(scaled_image, (0, 0, 0, 0), (-1, scheight*(opts.SNIPPET_LEN - 1), -1, -1))
+    source_images = tf.reshape(source_images, shape=(batch, -1, scheight, scwidth, 3))
+    return source_images
 
 
 def synthesize_batch_view(source, depth, pose, intrinsic):
@@ -141,3 +172,34 @@ def vode_loss(y_true, y_pred):
     loss = tf.keras.backend.mean(y_pred, axis=None)
     # photometric_loss = calc_photometric_loss(y_true, y_pred)
     return loss
+
+
+# ==================== tests ====================
+def test_reshape_source_images():
+    print("===== start test_reshape_source_images")
+    filename = op.join(opts.DATAPATH_SRC, "kitti_raw_train", "2011_09_26_0001", "000024.png")
+    image = cv2.imread(filename)
+    batch_image = np.expand_dims(image, 0)
+    batch_image = np.tile(batch_image, (8, 1, 1, 1))
+    print("batch image shape", batch_image.shape)
+    batch_image_tensor = tf.constant(batch_image, dtype=tf.float32)
+
+    sources = reshape_source_images(batch_image_tensor, 2)
+
+    sources = tf.cast(sources, tf.uint8)
+    sources = sources.numpy()
+    print("reordered source image shape", sources.shape)
+    cv2.imshow("original image", image)
+    cv2.imshow("reordered image1", sources[0, 1])
+    cv2.imshow("reordered image2", sources[0, 2])
+    cv2.waitKey()
+    # assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == sources[0, 1]).all()
+    print("reshape_source_images passed")
+
+
+def test():
+    test_reshape_source_images()
+
+
+if __name__ == "__main__":
+    test()

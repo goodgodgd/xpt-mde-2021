@@ -11,7 +11,7 @@ import utils.util_funcs as uf
 import tfrecords.data_feeders as df
 
 
-class TfrecordMaker():
+class TfrecordMaker:
     def __init__(self, srcpath, dstpath):
         self.srcpath = srcpath
         self.dstpath = dstpath
