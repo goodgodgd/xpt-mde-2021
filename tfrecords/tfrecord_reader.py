@@ -8,9 +8,8 @@ from config import opts
 
 
 class TfrecordGenerator:
-    def __init__(self, tfrpath, batchsize=8, shuffle=False, epochs=1):
+    def __init__(self, tfrpath, shuffle=False, epochs=1):
         self.tfrpath = tfrpath
-        self.batchsize = batchsize
         self.shuffle = shuffle
         self.epochs = epochs
         self.config = self.read_tfrecord_config(tfrpath)
@@ -36,8 +35,8 @@ class TfrecordGenerator:
             # convert decode types in string format to real type
             if feat_conf["decode_type"] == "tf.uint8":
                 config[key]["decode_type"] = tf.uint8
-            elif feat_conf["decode_type"] == "tf.float64":
-                config[key]["decode_type"] = tf.float64
+            elif feat_conf["decode_type"] == "tf.float32":
+                config[key]["decode_type"] = tf.float32
             else:
                 config[key]["decode_type"] = None
 
@@ -57,39 +56,59 @@ class TfrecordGenerator:
         parsed = tf.io.parse_single_example(example, self.feature_dict)
         decoded = {}
         for key, feat_conf in self.config.items():
-            if feat_conf["decode_type"] is not None:
-                decoded[key] = tf.io.decode_raw(parsed[key], feat_conf["decode_type"])
-            else:
+            if feat_conf["decode_type"] is None:
                 decoded[key] = parsed[key]
+            else:
+                decoded[key] = tf.io.decode_raw(parsed[key], feat_conf["decode_type"])
 
             if feat_conf["shape"] is not None:
                 decoded[key] = tf.reshape(decoded[key], shape=feat_conf["shape"])
 
-        x = {"image": decoded["image"], "intrinsic": decoded["intrinsic"]}
-        y = {"pose_gt": decoded["pose"], "depth_gt": decoded["depth"]}
+        x = {"image": decoded["image"], "pose_gt": decoded["pose"],
+             "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
+        y = tf.constant(0)
         return x, y
+
+    # def split_target_and_source(self, image_snippet, pose_snippet):
+    #     num_images = opts.SNIPPET_LEN
+    #     half_num = int(num_images // 2)
+    #     images = []
+    #     # slice into list of individual images
+    #     for i in range(num_images):
+    #         image = tf.slice(image_snippet, [i*opts.IM_HEIGHT, 0, 0], [opts.IM_HEIGHT, -1, -1])
+    #         images.append(image)
+    #     # split into target and sources
+    #     target_image = images.pop(half_num)
+    #     source_images = images
+    #     source_images = tf.concat(source_images, axis=2)
+    #
+    #     pose_bef = pose_snippet[:half_num]
+    #     pose_aft = pose_snippet[half_num+1:num_images]
+    #     source_poses = tf.concat([pose_bef, pose_aft], axis=0)
+    #     source_poses = quaternion.from_float_array(source_poses)
+    #     source_poses = quaternion.as_rotation_vector(source_poses)
+    #
+    #     return target_image, source_images, source_poses
 
     def dataset_process(self, dataset):
         if self.shuffle:
             dataset.shuffle(buffer_size=1000)
-
-        print(f"===== num epochs={self.epochs}, batchsize={self.batchsize}")
+        print(f"===== num epochs={self.epochs}, batchsize={opts.BATCH_SIZE}")
         dataset = dataset.repeat(self.epochs)
-        dataset = dataset.batch(batch_size=self.batchsize, drop_remainder=True)
+        dataset = dataset.batch(batch_size=opts.BATCH_SIZE, drop_remainder=True)
         return dataset
 
 
 # =========
 
 def test():
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_odom_train"))
+    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_odom_test"))
     dataset = tfrgen.get_generator()
     for x, y in dataset:
-        print(x.keys(), y.keys())
+        print(x.keys())
+        print(y)
         for key, value in x.items():
             print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
-        for key, value in y.items():
-            print(f"y shape and type: {key}={y[key].shape}, {y[key].dtype}")
 
         image = x["image"].numpy()
         cv2.imshow("image", image[0])

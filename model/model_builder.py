@@ -1,20 +1,35 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 
+import settings
+from config import opts
+from model.loss_and_metric import synthesize_view_multi_scale
 
-def create_model(target_shape, source_shape, batch_size):
-    target_input = layers.Input(shape=target_shape, batch_size=batch_size, name="target_input")
-    source_input = layers.Input(shape=source_shape, batch_size=batch_size, name="source_input")
-    stacked_input = layers.Concatenate(axis=3, name="stacked_input")([target_input, source_input])
-    inputs = {"target": target_input, "source": source_input}
 
-    model_out = build_depth_estim_layers(target_input)
-    odom_out = build_visual_odom_layers(stacked_input)
-    model_out["pose"] = odom_out
+def create_models(target_shape, source_shape, intrin_shape, batch_size):
+    # prepare input tensors
+    target_input = layers.Input(shape=target_shape, batch_size=batch_size, name="target")
+    source_inputs = layers.Input(shape=source_shape, batch_size=batch_size, name="sources")
+    intrinsic = layers.Input(shape=intrin_shape, batch_size=batch_size, name="intrinsic")
+    model_input = {"target": target_input, "sources": source_inputs, "intrinsic": intrinsic}
+    stacked_input = layers.Concatenate(axis=3, name="stacked_input")([target_input, source_inputs])
 
-    model = tf.keras.Model(inputs, model_out)
-    model.compile(optimizer="adam", loss="mean_absolute_error")
-    return model
+    # build layers of posenet and depthnet and make model for prediction
+    pred_depths_ms = build_depth_estim_layers(target_input)
+    pred_poses = build_visual_odom_layers(stacked_input)
+    predictions = {**pred_depths_ms, "pose": pred_poses}
+    model_pred = tf.keras.Model(model_input, predictions)
+    model_pred.compile(optimizer="adam", loss="mean_absolute_error")
+
+    # calculate loss and make model for training
+    synthesized_targets_ms = synthesize_view_multi_scale(source_inputs, pred_depths_ms, 
+                                                         pred_poses, intrinsic)
+    loss = synthesized_targets_ms
+    # loss += calc_photometric_loss(synthesized_targets_ms, target_input)
+    model_train = tf.keras.Model(model_input, loss)
+    model_train.compile(optimizer="adam", loss="mean_absolute_error")
+
+    return model_pred, model_train
 
 
 # ==================== build DepthNet layers ====================
@@ -116,9 +131,13 @@ def build_visual_odom_layers(stacked_input):
 
 # ==================== executable ====================
 def test():
-    model = create_model(target_shape=(128, 416, 3), source_shape=(128, 416, 12), batch_size=8)
-    model.summary()
-    tf.keras.utils.plot_model(model, to_file="model.png", show_shapes=True, show_layer_names=True)
+    target_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    source_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3*(opts.SNIPPET_LEN-1))
+    intrin_shape = (3, 3)
+    model_pred, model_train = create_models(target_shape, source_shape, intrin_shape, batch_size=8)
+    model_pred.summary()
+    model_train.summary()
+    tf.keras.utils.plot_model(model_pred, to_file="model.png", show_shapes=True, show_layer_names=True)
 
 
 if __name__ == "__main__":

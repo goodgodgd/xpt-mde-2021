@@ -1,8 +1,7 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '0'
 import numpy as np
+import quaternion
 
 import settings
 import model.synthesize_single_view as sv
@@ -76,15 +75,24 @@ def test_gather_nd():
     print("test_gather_nd passed")
 
 
+def test_rotation_vector():
+    quat = quaternion.from_float_array(np.array([np.cos(np.pi/3), 0, np.sin(np.pi/3), 0]))
+    print("quaterion angle pi*2/3 about y-axis", quat)
+    rvec = quaternion.as_rotation_vector(quat)
+    print("rotation vector:", rvec)
+    assert (np.isclose(np.linalg.norm(rvec), np.pi*2/3))
+    print("test_rotation_vector passed")
+
+
 def test():
     np.set_printoptions(precision=3, suppress=True)
-    test_pose_quat2mat()
     test_linspace()
     test_pixel_meshgrid()
     test_gather()
     test_pixel2cam2pixel()
     test_pad()
     test_gather_nd()
+    test_rotation_vector()
 
 
 if __name__ == "__main__":

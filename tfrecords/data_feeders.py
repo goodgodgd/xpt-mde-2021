@@ -21,8 +21,8 @@ class FeederBase:
         if isinstance(value, np.ndarray):
             if value.dtype == np.uint8:
                 self.decode_type = "tf.uint8"
-            elif value.dtype == np.float64:
-                self.decode_type = "tf.float64"
+            elif value.dtype == np.float32:
+                self.decode_type = "tf.float32"
             else:
                 print("numpy type:", value.dtype)
                 raise TypeError()
@@ -110,19 +110,3 @@ class ConstInt64Feeder(FeederBase):
 
     def convert_to_feature(self, value):
         return self._int64_feature(value)
-
-
-# ==================================================
-
-def test():
-    mat = np.identity(4)
-    print(mat.dtype)
-    feeder = NpyFeeder("test", 2, 3)
-    feature = feeder.convert_to_feature(mat)
-    print(feature)
-    print(feature.value)
-    value = tf.io.decode_raw(feature, tf.float64)
-
-
-if __name__ == "__main__":
-    test()
