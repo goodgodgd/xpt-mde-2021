@@ -5,10 +5,12 @@ class PriorOptions:
     def __init__(self):
         self.DATASET = "kitti_raw"
         self.SNIPPET_LEN = 5
-        self.RESULT_PATH = "/media/ian/IanPrivatePP/Datasets/vode_data"
+        self.DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data"
         self.IM_WIDTH = 416
         self.IM_HEIGHT = 128
-        assert(op.isdir(self.RESULT_PATH))
+        assert(op.isdir(self.DATAPATH))
+        self.DATAPATH_SRC = op.join(self.DATAPATH, "srcdata")
+        self.DATAPATH_TFR = op.join(self.DATAPATH, "tfrecords")
 
 
 class VodeOptions(PriorOptions):

@@ -14,19 +14,21 @@ def synthesize_view_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_po
     :param stacked_image: [batch, height*5, width, 3]
     :param intrinsic: [batch, 3, 3]
     :param pred_depth_ms: predicted depth in multi scale [batch, height*scale, width*scale, 1]
-    :param pred_pose: predicted pose [batch, 4, 6]
+    :param pred_pose: predicted source pose [batch, 4, 6]
     :return: reconstructed target view
     """
     width_ori = stacked_image.get_shape().as_list()[2]
+    # convert pose vector to transformation matrix
     poses_matr = uf.pose_rvec2matr_batch(pred_pose)
     recon_images = []
     for depth_sc in pred_depth_ms.items():
         batch, height_sc, width_sc, _ = pred_depth_ms[0].get_shape().as_list()
-        scale = int(width_ori / width_sc)
+        scale = int(width_ori // width_sc)
+        # adjust intrinsic upto scale
         intrinsic_sc = scale_intrinsic(intrinsic, scale)
-
+        # reorganize source images: [batch, 4, height, width, 3]
         source_images_sc = layers.Lambda(lambda image: reshape_source_images(image, scale),
-                                      name="reorder_source")(stacked_image)
+                                         name="reorder_source")(stacked_image)
         print("[synthesize_view_multi_scale] source image shape=", source_images_sc.get_shape())
         recon_image_sc = synthesize_batch_view(source_images_sc, depth_sc, poses_matr, intrinsic_sc)
 
@@ -34,39 +36,46 @@ def synthesize_view_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_po
 
 
 def scale_intrinsic(intrinsic, scale):
-    # intrinsic_sc = tf.identity(intrinsic) * scale
-    # TODO
-    pass
+    batch = intrinsic.get_shape().as_list()[0]
+    scaled_part = intrinsic[:, :2, :] / scale
+    const_part = tf.tile(tf.constant([[[0, 0, 1]]], dtype=tf.float32), (batch, 1, 1))
+    scaled_intrinsic = tf.concat([scaled_part, const_part], axis=1)
+    return scaled_intrinsic
 
 
 def reshape_source_images(stacked_image, scale):
+    """
+    :param stacked_image: [batch, 5*height, width, 3]
+    :param scale: scale to reduce image size
+    :return: reorganized source images [batch, 4, height, width, 3]
+    """
+    # resize image
     batch, stheight, stwidth, _ = stacked_image.get_shape().as_list()
     scaled_size = (int(stheight//scale), int(stwidth//scale))
     scaled_image = tf.image.resize(stacked_image, size=scaled_size, method="bilinear")
-
-    scaled_image = tf.cast(scaled_image, dtype=tf.uint8)
-
+    # slice only source images
     batch, scheight, scwidth, _ = scaled_image.get_shape().as_list()
     scheight = int(scheight // opts.SNIPPET_LEN)
     source_images = tf.slice(scaled_image, (0, 0, 0, 0), (-1, scheight*(opts.SNIPPET_LEN - 1), -1, -1))
+    # reorganize source images: (4*height,) -> (4, height)
     source_images = tf.reshape(source_images, shape=(batch, -1, scheight, scwidth, 3))
     return source_images
 
 
-def synthesize_batch_view(source, depth, pose, intrinsic):
+def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic):
     """
-    :param source: source image nearby the target image [batch, height, width, 3]
-    :param depth: depth map of the target image in meter scale [batch, height, width, 1]
-    :param pose: camera pose matrix that transforms target points to source frame [batch, 4, 4]
+    :param src_image: source image nearby the target image [batch, num_src, height, width, 3]
+    :param tgt_depth: depth map of the target image in meter scale [batch, height, width, 1]
+    :param pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
     :param intrinsic: camera projection matrix [batch, 3, 3]
-    :return: synthesized target image [batch, height, width, 3]
+    :return: synthesized target image [batch, num_src, height, width, 3]
     """
 
-    height, width, _ = src_image.get_shape().as_list()
-    debug_coords = pixel_meshgrid(height, width, 80)
-    debug_inds = tf.cast(debug_coords[0, 16:-16] + debug_coords[1, 16:-16]*width, tf.int32)
+    batch, num_src, height, width, chann = src_image.get_shape().as_list()
+    # debug_coords = pixel_meshgrid(height, width, 80)
+    # debug_inds = tf.cast(debug_coords[0, 16:-16] + debug_coords[1, 16:-16]*width, tf.int32)
     tgt_pixel_coords = pixel_meshgrid(height, width)
-    print("pixel coordintes", tf.gather(tgt_pixel_coords[:2, :], debug_inds, axis=1))
+    # print("pixel coordintes", tf.gather(tgt_pixel_coords[:2, :], debug_inds, axis=1))
 
     tgt_cam_coords = pixel2cam(tgt_pixel_coords, tgt_depth, intrinsic)
     src_cam_coords = transform_to_source(tgt_cam_coords, pose)
@@ -99,22 +108,29 @@ def pixel_meshgrid(height, width, stride=1):
 def pixel2cam(pixel_coords, depth, intrinsic):
     """
     :param pixel_coords: (u,v,1) [3, height*width]
-    :param depth: [height, width]
-    :param intrinsic: [3, 3]
-    :return: 3D points like (x,y,z,1) in target frame [4, height*width]
+    :param depth: [batch, height, width]
+    :param intrinsic: [batch, 3, 3]
+    :return: 3D points like (x,y,z,1) in target frame [batch, 4, height*width]
     """
-    depth = tf.reshape(depth, (1, -1))
-    cam_coords = tf.matmul(tf.linalg.inv(intrinsic), pixel_coords)
+    batch = depth.get_shape().as_list()[0]
+    depth = tf.tile(tf.reshape(depth, (batch, 1, -1)), (1, 3, 1))
+    # calc sum of products over specified dimension
+    # cam_coords[i, j, k] = inv(intrinsic)[i, j, :] dot pixel_coords[:, k]
+    # [batch, 3, height*width] = [batch, 3, 3] x [3, height*width]
+    cam_coords = tf.tensordot(tf.linalg.inv(intrinsic), pixel_coords, [[2], [0]])
+    # [batch, 3, height*width] = [batch, 3, height*width] * [batch, 3, height*width]
     cam_coords *= depth
-    num_pts = cam_coords.get_shape().as_list()[1]
-    cam_coords = tf.concat([cam_coords, tf.ones((1, num_pts), tf.float64)], axis=0)
+    # num_pts = height * width
+    num_pts = cam_coords.get_shape().as_list()[2]
+    # make homogeneous coordinates
+    cam_coords = tf.concat([cam_coords, tf.ones((batch, 1, num_pts), tf.float32)], axis=1)
     return cam_coords
 
 
 def transform_to_source(tgt_coords, t2s_pose):
     """
-    :param tgt_coords: target frame coordinates like (x,y,z,1) [4, height*width]
-    :param t2s_pose: 4x4 pose matrix to transform points from target frame to source frame
+    :param tgt_coords: target frame coordinates like (x,y,z,1) [batch, 4, height*width]
+    :param t2s_pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
     :return: transformed points in source frame like (x,y,z,1) [4, height*width]
     """
     src_coords = tf.matmul(t2s_pose, tgt_coords)
@@ -189,16 +205,46 @@ def test_reshape_source_images():
     sources = tf.cast(sources, tf.uint8)
     sources = sources.numpy()
     print("reordered source image shape", sources.shape)
-    cv2.imshow("original image", image)
-    cv2.imshow("reordered image1", sources[0, 1])
-    cv2.imshow("reordered image2", sources[0, 2])
-    cv2.waitKey()
+    # cv2.imshow("original image", image)
+    # cv2.imshow("reordered image1", sources[0, 1])
+    # cv2.imshow("reordered image2", sources[0, 2])
+    # cv2.waitKey()
     # assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == sources[0, 1]).all()
     print("reshape_source_images passed")
 
 
+def test_scale_intrinsic():
+    intrinsic = np.array([8, 0, 4, 0, 8, 4, 0, 0, 1], dtype=np.float32).reshape((1, 3, 3))
+    intrinsic = tf.constant(np.tile(intrinsic, (8, 1, 1)))
+    scale = 2
+
+    intrinsic_sc = scale_intrinsic(intrinsic, scale)
+
+    print("scaled intrinsic:", intrinsic_sc[0])
+    assert np.isclose((intrinsic[:, :2, :]/2), intrinsic_sc[:, :2, :]).all()
+    assert np.isclose((intrinsic[:, -1, :]), intrinsic_sc[:, -1, :]).all()
+    print("test_scale_intrinsic passed")
+
+
+def test_pixel2cam():
+    batch, height, width = (8, 4, 4)
+    tgt_pixel_coords = pixel_meshgrid(height, width)
+    tgt_pixel_coords = tf.cast(tgt_pixel_coords, dtype=tf.float32)
+    intrinsic = np.array([4, 0, height/2, 0, 4, width/2, 0, 0, 1], dtype=np.float32).reshape((1, 3, 3))
+    intrinsic = tf.constant(np.tile(intrinsic, (batch, 1, 1)), dtype=tf.float32)
+    depth = tf.ones((batch, height, width), dtype=tf.float32) * 2
+
+    tgt_cam_coords = pixel2cam(tgt_pixel_coords, depth, intrinsic)
+
+    print(tgt_cam_coords[0])
+    assert (tgt_cam_coords.get_shape() == (batch, 4, height*width))
+    print("test_pixel2cam passed")
+
+
 def test():
     test_reshape_source_images()
+    test_scale_intrinsic()
+    test_pixel2cam()
 
 
 if __name__ == "__main__":
