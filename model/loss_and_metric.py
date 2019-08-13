@@ -79,13 +79,13 @@ def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic):
 
     tgt_cam_coords = pixel2cam(tgt_pixel_coords, tgt_depth, intrinsic)
     src_cam_coords = transform_to_source(tgt_cam_coords, pose)
-    debug_cam_coords = tf.transpose(tf.concat((tgt_cam_coords[:3, :], src_cam_coords[:3, :]), axis=0))
-    print("tgt src points compare", tf.gather(debug_cam_coords, debug_inds))
+    # debug_cam_coords = tf.transpose(tf.concat((tgt_cam_coords[:3, :], src_cam_coords[:3, :]), axis=0))
+    # print("tgt src points compare", tf.gather(debug_cam_coords, debug_inds))
 
     src_pixel_coords = cam2pixel(src_cam_coords, intrinsic)
-    print("src_pixel_coords", tf.gather(src_pixel_coords[:2, :], debug_inds, axis=1))
+    # print("src_pixel_coords", tf.gather(src_pixel_coords[:2, :], debug_inds, axis=1))
 
-    tgt_image_synthesized = reconstruct_image_roundup(src_pixel_coords, src_image, tgt_depth)
+    tgt_image_synthesized = reconstruct_bilinear_interp(src_pixel_coords, src_image, tgt_depth)
     print("reconstructed image", tgt_image_synthesized.get_shape(), tgt_image_synthesized.dtype)
     tgt_image_synthesized = tgt_image_synthesized.numpy()
     return tgt_image_synthesized
@@ -131,28 +131,41 @@ def transform_to_source(tgt_coords, t2s_pose):
     """
     :param tgt_coords: target frame coordinates like (x,y,z,1) [batch, 4, height*width]
     :param t2s_pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
-    :return: transformed points in source frame like (x,y,z,1) [4, height*width]
+    :return: transformed points in source frame like (x,y,z,1) [batch, num_src, 4, height*width]
     """
-    src_coords = tf.matmul(t2s_pose, tgt_coords)
+    num_src = t2s_pose.get_shape().as_list()[1]
+    tgt_coords_expand = tf.expand_dims(tgt_coords, 1)
+    tgt_coords_expand = tf.tile(tgt_coords_expand, (1, num_src, 1, 1))
+    # [batch, num_src, 4, height*width] = [batch, num_src, 4, 4] x [batch, num_src, 4, height*width]
+    src_coords = tf.matmul(t2s_pose, tgt_coords_expand)
     return src_coords
 
 
 def cam2pixel(cam_coords, intrinsic):
     """
-    :param cam_coords: 3D points in source frame (x,y,z,1) [4, height*width]
-    :param intrinsic: intrinsic camera matrix [3, 3]
-    :return: projected pixel coodrinates (u,v,1) [3, height*width]
+    :param cam_coords: 3D points in source frame (x,y,z,1) [batch, num_src, 4, height*width]
+    :param intrinsic: intrinsic camera matrix [batch, 3, 3]
+    :return: projected pixel coordinates on source image plane (u,v,1) [batch, num_src, 3, height*width]
     """
-    pixel_coords = tf.matmul(intrinsic, cam_coords[:3, :])
-    pixel_coords = pixel_coords / (pixel_coords[2, :] + 1e-10)
+    num_src = cam_coords.get_shape().as_list()[1]
+    intrinsic_expand = tf.expand_dims(intrinsic, 1)
+    # [batch, num_src, 3, 3]
+    intrinsic_expand = tf.tile(intrinsic_expand, (1, num_src, 1, 1))
+    # [batch, num_src, 3, height*width] = [batch, num_src, 3, 3] x [batch, num_src, 3, height*width]
+    pixel_coords = tf.matmul(intrinsic_expand, cam_coords[:, :, :3, :])
+    # normalize scale
+    pixel_scales = pixel_coords[:, :, 2, :]
+    pixel_scales = tf.tile(pixel_scales, (1, 1, 3, 1))
+    pixel_coords = pixel_coords / (pixel_scales + 1e-10)
     return pixel_coords
 
 
-def reconstruct_image_roundup(pixel_coords, image, depth):
+def reconstruct_bilinear_interp(pixel_coords, image, depth):
     """
-    :param pixel_coords: floating-point pixel coordinates (u,v,1) [3, height*widht]
-    :param image: source image [height, width, 3]
-    :return: reconstructed image [height, width, 3]
+    :param pixel_coords: floating-point pixel coordinates (u,v,1) [batch, num_src, 3, height*width]
+    :param image: source image [batch, num_src, height, width, 3]
+    :param depth: target depth image [batch, height, width, 1]
+    :return: reconstructed image [batch, num_src, height, width, 3]
     """
     # pad 1 pixel around image
     top_pad, bottom_pad, left_pad, right_pad = (1, 1, 1, 1)
@@ -210,7 +223,7 @@ def test_reshape_source_images():
     # cv2.imshow("reordered image2", sources[0, 2])
     # cv2.waitKey()
     # assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == sources[0, 1]).all()
-    print("reshape_source_images passed")
+    print("!!! test_reshape_source_images passed")
 
 
 def test_scale_intrinsic():
@@ -223,7 +236,7 @@ def test_scale_intrinsic():
     print("scaled intrinsic:", intrinsic_sc[0])
     assert np.isclose((intrinsic[:, :2, :]/2), intrinsic_sc[:, :2, :]).all()
     assert np.isclose((intrinsic[:, -1, :]), intrinsic_sc[:, -1, :]).all()
-    print("test_scale_intrinsic passed")
+    print("!!! test_scale_intrinsic passed")
 
 
 def test_pixel2cam():
@@ -238,13 +251,35 @@ def test_pixel2cam():
 
     print(tgt_cam_coords[0])
     assert (tgt_cam_coords.get_shape() == (batch, 4, height*width))
-    print("test_pixel2cam passed")
+    print("!!! test_pixel2cam passed")
+
+
+def test_transform_to_source():
+    batch, num_pts, num_src = (8, 6, 3)
+    coords = np.arange(1, 4*num_pts+1).reshape((num_pts, 4)).T
+    coords[3, :] = 1
+    coords = np.tile(coords, (batch, 1, 1))
+    print(f"coordinates: {coords.shape}\n{coords[2]}")
+
+    poses = np.identity(4)*2
+    poses[3, 3] = 1
+    poses = np.tile(poses, (batch, num_src, 1, 1))
+    print(f"poses: {poses.shape}\n{poses[2, 1]}")
+
+    coords = tf.constant(coords, dtype=tf.float32)
+    poses = tf.constant(poses, dtype=tf.float32)
+    src_coords = transform_to_source(coords, poses)
+    print(f"src coordinates: {src_coords.get_shape()}\n{src_coords[2, 1]}")
+
+    assert np.isclose(coords[2, :3]*2, src_coords[2, 1, :3]).all()
+    print("!!! test_transform_to_source passed")
 
 
 def test():
     test_reshape_source_images()
     test_scale_intrinsic()
     test_pixel2cam()
+    test_transform_to_source()
 
 
 if __name__ == "__main__":
