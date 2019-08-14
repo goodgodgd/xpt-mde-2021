@@ -15,7 +15,7 @@ def synthesize_view_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_po
     :param stacked_image: [batch, height*5, width, 3]
     :param intrinsic: [batch, 3, 3]
     :param pred_depth_ms: predicted depth in multi scale [batch, height*scale, width*scale, 1]
-    :param pred_pose: predicted source pose [batch, 4, 6]
+    :param pred_pose: predicted source pose [batch, num_src, 4, 4]
     :return: reconstructed target view
     """
     width_ori = stacked_image.get_shape().as_list()[2]
@@ -65,6 +65,7 @@ def reshape_source_images(stacked_image, scale):
 
 def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic):
     """
+    src_image, tgt_depth and intrinsic are scaled
     :param src_image: source image nearby the target image [batch, num_src, height, width, 3]
     :param tgt_depth: depth map of the target image in meter scale [batch, height, width, 1]
     :param pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
@@ -87,7 +88,6 @@ def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic):
 
     tgt_image_synthesized = reconstruct_bilinear_interp(src_pixel_coords, src_image, tgt_depth)
     print("reconstructed image", tgt_image_synthesized.get_shape(), tgt_image_synthesized.dtype)
-    tgt_image_synthesized = tgt_image_synthesized.numpy()
     return tgt_image_synthesized
 
 
@@ -108,7 +108,7 @@ def pixel_meshgrid(height, width, stride=1):
 def pixel2cam(pixel_coords, depth, intrinsic):
     """
     :param pixel_coords: (u,v,1) [3, height*width]
-    :param depth: [batch, height, width]
+    :param depth: [batch, height, width, 1]
     :param intrinsic: [batch, 3, 3]
     :return: 3D points like (x,y,z,1) in target frame [batch, 4, height*width]
     """
@@ -184,6 +184,9 @@ def reconstruct_bilinear_interp(pixel_coords, image, depth):
     # sampled_image[batch, num_src, :, height, width, 3] =
     # (im_uf_vf, im_uf_vc, im_uc_vf, im_uc_vc)
     sampled_images = sample_neighbor_images([padded_image, pixel_floorceil])
+
+    sampled_view = sampled_images.numpy().astype(np.uint8)
+    cv2.imshow("sampled", sampled_view[1, 0, 0].reshape((height, width, 3)))
 
     # recon_image[batch, num_src, height*width, 3]
     flat_image = merge_images([sampled_images, weights])
@@ -273,10 +276,10 @@ def sample_neighbor_images(inputs):
 
     # imflat_ufvf: (batch, num_src, height*width, 3)
     # tf.stack([uf, vf]): [batch, num_src, height*width, 2(u,v)]
-    imflat_ufvf = tf.gather_nd(padded_image, tf.stack([uf, vf], axis=-1), batch_dims=2)
-    imflat_ufvc = tf.gather_nd(padded_image, tf.stack([uf, vc], axis=-1), batch_dims=2)
-    imflat_ucvf = tf.gather_nd(padded_image, tf.stack([uc, vf], axis=-1), batch_dims=2)
-    imflat_ucvc = tf.gather_nd(padded_image, tf.stack([uc, vc], axis=-1), batch_dims=2)
+    imflat_ufvf = tf.gather_nd(padded_image, tf.stack([vf, uf], axis=-1), batch_dims=2)
+    imflat_ufvc = tf.gather_nd(padded_image, tf.stack([vc, uf], axis=-1), batch_dims=2)
+    imflat_ucvf = tf.gather_nd(padded_image, tf.stack([vf, uc], axis=-1), batch_dims=2)
+    imflat_ucvc = tf.gather_nd(padded_image, tf.stack([vc, uc], axis=-1), batch_dims=2)
     # sampled_images: (batch, num_src, 4, height*width, 3)
     sampled_images = tf.stack([imflat_ufvf, imflat_ufvc, imflat_ucvf, imflat_ucvc], axis=2)
     return sampled_images
@@ -290,10 +293,11 @@ def merge_images(inputs):
              [batch, num_src, 4, height*width]
     return: merged_flat_image, [batch, num_src, height*width, 3]
     """
+    # expand dimension to channel
     weights = tf.expand_dims(weights, -1)
     weights = tf.tile(weights, (1, 1, 1, 1, 3))
     weighted_image = sampled_images * weights
-    merged_flat_image = tf.reduce_mean(weighted_image, axis=2)
+    merged_flat_image = tf.reduce_sum(weighted_image, axis=2)
     return merged_flat_image
 
 
@@ -433,26 +437,105 @@ def test_pixel_weighting():
 def test_synthesize_batch_view():
     tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"))
     dataset = tfrgen.get_generator()
+    scale = 1
     for x, y in dataset:
         for key, value in x.items():
             print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
 
-        source_images = reshape_source_images(x['image'], 2)
-        print("source shape", source_images.get_shape())
-        batch, num_src, height, width, _ = source_images.get_shape().as_list()
+        target_view = x['image'][:, opts.IM_HEIGHT*4:opts.IM_HEIGHT*5, :, :]
+        target_view = target_view.numpy().astype(np.uint8)
+
+        source_image_sc = reshape_source_images(x['image'], scale)
+        print("source shape", source_image_sc.get_shape())
+        source_view = source_image_sc.numpy().astype(np.uint8)
+
+        batch, num_src, height, width, _ = source_image_sc.get_shape().as_list()
         depth_sc = tf.image.resize(x['depth_gt'], size=(height, width), method="nearest")
         print("depth shape", x['depth_gt'].get_shape(), depth_sc.get_shape())
-        recon_images = synthesize_batch_view(source_images, depth_sc, x['pose_gt'], x['intrinsic'])
+        depth_view = depth_sc.numpy()
+        cv2.imshow("depth", depth_view[1])
+
+        intrinsic_sc = scale_intrinsic(x['intrinsic'], scale)
+        print(f"original intrinsic \n{x['intrinsic'][1]} \nscaled intrinsic \n{intrinsic_sc[1]}")
+
+        pose = x['pose_gt']
+        pose_view = pose.numpy()
+        print(f"pose shape and data: {pose_view.shape} \n{pose_view[1, 0]}")
+
+        recon_images = synthesize_batch_view(source_image_sc, depth_sc, x['pose_gt'], intrinsic_sc)
+
+        print("reconstructed image shape:", recon_images.get_shape(), recon_images.dtype)
+        recon_view = recon_images.numpy().astype(np.uint8)
+
+        result = np.concatenate([target_view[1], source_view[1, 0], recon_view[1, 0]], axis=0)
+        cv2.imshow("target_source_recon", result)
+        cv2.waitKey()
+
+
+def load_data_batch():
+    srcinds = [1430, 1430, 1450, 1450]
+    tgtind = 1440
+    batch = 8
+    src_images = []
+    for si in srcinds:
+        image = cv2.imread(f"samples/color/{si:05d}.jpg")
+        src_images.append(image)
+    src_images = np.stack(src_images, axis=0)
+    src_images = np.expand_dims(src_images, 0)
+    src_images = np.tile(src_images, (batch, 1, 1, 1, 1))
+    print("src_images", src_images.shape)
+    cv2.imshow("src_image", src_images[0, 0])
+    src_images = tf.constant(src_images, tf.float32)
+
+    tgt_image = cv2.imread(f"samples/color/{tgtind:05d}.jpg")
+    cv2.imshow("tgt_image", tgt_image)
+
+    tgt_pose = np.loadtxt(f"samples/pose/pose_{tgtind:05d}.txt")
+    src_poses = []
+    for si in srcinds:
+        src_pose = np.loadtxt(f"samples/pose/pose_{si:05d}.txt")
+        t2s_pose = np.matmul(np.linalg.inv(src_pose), tgt_pose)
+        src_poses.append(t2s_pose)
+    src_poses = np.stack(src_poses, axis=0)
+    src_poses = np.expand_dims(src_poses, 0)
+    src_poses = np.tile(src_poses, (batch, 1, 1, 1))
+    print("src_poses", src_poses.shape)
+    src_poses = tf.constant(src_poses, tf.float32)
+
+    tgt_depth = cv2.imread(f"samples/depth/{tgtind:05d}.png", cv2.IMREAD_ANYDEPTH)
+    tgt_depth = tgt_depth/1000.
+    height, width = tgt_depth.shape
+    tgt_depth = tgt_depth.reshape((1, height, width, 1))
+    tgt_depth = np.tile(tgt_depth, (batch, 1, 1, 1))
+    print("target depth", tgt_depth.shape)
+    tgt_depth = tf.constant(tgt_depth, tf.float32)
+
+    intrinsic = np.loadtxt("samples/intrinsic.txt")
+    intrinsic = np.expand_dims(intrinsic, 0)
+    intrinsic = np.tile(intrinsic, (batch, 1, 1))
+    intrinsic = tf.constant(intrinsic, tf.float32)
+
+    return src_images, src_poses, tgt_depth, intrinsic
+
+
+def test_synthesize_batch_view_aug_icl():
+    src_images, src_poses, tgt_depth, intrinsic = load_data_batch()
+    recon_images = synthesize_batch_view(src_images, tgt_depth, src_poses, intrinsic)
+    recon_view = recon_images.numpy()
+    recon_img = recon_view[1, 1]
+    cv2.imshow("reconstructed", recon_img.astype(np.uint8))
+    cv2.waitKey()
 
 
 def test():
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    test_synthesize_batch_view()
     test_reshape_source_images()
     test_scale_intrinsic()
     test_pixel2cam()
     test_transform_to_source()
     test_pixel_weighting()
+    test_synthesize_batch_view()
+    # test_synthesize_batch_view_aug_icl()
 
 
 if __name__ == "__main__":

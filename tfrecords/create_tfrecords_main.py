@@ -13,17 +13,11 @@ def convert_to_tfrecords():
     src_paths = [path for path in src_paths if op.isdir(path)]
     print("[convert_to_tfrecords] top paths:", src_paths)
 
-    srcpath = "/media/ian/IanStudyPP/paperdata/vode_data/srcdata/kitti_raw_test"
-    tfrpath = op.join(opts.DATAPATH_TFR, op.basename(srcpath))
-    os.makedirs(tfrpath, exist_ok=True)
-    tfrmaker = TfrecordMaker(srcpath, tfrpath)
-    tfrmaker.make()
-
-    # for srcpath in src_paths:
-    #     tfrpath = op.join(opts.DATAPATH_TFR, op.basename(srcpath))
-    #     os.makedirs(tfrpath, exist_ok=True)
-    #     tfrmaker = TfrecordMaker(srcpath, tfrpath)
-    #     tfrmaker.make()
+    for srcpath in src_paths:
+        tfrpath = op.join(opts.DATAPATH_TFR, op.basename(srcpath))
+        os.makedirs(tfrpath, exist_ok=True)
+        tfrmaker = TfrecordMaker(srcpath, tfrpath)
+        tfrmaker.make()
 
 
 if __name__ == "__main__":

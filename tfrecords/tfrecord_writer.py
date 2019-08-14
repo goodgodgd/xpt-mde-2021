@@ -45,7 +45,7 @@ class TfrecordMaker:
         image_files, depth_files, pose_files, intrin_files = self.list_sequence_files()
 
         if depth_files:
-            depth_feeder = df.NpyFeeder(depth_files, txt_reader)
+            depth_feeder = df.NpyFeeder(depth_files, depth_reader)
         else:
             depth_feeder = df.ConstInt64Feeder(0, len(image_files))
 
@@ -151,6 +151,12 @@ def npy_reader(filename):
 
 def txt_reader(filename):
     data = np.loadtxt(filename)
+    return data.astype(np.float32)
+
+
+def depth_reader(filename):
+    data = np.loadtxt(filename)
+    data = np.expand_dims(data, -1)
     return data.astype(np.float32)
 
 
