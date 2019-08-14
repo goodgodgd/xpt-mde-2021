@@ -71,27 +71,6 @@ class TfrecordGenerator:
         y = tf.constant(0)
         return x, y
 
-    # def split_target_and_source(self, image_snippet, pose_snippet):
-    #     num_images = opts.SNIPPET_LEN
-    #     half_num = int(num_images // 2)
-    #     images = []
-    #     # slice into list of individual images
-    #     for i in range(num_images):
-    #         image = tf.slice(image_snippet, [i*opts.IM_HEIGHT, 0, 0], [opts.IM_HEIGHT, -1, -1])
-    #         images.append(image)
-    #     # split into target and sources
-    #     target_image = images.pop(half_num)
-    #     source_images = images
-    #     source_images = tf.concat(source_images, axis=2)
-    #
-    #     pose_bef = pose_snippet[:half_num]
-    #     pose_aft = pose_snippet[half_num+1:num_images]
-    #     source_poses = tf.concat([pose_bef, pose_aft], axis=0)
-    #     source_poses = quaternion.from_float_array(source_poses)
-    #     source_poses = quaternion.as_rotation_vector(source_poses)
-    #
-    #     return target_image, source_images, source_poses
-
     def dataset_process(self, dataset):
         if self.shuffle:
             dataset.shuffle(buffer_size=1000)

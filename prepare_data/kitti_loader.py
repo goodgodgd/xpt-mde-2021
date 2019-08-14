@@ -85,8 +85,9 @@ class KittiDataLoader:
         return local_poses
 
     def load_frame_depth(self, frame_idx, drive_path, raw_img_shape):
-        depth_map = self.kitti_util.generate_depth_map(self.drive_loader, frame_idx,
-                                                       drive_path, raw_img_shape)
+        dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
+        depth_map = self.kitti_util.load_depth_map(self.drive_loader, frame_idx,
+                                                   drive_path, raw_img_shape, dst_shape)
         return depth_map
 
     def load_intrinsic(self, raw_img_shape):

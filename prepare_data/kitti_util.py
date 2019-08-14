@@ -47,7 +47,7 @@ class KittiUtil:
         pose = np.concatenate([tmat[:3, 3].T, quaternion.as_float_array(quat)])
         return pose
 
-    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+    def load_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape, target_shape):
         raise NotImplementedError()
 
 
@@ -83,7 +83,7 @@ class KittiRawUtil(KittiUtil):
         tmat = drive_loader.oxts[index].T_w_imu
         return self.matrix_to_quaternion_pose(tmat)
 
-    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+    def load_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape, target_shape):
         raise NotImplementedError()
 
 
@@ -112,7 +112,7 @@ class KittiRawTrainUtil(KittiRawUtil):
         print("[frame_indices] frame ids:", frame_inds[0:-1:5])
         return frame_inds
 
-    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+    def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
         # depth is NOT required for training
         return None
 
@@ -144,10 +144,10 @@ class KittiRawTestUtil(KittiRawUtil):
             print("test frames:", frame_inds)
             return frame_inds
 
-    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+    def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
         calib_dir = op.dirname(drive_path)
         velo_data = drive_loader.get_velo(frame_idx)
-        depth_map = kdg.generate_depth_map(velo_data, calib_dir, raw_img_shape)
+        depth_map = kdg.generate_depth_map(velo_data, calib_dir, original_shape, target_shape)
         # print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
         return depth_map
 
@@ -196,7 +196,7 @@ class KittiOdomUtil(KittiUtil):
         tmat = self.poses[index].reshape((3, 4))
         return self.matrix_to_quaternion_pose(tmat)
 
-    def generate_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape):
+    def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
         # no depth available for kitti_odom
         return None
 

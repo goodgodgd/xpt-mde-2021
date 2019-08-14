@@ -90,7 +90,7 @@ def sub2ind(matrixSize, rowSub, colSub):
     return rowSub * (n - 1) + colSub - 1
 
 
-def generate_depth_map(velo_data, calib_dir, im_shape, cam='02', interp=False):
+def generate_depth_map(velo_data, calib_dir, orig_shape, target_shape, cam='02', interp=False):
     # load calibration files
     cam2cam = read_calib_file(os.path.join(calib_dir, 'calib_cam_to_cam.txt'))
     velo2cam = read_calib_file(os.path.join(calib_dir, 'calib_velo_to_cam.txt'))
@@ -107,20 +107,31 @@ def generate_depth_map(velo_data, calib_dir, im_shape, cam='02', interp=False):
     # each row of the velodyne data is forward, left, up, reflectance
     velo_data = velo_data[velo_data[:, 0] >= 0, :]
 
+    """ CAUTION!
+    orig_shape, target_shape: (height, width) 
+    velo_pts_im[i, :] = (x, y)
+    """
+    orig_height, orig_width = orig_shape
+    targ_height, targ_width = target_shape
+
     # project the points to the camera
     velo_pts_im = np.dot(P_velo2im, velo_data.T).T
     velo_pts_im[:, :2] = velo_pts_im[:, :2] / velo_pts_im[:, 2][..., np.newaxis]
+
+    # rescale pixel points to target size
+    velo_pts_im[:, 0] = velo_pts_im[:, 0] / orig_width * targ_width
+    velo_pts_im[:, 1] = velo_pts_im[:, 1] / orig_height * targ_height
 
     # check if in bounds
     # use minus 1 to get the exact same value as KITTI matlab code
     velo_pts_im[:, 0] = np.round(velo_pts_im[:, 0]) - 1
     velo_pts_im[:, 1] = np.round(velo_pts_im[:, 1]) - 1
     val_inds = (velo_pts_im[:, 0] >= 0) & (velo_pts_im[:, 1] >= 0)
-    val_inds = val_inds & (velo_pts_im[:, 0] < im_shape[1]) & (velo_pts_im[:, 1] < im_shape[0])
+    val_inds = val_inds & (velo_pts_im[:, 0] < targ_width) & (velo_pts_im[:, 1] < targ_height)
     velo_pts_im = velo_pts_im[val_inds, :]
 
     # project to image
-    depth = np.zeros((im_shape))
+    depth = np.zeros(target_shape)
     depth[velo_pts_im[:, 1].astype(np.int), velo_pts_im[:, 0].astype(np.int)] = velo_pts_im[:, 2]
 
     # find the duplicate points and choose the closest depth
@@ -135,7 +146,7 @@ def generate_depth_map(velo_data, calib_dir, im_shape, cam='02', interp=False):
 
     if interp:
         # interpolate the depth map to fill in holes
-        depth_interp = lin_interp(im_shape, velo_pts_im)
+        depth_interp = lin_interp(target_shape, velo_pts_im)
         return depth, depth_interp
     else:
         return depth

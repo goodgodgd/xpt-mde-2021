@@ -16,7 +16,7 @@ class TfrecordMaker:
         self.srcpath = srcpath
         self.dstpath = dstpath
         # check if there is depth data available
-        depths = glob(srcpath + "/*/depth/*.npy")
+        depths = glob(srcpath + "/*/depth/*.txt")
         self.depth_avail = True if depths else False
 
     def make(self):
@@ -45,7 +45,7 @@ class TfrecordMaker:
         image_files, depth_files, pose_files, intrin_files = self.list_sequence_files()
 
         if depth_files:
-            depth_feeder = df.NpyFeeder(depth_files, npy_reader)
+            depth_feeder = df.NpyFeeder(depth_files, txt_reader)
         else:
             depth_feeder = df.ConstInt64Feeder(0, len(image_files))
 
@@ -60,7 +60,7 @@ class TfrecordMaker:
         image_files = glob(op.join(self.srcpath, "*/*.png"))
         if self.depth_avail:
             depth_files = [op.join(op.dirname(file_path), "depth",
-                                   op.basename(file_path).replace(".png", ".npy"))
+                                   op.basename(file_path).replace(".png", ".txt"))
                            for file_path in image_files]
         else:
             depth_files = []
