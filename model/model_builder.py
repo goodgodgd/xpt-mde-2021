@@ -6,59 +6,69 @@ from tensorflow.keras import layers
 
 import settings
 from config import opts
-from model.loss_and_metric import synthesize_view_multi_scale
+from model.synthesize_batch import synthesize_batch_multi_scale
+import model.loss_and_metric as lm
 
 
-def create_models(image_shape, intrin_shape, batch_size):
-    model_pred = create_pred_model(image_shape, intrin_shape, batch_size)
-    # model_train = create_train_model(model_pred)
-    # return model_pred, model_train
-
-
-def create_pred_model(image_shape, intrin_shape, batch_size):
+def create_models(image_shape, intrin_shape):
     # prepare input tensors
-    stacked_image = layers.Input(shape=image_shape, batch_size=batch_size, name="target")
-    intrinsic = layers.Input(shape=intrin_shape, batch_size=batch_size, name="intrinsic")
-    model_input = {"image": stacked_image, "intrinsic": intrinsic}
+    stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="target")
+    target_image = layers.Lambda(lambda image: extract_target(image))(stacked_image)
+    intrinsic = layers.Input(shape=intrin_shape, batch_size=opts.BATCH_SIZE, name="intrinsic")
 
-    # build layers of posenet and depthnet and make model for prediction
-    pred_depths_ms = build_depth_estim_layers(stacked_image)
+    model_pred = create_pred_model(stacked_image, target_image)
+    model_train = create_train_model(model_pred, target_image, intrinsic)
+    return model_pred, model_train
+
+
+def extract_target(stacked_image):
+    batch, imheight, imwidth, _ = stacked_image.get_shape().as_list()
+    imheight = int(imheight // opts.SNIPPET_LEN)
+    target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
+                            (-1, imheight, -1, -1))
+    print("extracted target image shape=", target_image.get_shape())
+    return target_image
+
+
+def create_pred_model(stacked_image, target_image):
+    print(f"pred model input shapes: stacked_image {stacked_image.get_shape()}, "
+          f"target_image {target_image.get_shape()}")
+    pred_depths_ms = build_depth_estim_layers(target_image)
     pred_poses = build_visual_odom_layers(stacked_image)
-    predictions = {**pred_depths_ms, "pose": pred_poses}
+
+    model_input = {"image": stacked_image}
+    predictions = {"depth_ms": pred_depths_ms, "pose": pred_poses}
     model_pred = tf.keras.Model(model_input, predictions)
     model_pred.compile(optimizer="adam", loss="mean_absolute_error")
     return model_pred
 
 
-def create_train_model(model_pred):
+def create_train_model(model_pred, target_image, intrinsic):
     # calculate loss and make model for training
-    model_inputs = model_pred.input
-    stacked_image = model_inputs["image"]
-    intrinsic = model_inputs["intrinsic"]
-    predictions = model_pred.output
-    depth_ms = [value for key, value in predictions.items() if key.startsWith("depth")]
-    pose = predictions["pose"]
-    synthesized_targets_ms = synthesize_view_multi_scale(stacked_image, intrinsic, depth_ms, pose)
+    stacked_image = model_pred.input["image"]
+    pred_depth_ms = model_pred.output["depth_ms"]
+    pred_pose = model_pred.output["pose"]
+
+    synthesized_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic,
+                                                         pred_depth_ms, pred_pose)
+
     # loss = synthesized_targets_ms
-    # # loss += calc_photometric_loss(synthesized_targets_ms, target_input)
-    # model_train = tf.keras.Model(model_input, loss)
-    # model_train.compile(optimizer="adam", loss="mean_absolute_error")
-    # return model_train
-    pass
+    loss = tf.constant(0, dtype=tf.float32)
+    loss += lm.photometric_loss_multi_scale(synthesized_target_ms, target_image)
+
+    inputs = {"image": stacked_image, "intrinsic": intrinsic}
+    outputs = {"loss": loss}
+    model_train = tf.keras.Model(inputs, outputs)
+    model_train.compile(optimizer="sgd", loss="mean_absolute_error")
+    return model_train
 
 
 # ==================== build DepthNet layers ====================
 DISP_SCALING_VGG = 10
 
 
-def build_depth_estim_layers(stacked_image):
-    batch, imheight, imwidth, imchannel = stacked_image.get_shape().as_list()
-    imheight = int(imheight // opts.SNIPPET_LEN)
-    target_image = layers.Lambda(lambda image: tf.slice(image,
-                                 (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
-                                 (-1, imheight, -1, -1)),
-                                 name="extract_target")(stacked_image)
-    print("[build_depth_estim_layers] target image shape=", target_image.get_shape())
+def build_depth_estim_layers(target_image):
+    batch, imheight, imwidth, imchannel = target_image.get_shape().as_list()
 
     conv1 = convolution(target_image, 32, 7, strides=1, name="dp_conv1a")
     conv1 = convolution(conv1, 32, 7, strides=2, name="dp_conv1b")
@@ -85,9 +95,9 @@ def build_depth_estim_layers(stacked_image):
     upconv2 = upconv_with_skip_connection(upconv3, conv1, 32, "dp_up2", pred3_up)
     pred2, pred2_up = get_disp_vgg(upconv2, imheight, imwidth, "dp_pred2")
     upconv1 = upconv_with_skip_connection(upconv2, pred2_up, 16, "dp_up1")
-    pred1 = get_disp_vgg(upconv1, imheight, imwidth, "dp_pred1")
+    pred1, pred1_up = get_disp_vgg(upconv1, imheight, imwidth, "dp_pred1")
 
-    return {"depth1": pred1, "depth2": pred2, "depth3": pred3, "depth4": pred4}
+    return [pred1, pred2, pred3, pred4]
 
 
 def convolution(x, filters, kernel_size, strides, name):
@@ -184,20 +194,21 @@ def test_restack_on_channels():
     # cv2.imshow("restack image2", channel_stack_image[0, :, :, 3:6])
     # cv2.waitKey()
     assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == channel_stack_image[0, :, :, 3:6]).all()
-    print("test_restack_on_channels passed")
+    print("!!! test_restack_on_channels passed")
 
 
-def test_create_pred_model():
+def test_create_models():
     image_shape = (opts.IM_HEIGHT*opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
     intrin_shape = (3, 3)
-    model_pred = create_pred_model(image_shape, intrin_shape, batch_size=8)
+    model_pred, model_train = create_models(image_shape, intrin_shape)
     model_pred.summary()
     tf.keras.utils.plot_model(model_pred, to_file="model.png", show_shapes=True, show_layer_names=True)
+    print("!!! test_create_models passed")
 
 
 # ==================== tests ====================
 def test():
-    test_create_pred_model()
+    test_create_models()
     test_restack_on_channels()
 
 

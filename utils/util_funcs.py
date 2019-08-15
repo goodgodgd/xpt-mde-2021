@@ -46,10 +46,10 @@ def pose_mat2quat(pose):
 def pose_rvec2matr_batch(poses):
     """
     :param poses: poses with twist coordinates, (tx, ty, tz, u1, u2, u3) [batch, N, 6]
-    :return: poses in transformation matrix [batch, N, 4, 4]
+    :return: poses in transformation matrix [batch, num_src, 4, 4]
     """
     poses = tf.expand_dims(poses, -1)
-    batch, snippet, _, _ = poses.get_shape().as_list()
+    batch, num_src, _, _ = poses.get_shape().as_list()
     trans = poses[:, :, :3, :]
     uvec = poses[:, :, 3:, :]
     unorm = tf.expand_dims(tf.linalg.norm(uvec, axis=2), axis=2)
@@ -57,16 +57,17 @@ def pose_rvec2matr_batch(poses):
     w1 = uvec[:, :, 0:1, :]
     w2 = uvec[:, :, 1:2, :]
     w3 = uvec[:, :, 2:3, :]
-    z = tf.zeros(shape=(batch, snippet, 1, 1))
+    z = tf.zeros(shape=(batch, num_src, 1, 1))
     w_hat = tf.concat([z, -w3, w2, w3, z, -w1, -w2, w1, z], axis=2)
-    w_hat = tf.reshape(w_hat, shape=(batch, snippet, 3, 3))
+    w_hat = tf.reshape(w_hat, shape=(batch, num_src, 3, 3))
     identity = tf.expand_dims(tf.expand_dims(tf.eye(3), axis=0), axis=0)
-    identity = tf.tile(identity, (batch, snippet, 1, 1))
+    identity = tf.tile(identity, (batch, num_src, 1, 1))
     rotmat = identity + w_hat*tf.sin(unorm) + tf.matmul(w_hat, w_hat)*(1 - tf.cos(unorm))
 
     tmat = tf.concat([rotmat, trans], axis=3)
-    last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, snippet, 1, 1))
+    last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, num_src, 1, 1))
     tmat = tf.concat([tmat, last_row], axis=2)
+    tmat = tf.reshape(tmat, (batch, num_src, 4, 4))
     return tmat
 
 
