@@ -23,6 +23,8 @@ def print_progress(count, is_total: bool = False):
 def pose_quat2mat(pose):
     t = np.expand_dims(pose[:3], axis=1)
     q = pose[3:]
+    norm = np.linalg.norm(q)
+    q = q / norm
     q = quaternion.from_float_array(q)
     # transpose: this rotation matrix is for "frame" rotation, not point rotation
     rot = quaternion.as_rotation_matrix(q).T
@@ -36,6 +38,7 @@ def pose_mat2quat(pose):
     rot_mat = pose[:3, :3].T
     quat = quaternion.from_rotation_matrix(rot_mat)
     quat = quaternion.as_float_array(quat)
+    quat = quat / np.linalg.norm(quat)
     pose_quat = np.concatenate([trans, quat], axis=0)
     return pose_quat
 

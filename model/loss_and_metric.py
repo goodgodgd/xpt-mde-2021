@@ -205,7 +205,7 @@ def zero_pad_image(image):
     top_pad, bottom_pad, left_pad, right_pad = (1, 1, 1, 1)
     paddings = tf.constant([[0, 0], [0, 0], [top_pad, bottom_pad], [left_pad, right_pad], [0, 0]])
     padded_image = tf.pad(image, paddings, "CONSTANT")
-    print("zero pad\n", padded_image[0, 0, 0:5, 0:5, 0])
+    # print("zero pad\n", padded_image[0, 0, 0:5, 0:5, 0])
     return padded_image
 
 

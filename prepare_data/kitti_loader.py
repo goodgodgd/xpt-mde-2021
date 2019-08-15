@@ -65,19 +65,21 @@ class KittiDataLoader:
         halflen = snippet_len//2
         poses = []
         for ind in range(frame_idx-halflen, frame_idx+halflen+1):
-            pose = self.kitti_util.get_quat_pose(self.drive_loader, ind)
+            pose = self.kitti_util.get_quat_pose(self.drive_loader, ind, self.drive_path)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
+        # print("poses bef\n", poses)
         poses = self.to_local_pose(poses, halflen)
+        # print("poses local\n", poses)
         return poses
 
-    def to_local_pose(self, poses, origin_index):
+    def to_local_pose(self, poses, target_index):
         local_poses = []
-        origin_pose_mat = uf.pose_quat2mat(poses[origin_index])
+        target_pose_mat = uf.pose_quat2mat(poses[target_index])
         for pose in poses:
             cur_pose_mat = uf.pose_quat2mat(pose)
-            local_pose_mat = np.matmul(np.linalg.inv(cur_pose_mat), origin_pose_mat)
+            local_pose_mat = np.matmul(np.linalg.inv(target_pose_mat), cur_pose_mat)
             local_pose_quat = uf.pose_mat2quat(local_pose_mat)
             local_poses.append(local_pose_quat)
 
