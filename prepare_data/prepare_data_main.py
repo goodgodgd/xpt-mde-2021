@@ -10,12 +10,11 @@ from utils.util_funcs import print_progress
 
 
 def prepare_input_data():
-    dataset = "kitti_raw"
-    split = "test"
-    loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
-    prepare_and_save_snippets(loader, dataset, split)
-    return
-
+    # dataset = "kitti_raw"
+    # split = "train"
+    # loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
+    # prepare_and_save_snippets(loader, dataset, split)
+    # return
     for dataset in ["kitti_raw", "kitti_odom"]:
         for split in ["train", "test"]:
             loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)

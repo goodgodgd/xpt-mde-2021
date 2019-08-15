@@ -75,16 +75,16 @@ class KittiDataLoader:
         return poses
 
     def to_local_pose(self, poses, target_index):
-        local_poses = []
+        tgt_to_src_poses = []
         target_pose_mat = uf.pose_quat2mat(poses[target_index])
         for pose in poses:
             cur_pose_mat = uf.pose_quat2mat(pose)
-            local_pose_mat = np.matmul(np.linalg.inv(target_pose_mat), cur_pose_mat)
-            local_pose_quat = uf.pose_mat2quat(local_pose_mat)
-            local_poses.append(local_pose_quat)
+            tgt_to_src_mat = np.matmul(np.linalg.inv(cur_pose_mat), target_pose_mat)
+            tgt_to_src_qpose = uf.pose_mat2quat(tgt_to_src_mat)
+            tgt_to_src_poses.append(tgt_to_src_qpose)
 
-        local_poses = np.stack(local_poses, axis=0)
-        return local_poses
+        tgt_to_src_poses = np.stack(tgt_to_src_poses, axis=0)
+        return tgt_to_src_poses
 
     def load_frame_depth(self, frame_idx, drive_path, raw_img_shape):
         dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)

@@ -77,39 +77,9 @@ class KittiRawUtil(KittiUtil):
     def get_quat_pose(self, drive_loader, index, drive_path):
         T_cam2_imu = drive_loader.calib.T_cam2_imu
         T_imu_cam2 = np.linalg.inv(T_cam2_imu)
-
         T_w_imu = drive_loader.oxts[index].T_w_imu
         T_W_cam2 = np.matmul(T_w_imu, T_imu_cam2)
-
-        src_T_w_imu = drive_loader.oxts[index-2].T_w_imu
-        src_T_W_cam2 = np.matmul(src_T_w_imu, T_imu_cam2)
-        print(f"=== src to tgt IMU {index}\n", np.linalg.inv(T_w_imu) @ src_T_w_imu)
-        print(f"src to tgt CAM2 {index}\n", np.linalg.inv(T_W_cam2) @ src_T_W_cam2)
-        print("cam2 to imu\n", T_imu_cam2)
-
-        pose_w_cam2 = uf.pose_mat2quat(T_W_cam2)
-        src_pose_w_cam2 = uf.pose_mat2quat(src_T_W_cam2)
-        T_pose = uf.pose_quat2mat(pose_w_cam2)
-        src_T_pose = uf.pose_quat2mat(src_pose_w_cam2)
-        print("src to tgt CAM reconstructed", np.linalg.inv(T_pose) @ src_T_pose)
-
-        # calib_velo_to_cam_file = op.join(op.dirname(drive_path), "calib_velo_to_cam.txt")
-        # calib_imu_to_velo_file = op.join(op.dirname(drive_path), "calib_imu_to_velo.txt")
-        # T_cam_to_velo = self.read_transformation(calib_velo_to_cam_file, inv=True)
-        # T_velo_to_imu = self.read_transformation(calib_imu_to_velo_file, inv=True)
-        # T_cam_to_world = T_imu_to_world @ T_velo_to_imu @ T_cam_to_velo
-        # print(f"=== T_cam_to_velo \n{T_cam_to_velo} \nT_velo_to_imu \n{T_velo_to_imu}")
-        # print(f"T_imu_to_world \n{T_imu_to_world} \nT_cam_to_world \n{T_cam_to_world}")
-
         return uf.pose_mat2quat(T_W_cam2)
-
-    def read_transformation(self, calib_file, inv=False):
-        calib = kdg.read_calib_file(calib_file)
-        T = np.concatenate([calib['R'].reshape((3, 3)), calib['T'].reshape((3, 1))], axis=1)
-        T = np.concatenate([T, np.array([[0, 0, 0, 1]], dtype=np.float32)], axis=0)
-        if inv:
-            T = np.linalg.inv(T)
-        return T
 
     def load_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape, target_shape):
         raise NotImplementedError()
