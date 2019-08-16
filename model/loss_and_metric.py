@@ -47,7 +47,7 @@ def smootheness_loss_multi_scale(disp_ms, image_ms, height_orig):
     """
     losses = []
     for i, (disp, image) in enumerate(zip(disp_ms, image_ms)):
-        scale = height_orig // image_ms.get_shape().as_list()
+        scale = height_orig // image.get_shape().as_list()[1]
         loss = layers.Lambda(lambda inputs: smootheness_loss(inputs[0], inputs[1]) / scale,
                              name=f"smooth_loss_{i}")([disp, image])
         losses.append(loss)
