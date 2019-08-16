@@ -18,6 +18,7 @@ class PriorOptions:
         self.IM_WIDTH = 416
         self.IM_HEIGHT = 128
         self.BATCH_SIZE = 8
+        self.EPOCHS = 100
 
 
 class VodeOptions(PriorOptions):

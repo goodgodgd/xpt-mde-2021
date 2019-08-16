@@ -49,10 +49,17 @@ def train(train_dirname, val_dirname, model_dir=None):
     dataset_val = tfrgen_val.get_generator()
     callbacks = get_callbacks(model_dir)
     steps_per_epoch = count_steps(train_dirname)
-    val_steps = np.clip(count_steps(train_dirname), 0, 20)
+    val_steps = np.clip(count_steps(train_dirname)/2, 0, 50).astype(np.int32)
 
-    history = model_train.fit(dataset_train, epochs=200, callbacks=callbacks,
-                              validation_data=dataset_val, steps_per_epoch=steps_per_epoch)
+    history = model_train.fit(dataset_train, epochs=opts.EPOCHS, callbacks=callbacks,
+                              validation_data=dataset_val, steps_per_epoch=steps_per_epoch,
+                              validation_steps=val_steps, validation_freq=2)
+
+    histfile = op.join(opts.DATAPATH_LOG, model_dir, "history.txt")
+    histdata = np.array([history.history["loss"], history.history["acc"],
+                         history.history["val_loss"], history.history["val_acc"]])
+    np.savetxt(histfile, histdata, fmt="%.3f")
+    print(f"[history]", history)
 
 
 def get_callbacks(model_dir):

@@ -84,8 +84,8 @@ def smootheness_loss(disp, image):
     smoothness_y = disp_gradients_y * weights_y
 
     # return [batch]
-    smoothness = 0.5*tf.reduce_mean(tf.abs(smoothness_x), axis=[1, 2, 3]) + \
-                 0.5*tf.reduce_mean(tf.abs(smoothness_y), axis=[1, 2, 3])
+    smoothness = 0.5 * tf.reduce_mean(tf.abs(smoothness_x), axis=[1, 2, 3]) + \
+                 0.5 * tf.reduce_mean(tf.abs(smoothness_y), axis=[1, 2, 3])
     return smoothness
 
 
