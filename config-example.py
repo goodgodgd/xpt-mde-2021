@@ -26,6 +26,7 @@ class VodeOptions(PriorOptions):
         self.DATAPATH_SRC = op.join(self.DATAPATH, "srcdata")
         self.DATAPATH_TFR = op.join(self.DATAPATH, "tfrecords")
         self.DATAPATH_CKP = op.join(self.DATAPATH, "checkpts")
+        self.DATAPATH_LOG = op.join(self.DATAPATH, "log")
 
     def get_dataset_path(self, dataset=None):
         if dataset is None:
