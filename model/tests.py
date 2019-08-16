@@ -2,9 +2,11 @@ import os
 import tensorflow as tf
 import numpy as np
 import quaternion
+import datetime
+import time
 
 import settings
-import model.synthesize_single_view as sv
+import model.synthesize_single as sv
 
 
 def test_linspace():
@@ -84,6 +86,13 @@ def test_rotation_vector():
     print("test_rotation_vector passed")
 
 
+def test_time():
+    nowtime = datetime.datetime.now()
+    print("nowtime", nowtime)
+    print("formatted time", nowtime.strftime("%m%d_%H%M%S"))
+    print("asctime", time.asctime())
+
+
 def test():
     np.set_printoptions(precision=3, suppress=True)
     test_linspace()
@@ -93,6 +102,7 @@ def test():
     test_pad()
     test_gather_nd()
     test_rotation_vector()
+    test_time()
 
 
 if __name__ == "__main__":

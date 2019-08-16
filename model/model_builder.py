@@ -74,7 +74,8 @@ def create_train_model(model_pred, target_image, intrinsic, depth_gt):
     synth_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic,
                                                    pred_depth_ms, pred_pose)
     photo_loss = lm.photometric_loss_multi_scale(synth_target_ms, target_ms)
-    smooth_loss = lm.smootheness_loss_multi_scale(pred_disp_ms, target_ms)
+    height_orig = target_image.get_shape().as_list()[2]
+    smooth_loss = lm.smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
     loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="loss")\
                         ([photo_loss, smooth_loss])
 
@@ -246,7 +247,6 @@ def test_create_models():
     print("!!! test_create_models passed")
 
 
-# ==================== tests ====================
 def test():
     test_create_models()
     test_restack_on_channels()

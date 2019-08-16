@@ -69,7 +69,7 @@ class TfrecordGenerator:
         x = {"image": decoded["image"], "pose_gt": decoded["pose"],
              "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
         # dummy outputs for training
-        y = {"loss": tf.constant(0), "metric": tf.constant(0)}
+        y = {"loss": tf.constant(0, dtype=tf.float32), "metric": tf.constant(0, dtype=tf.float32)}
         return x, y
 
     def dataset_process(self, dataset):

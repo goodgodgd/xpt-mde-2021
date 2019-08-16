@@ -35,11 +35,11 @@ def photometric_loss(synt_target, orig_target):
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
     # photo_error: [batch, num_src, height/scale, width/scale, 3]
-    photo_loss = tf.reduce_mean(photo_error, axis=[1, 2, 3, 4])
+    photo_loss = tf.reduce_sum(tf.reduce_mean(photo_error, axis=[2, 3, 4]), axis=1)
     return photo_loss
 
 
-def smootheness_loss_multi_scale(disp_ms, image_ms):
+def smootheness_loss_multi_scale(disp_ms, image_ms, height_orig):
     """
     :param disp_ms: multi scale disparity map, list of [batch, height/scale, width/scale, 1]
     :param image_ms: multi scale image, list of [batch, height/scale, width/scale, 3]
@@ -47,7 +47,8 @@ def smootheness_loss_multi_scale(disp_ms, image_ms):
     """
     losses = []
     for i, (disp, image) in enumerate(zip(disp_ms, image_ms)):
-        loss = layers.Lambda(lambda inputs: smootheness_loss(inputs),
+        scale = height_orig // image_ms.get_shape().as_list()
+        loss = layers.Lambda(lambda inputs: smootheness_loss(inputs[0], inputs[1]) / scale,
                              name=f"smooth_loss_{i}")([disp, image])
         losses.append(loss)
     photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=1), axis=1),
@@ -55,15 +56,12 @@ def smootheness_loss_multi_scale(disp_ms, image_ms):
     return photo_loss
 
 
-def smootheness_loss(inputs):
+def smootheness_loss(disp, image):
     """
-    :param inputs:
-        disp: scaled disparity map, list of [batch, height/scale, width/scale, 1]
-        image: scaled original target image [batch, height/scale, width/scale, 3]
+    :param disp: scaled disparity map, list of [batch, height/scale, width/scale, 1]
+    :param image: scaled original target image [batch, height/scale, width/scale, 3]
     :return: smootheness loss (scalar)
     """
-    disp, image = inputs
-
     def gradient_x(img):
         gx = img[:, :, :-1, :] - img[:, :, 1:, :]
         return gx
@@ -86,8 +84,9 @@ def smootheness_loss(inputs):
     smoothness_y = disp_gradients_y * weights_y
 
     # return [batch]
-    return tf.reduce_mean(tf.abs(smoothness_x), axis=[1, 2, 3]) + \
-           tf.reduce_mean(tf.abs(smoothness_y), axis=[1, 2, 3])
+    smoothness = 0.5*tf.reduce_mean(tf.abs(smoothness_x), axis=[1, 2, 3]) + \
+                 0.5*tf.reduce_mean(tf.abs(smoothness_y), axis=[1, 2, 3])
+    return smoothness
 
 
 def depth_error_metric(depth_pred, depth_true):
@@ -113,3 +112,28 @@ def depth_error_metric(depth_pred, depth_true):
     depth_error = tf.reduce_mean(tf.abs(depth_pred_vec - depth_true_vec), axis=0)
     return depth_error
 
+
+# ==================== tests ====================
+import numpy as np
+
+
+def test_depth_error_metric():
+    depth_pred = np.zeros((8, 10, 10, 1))
+    depth_pred[:, :3] = 1.6
+    depth_pred[:, 3:6] = 2.4
+    print("depth pred\n", depth_pred[0, :, :, 0])
+    depth_pred = tf.constant(depth_pred, dtype=tf.float32)
+    depth_true = tf.constant(np.ones((8, 10, 10, 1)), dtype=tf.float32)
+
+    error = depth_error_metric(depth_true, depth_pred)
+    assert np.isclose(error, 0.2).all()
+
+    print("!!! test_depth_error_metric passed")
+
+
+def test():
+    test_depth_error_metric()
+
+
+if __name__ == "__main__":
+    test()
