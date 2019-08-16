@@ -22,17 +22,20 @@ def synthesize_batch_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_p
     """
     width_ori = stacked_image.get_shape().as_list()[2]
     # convert pose vector to transformation matrix
-    poses_matr = util.pose_rvec2matr_batch(pred_pose)
+    poses_matr = layers.Lambda(lambda pose: util.pose_rvec2matr_batch(pose),
+                               name="pose2matrix")(pred_pose)
     recon_images = []
-    for i, depth_sc in enumerate(pred_depth_ms):
+    for depth_sc in pred_depth_ms:
         batch, height_sc, width_sc, _ = depth_sc.get_shape().as_list()
         scale = int(width_ori // width_sc)
         # adjust intrinsic upto scale
-        intrinsic_sc = layers.Lambda(lambda intrin: scale_intrinsic(intrin, scale))(intrinsic)
+        intrinsic_sc = layers.Lambda(lambda intrin: scale_intrinsic(intrin, scale),
+                                     name=f"scale_intrin_sc{scale}")(intrinsic)
         # reorganize source images: [batch, 4, height, width, 3]
         source_images_sc = layers.Lambda(lambda image: reshape_source_images(image, scale),
-                                         name=f"reorder_source_{i}")(stacked_image)
-        recon_image_sc = synthesize_batch_view(source_images_sc, depth_sc, poses_matr, intrinsic_sc)
+                                         name=f"reorder_source_sc{scale}")(stacked_image)
+        recon_image_sc = synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
+                                               intrinsic_sc, suffix=f"sc{scale}")
         recon_images.append(recon_image_sc)
 
     return recon_images
@@ -66,31 +69,34 @@ def reshape_source_images(stacked_image, scale):
     return source_images
 
 
-def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic):
+def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic, suffix):
     """
     src_image, tgt_depth and intrinsic are scaled
     :param src_image: source image nearby the target image [batch, num_src, height, width, 3]
     :param tgt_depth: depth map of the target image in meter scale [batch, height, width, 1]
     :param pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
     :param intrinsic: camera projection matrix [batch, 3, 3]
+    :param suffix: suffix to tensor name
     :return: synthesized target image [batch, num_src, height, width, 3]
     """
-    batch, num_src, height, width, chann = src_image.get_shape().as_list()
-    # debug_coords = pixel_meshgrid(height, width, 80)
-    # debug_inds = tf.cast(debug_coords[0, 16:-16] + debug_coords[1, 16:-16]*width, tf.int32)
-    tgt_pixel_coords = pixel_meshgrid(height, width)
-    # print("pixel coordintes", tf.gather(tgt_pixel_coords[:2, :], debug_inds, axis=1))
+    _, _, height, width, _ = src_image.get_shape().as_list()
+    src_pixel_coords = layers.Lambda(lambda inputs: warp_pixel_coords(inputs, height, width),
+                                     name="warp_pixel_"+suffix)\
+                                    ([tgt_depth, pose, intrinsic])
+    tgt_image_synthesized = layers.Lambda(lambda inputs:
+                                          reconstruct_bilinear_interp_layer(inputs),
+                                          name="recon_interp_"+suffix)\
+                                         ([src_pixel_coords, src_image, tgt_depth])
+    return tgt_image_synthesized
 
+
+def warp_pixel_coords(inputs, height, width):
+    tgt_depth, pose, intrinsic = inputs
+    tgt_pixel_coords = pixel_meshgrid(height, width)
     tgt_cam_coords = pixel2cam(tgt_pixel_coords, tgt_depth, intrinsic)
     src_cam_coords = transform_to_source(tgt_cam_coords, pose)
-    # debug_cam_coords = tf.transpose(tf.concat((tgt_cam_coords[:3, :], src_cam_coords[:3, :]), axis=0))
-    # print("tgt src points compare", tf.gather(debug_cam_coords, debug_inds))
-
     src_pixel_coords = cam2pixel(src_cam_coords, intrinsic)
-    # print("src_pixel_coords", tf.gather(src_pixel_coords[:2, :], debug_inds, axis=1))
-
-    tgt_image_synthesized = reconstruct_bilinear_interp(src_pixel_coords, src_image, tgt_depth)
-    return tgt_image_synthesized
+    return src_pixel_coords
 
 
 def pixel_meshgrid(height, width, stride=1):
@@ -166,6 +172,11 @@ def cam2pixel(cam_coords, intrinsic):
     return pixel_coords
 
 
+def reconstruct_bilinear_interp_layer(inputs):
+    pixel_coords, image, depth = inputs
+    return reconstruct_bilinear_interp(pixel_coords, image, depth)
+
+
 def reconstruct_bilinear_interp(pixel_coords, image, depth):
     """
     :param pixel_coords: floating-point pixel coordinates (u,v,1) [batch, num_src, 3, height*width]
@@ -177,13 +188,13 @@ def reconstruct_bilinear_interp(pixel_coords, image, depth):
     padded_image = zero_pad_image(image)
 
     # adjust pixel coordinates for padded image
-    pixel_coords = shift_and_clip_pixels(pixel_coords, height, width)
+    pixel_coords_pad = shift_and_clip_pixels(pixel_coords, height, width)
 
     # pixel_floorceil[batch, num_src, :, i] = (u_ceil, u_floor, v_ceil, v_floor)
-    pixel_floorceil = floor_ceil_pixels(pixel_coords, height, width)
+    pixel_floorceil = floor_ceil_pixels(pixel_coords_pad, height, width)
 
     # weights[batch, num_src, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
-    weights = calc_neighbor_weights([pixel_coords, pixel_floorceil])
+    weights = calc_neighbor_weights([pixel_coords_pad, pixel_floorceil])
 
     # sampled_image[batch, num_src, :, height, width, 3] =
     # (im_uf_vf, im_uf_vc, im_uc_vf, im_uc_vc)
@@ -281,8 +292,6 @@ def sample_neighbor_images(inputs):
     uc = tf.squeeze(tf.slice(pixel_floorceil, (0, 0, 1, 0), (-1, -1, 1, -1)), axis=2)
     vf = tf.squeeze(tf.slice(pixel_floorceil, (0, 0, 2, 0), (-1, -1, 1, -1)), axis=2)
     vc = tf.squeeze(tf.slice(pixel_floorceil, (0, 0, 3, 0), (-1, -1, 1, -1)), axis=2)
-    print(f"[sample_neighbor_images] padded_image {padded_image.get_shape()}, "
-          f"pixel_floorceil {pixel_floorceil.get_shape()}, uf {uf.get_shape()}, vf {vf.get_shape()}")
 
     """
     CAUTION: `tf.gather_nd` looks preferable over `tf.gather`

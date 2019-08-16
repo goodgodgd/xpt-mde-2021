@@ -22,6 +22,10 @@ def create_models(image_shape, intrin_shape):
 
 
 def extract_target(stacked_image):
+    """
+    :param stacked_image: [batch, snippet_len*height, width, 3]
+    :return: target_image, [batch, height, width, 3]
+    """
     batch, imheight, imwidth, _ = stacked_image.get_shape().as_list()
     imheight = int(imheight // opts.SNIPPET_LEN)
     target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
@@ -31,36 +35,61 @@ def extract_target(stacked_image):
 
 
 def create_pred_model(stacked_image, target_image):
+    """
+    :param stacked_image: [batch, snippet_len*height, width, 3]
+    :param target_image: [batch, height, width, 3]
+    :return: prediction model
+    """
     print(f"pred model input shapes: stacked_image {stacked_image.get_shape()}, "
           f"target_image {target_image.get_shape()}")
-    pred_depths_ms = build_depth_estim_layers(target_image)
+    pred_disps_ms = build_depth_estim_layers(target_image)
     pred_poses = build_visual_odom_layers(stacked_image)
 
     model_input = {"image": stacked_image}
-    predictions = {"depth_ms": pred_depths_ms, "pose": pred_poses}
+    predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
     model_pred = tf.keras.Model(model_input, predictions)
     model_pred.compile(optimizer="adam", loss="mean_absolute_error")
     return model_pred
 
 
 def create_train_model(model_pred, target_image, intrinsic):
+    """
+    :param model_pred: pose and depth prediction model
+    :param target_image: [batch, height, width, 3]
+    :param intrinsic: [batch, num_src, 3, 3]
+    :return: trainable model
+    """
     # calculate loss and make model for training
     stacked_image = model_pred.input["image"]
-    pred_depth_ms = model_pred.output["depth_ms"]
+    pred_disp_ms = model_pred.output["disp_ms"]
     pred_pose = model_pred.output["pose"]
+    pred_depth_ms = [1./disp for disp in pred_disp_ms]
+    target_ms = multi_scale_like(target_image, pred_disp_ms)
 
-    synthesized_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic,
-                                                         pred_depth_ms, pred_pose)
+    synth_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic,
+                                                   pred_depth_ms, pred_pose)
+    loss = lm.photometric_loss_multi_scale(synth_target_ms, target_ms)
 
-    # loss = synthesized_targets_ms
-    loss = tf.constant(0, dtype=tf.float32)
-    loss += lm.photometric_loss_multi_scale(synthesized_target_ms, target_image)
+    loss += lm.smootheness_loss_multi_scale(pred_disp_ms, target_ms)
 
     inputs = {"image": stacked_image, "intrinsic": intrinsic}
     outputs = {"loss": loss}
     model_train = tf.keras.Model(inputs, outputs)
-    model_train.compile(optimizer="sgd", loss="mean_absolute_error")
     return model_train
+
+
+def multi_scale_like(image, disp_ms):
+    """
+    :param image: [batch, height, width, 3]
+    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :return: image_ms: list of [batch, height/scale, width/scale, 3]
+    """
+    image_ms = []
+    for disp in disp_ms:
+        batch, height_sc, width_sc, _ = disp.get_shape().as_list()
+        image_sc = tf.image.resize(image, size=(height_sc, width_sc), method="bilinear")
+        image_ms.append(image_sc)
+    return image_ms
 
 
 # ==================== build DepthNet layers ====================
@@ -89,15 +118,15 @@ def build_depth_estim_layers(target_image):
     upconv6 = upconv_with_skip_connection(upconv7, conv5, 512, "dp_up6")
     upconv5 = upconv_with_skip_connection(upconv6, conv4, 256, "dp_up5")
     upconv4 = upconv_with_skip_connection(upconv5, conv3, 128, "dp_up4")
-    pred4, pred4_up = get_disp_vgg(upconv4, int(imheight//4), int(imwidth//4), "dp_pred4")
-    upconv3 = upconv_with_skip_connection(upconv4, conv2, 64, "dp_up3", pred4_up)
-    pred3, pred3_up = get_disp_vgg(upconv3, int(imheight//2), int(imwidth//2), "dp_pred3")
-    upconv2 = upconv_with_skip_connection(upconv3, conv1, 32, "dp_up2", pred3_up)
-    pred2, pred2_up = get_disp_vgg(upconv2, imheight, imwidth, "dp_pred2")
-    upconv1 = upconv_with_skip_connection(upconv2, pred2_up, 16, "dp_up1")
-    pred1, pred1_up = get_disp_vgg(upconv1, imheight, imwidth, "dp_pred1")
+    disp4, disp4_up = get_disp_vgg(upconv4, int(imheight//4), int(imwidth//4), "dp_disp4")
+    upconv3 = upconv_with_skip_connection(upconv4, conv2, 64, "dp_up3", disp4_up)
+    disp3, disp3_up = get_disp_vgg(upconv3, int(imheight//2), int(imwidth//2), "dp_disp3")
+    upconv2 = upconv_with_skip_connection(upconv3, conv1, 32, "dp_up2", disp3_up)
+    disp2, disp2_up = get_disp_vgg(upconv2, imheight, imwidth, "dp_disp2")
+    upconv1 = upconv_with_skip_connection(upconv2, disp2_up, 16, "dp_up1")
+    disp1, disp1_up = get_disp_vgg(upconv1, imheight, imwidth, "dp_disp1")
 
-    return [pred1, pred2, pred3, pred4]
+    return [disp1, disp2, disp3, disp4]
 
 
 def convolution(x, filters, kernel_size, strides, name):
@@ -202,7 +231,9 @@ def test_create_models():
     intrin_shape = (3, 3)
     model_pred, model_train = create_models(image_shape, intrin_shape)
     model_pred.summary()
-    tf.keras.utils.plot_model(model_pred, to_file="model.png", show_shapes=True, show_layer_names=True)
+    tf.keras.utils.plot_model(model_pred, to_file="model_pred.png", show_shapes=True, show_layer_names=True)
+    model_train.summary()
+    tf.keras.utils.plot_model(model_train, to_file="model_train.png", show_shapes=True, show_layer_names=True)
     print("!!! test_create_models passed")
 
 
