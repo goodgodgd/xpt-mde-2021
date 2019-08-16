@@ -68,7 +68,8 @@ class TfrecordGenerator:
         decoded["image"] = tf.cast(decoded["image"], tf.float32)
         x = {"image": decoded["image"], "pose_gt": decoded["pose"],
              "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
-        y = tf.constant(0)
+        # dummy outputs for training
+        y = {"loss": tf.constant(0), "metric": tf.constant(0)}
         return x, y
 
     def dataset_process(self, dataset):
@@ -83,11 +84,11 @@ class TfrecordGenerator:
 # =========
 
 def test():
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_odom_test"))
+    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"))
     dataset = tfrgen.get_generator()
     for x, y in dataset:
-        print(x.keys())
-        print(y)
+        print("x keys:", x.keys())
+        print("y data:", y)
         for key, value in x.items():
             print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
 

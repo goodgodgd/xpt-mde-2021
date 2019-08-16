@@ -90,7 +90,7 @@ class NpyFeeder(FileFeeder):
         return self._bytes_feature(value.tostring())
 
 
-class ConstInt64Feeder(FeederBase):
+class ConstArrayFeeder(FeederBase):
     def __init__(self, data, size):
         super().__init__()
         self.data = data
@@ -109,4 +109,4 @@ class ConstInt64Feeder(FeederBase):
         return self.convert_to_feature(self.data)
 
     def convert_to_feature(self, value):
-        return self._int64_feature(value)
+        return self._bytes_feature(value.tostring())

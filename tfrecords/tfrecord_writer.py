@@ -47,7 +47,8 @@ class TfrecordMaker:
         if depth_files:
             depth_feeder = df.NpyFeeder(depth_files, depth_reader)
         else:
-            depth_feeder = df.ConstInt64Feeder(0, len(image_files))
+            zero_depth = np.zeros((opts.IM_HEIGHT, opts.IM_WIDTH, 1), dtype=np.float32)
+            depth_feeder = df.ConstArrayFeeder(zero_depth, len(image_files))
 
         feeders = {"image": df.NpyFeeder(image_files, image_reader),
                    "depth": depth_feeder,

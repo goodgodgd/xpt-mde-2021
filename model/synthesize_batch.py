@@ -121,7 +121,8 @@ def pixel2cam(pixel_coords, depth, intrinsic):
     :return: 3D points like (x,y,z,1) in target frame [batch, 4, height*width]
     """
     batch = depth.get_shape().as_list()[0]
-    depth = tf.tile(tf.reshape(depth, (batch, 1, -1)), (1, 3, 1))
+    depth = tf.reshape(depth, (batch, 1, -1))
+
     # calc sum of products over specified dimension
     # cam_coords[i, j, k] = inv(intrinsic)[i, j, :] dot pixel_coords[:, k]
     # [batch, 3, height*width] = [batch, 3, 3] x [3, height*width]
@@ -167,7 +168,6 @@ def cam2pixel(cam_coords, intrinsic):
     # pixel_coords = tf.reshape(pixel_coords, (batch, num_src, 3, length))
     # normalize scale
     pixel_scales = pixel_coords[:, :, 2:3, :]
-    pixel_scales = tf.tile(pixel_scales, (1, 1, 3, 1))
     pixel_coords = pixel_coords / (pixel_scales + 1e-10)
     return pixel_coords
 
@@ -341,7 +341,6 @@ def merge_images(inputs):
     """
     # expand dimension to channel
     weights = tf.expand_dims(weights, -1)
-    weights = tf.tile(weights, (1, 1, 1, 1, 3))
     weighted_image = sampled_images * weights
     merged_flat_image = tf.reduce_sum(weighted_image, axis=2)
     return merged_flat_image
@@ -355,15 +354,12 @@ def erase_invalid_pixels(inputs):
     return: [batch, num_src, height*width, 3]
     """
     batch, width, height, _ = depth.get_shape().as_list()
-    num_src = flat_image.get_shape().as_list()[1]
     # depth_vec [batch, height*width, 1]
     depth_vec = tf.reshape(depth, shape=(batch, -1, 1))
     depth_vec = tf.expand_dims(depth_vec, 1)
-    # depth_vec [batch, num_src, height*width, 3]
-    depth_vec = tf.tile(depth_vec, (1, num_src, 1, 3))
+    # depth_vec [batch, 1, height*width, 1]
     depth_invalid_mask = tf.math.equal(depth_vec, 0)
-    zeros = tf.zeros(flat_image.get_shape(), dtype=tf.float32)
-    flat_image = tf.where(depth_invalid_mask, zeros, flat_image)
+    flat_image = tf.where(depth_invalid_mask, tf.constant(0, dtype=tf.float32), flat_image)
     return flat_image
 
 
@@ -499,7 +495,8 @@ def test_synthesize_batch_view():
         pose_view = pose.numpy()
         print(f"pose shape and data: {pose_view.shape} \n{pose_view[1, 0]}")
 
-        recon_images = synthesize_batch_view(source_image_sc, depth_sc, x['pose_gt'], intrinsic_sc)
+        recon_images = synthesize_batch_view(source_image_sc, depth_sc, x['pose_gt'],
+                                             intrinsic_sc, "recon")
 
         print("reconstructed image shape:", recon_images.get_shape(), recon_images.dtype)
         recon_view = recon_images.numpy().astype(np.uint8)
@@ -564,7 +561,7 @@ def test_synthesize_batch_view_aug_icl():
     cv2.waitKey()
 
 
-def test_gather_nd():
+def test_gather():
     # params = tf.keras.layers.Input(shape=(4, 5), batch_size=3)
     # params = tf.Variable(initial_value=np.ones((3, 4, 5)), shape=(3, 4, 5))
     params = tf.constant(np.arange(1, 13).reshape((2, 3, 2)))
@@ -583,7 +580,7 @@ def test():
     test_pixel2cam()
     test_transform_to_source()
     test_pixel_weighting()
-    test_gather_nd()
+    test_gather()
     test_synthesize_batch_view()
     # test_synthesize_batch_view_aug_icl()
 

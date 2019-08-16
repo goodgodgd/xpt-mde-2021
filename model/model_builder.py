@@ -10,15 +10,19 @@ from model.synthesize_batch import synthesize_batch_multi_scale
 import model.loss_and_metric as lm
 
 
-def create_models(image_shape, intrin_shape, pose_shape):
+def create_models(image_shape, intrin_shape, depth_shape):
     # prepare input tensors
     stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
     target_image = layers.Lambda(lambda image: extract_target(image))(stacked_image)
     intrinsic = layers.Input(shape=intrin_shape, batch_size=opts.BATCH_SIZE, name="intrinsic")
-    pose_gt = layers.Input(shape=pose_shape, batch_size=opts.BATCH_SIZE, name="pose_gt")
+    if depth_shape is None:
+        depth_gt = None
+    else:
+        depth_gt = layers.Input(shape=depth_shape, batch_size=opts.BATCH_SIZE, name="depth_gt")
+        print("depth gt", depth_gt.get_shape())
 
     model_pred = create_pred_model(stacked_image, target_image)
-    model_train = create_train_model(model_pred, target_image, intrinsic, pose_gt)
+    model_train = create_train_model(model_pred, target_image, intrinsic, depth_gt)
     return model_pred, model_train
 
 
@@ -52,13 +56,12 @@ def create_pred_model(stacked_image, target_image):
     return model_pred
 
 
-def create_train_model(model_pred, target_image, intrinsic, pose_gt):
+def create_train_model(model_pred, target_image, intrinsic, depth_gt):
     """
     :param model_pred: pose and depth prediction model
     :param target_image: [batch, height, width, 3]
     :param intrinsic: camera projection matrix [batch, num_src, 3, 3]
-    :param pose_gt: ground truth pose (tx, ty, tz, ux, uy, uz) (twist coordinates,
-                    not euler angle) [batch, num_src, 6]
+    :param depth_gt: ground truth depth [batch, height, width, 1] or None
     :return: trainable model
     """
     # calculate loss and make model for training
@@ -72,13 +75,14 @@ def create_train_model(model_pred, target_image, intrinsic, pose_gt):
                                                    pred_depth_ms, pred_pose)
     photo_loss = lm.photometric_loss_multi_scale(synth_target_ms, target_ms)
     smooth_loss = lm.smootheness_loss_multi_scale(pred_disp_ms, target_ms)
-    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="vode_loss")\
+    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="loss")\
                         ([photo_loss, smooth_loss])
 
-    # metric =
+    metric = layers.Lambda(lambda depths: lm.depth_error_metric(depths[0], depths[1]),
+                           name="metric")([pred_depth_ms[0], depth_gt])
 
-    inputs = {"image": stacked_image, "intrinsic": intrinsic}
-    outputs = {"loss": loss}
+    inputs = {"image": stacked_image, "intrinsic": intrinsic, "depth_gt": depth_gt}
+    outputs = {"loss": loss, "metric": metric}
     model_train = tf.keras.Model(inputs, outputs)
     return model_train
 
