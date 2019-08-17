@@ -10,11 +10,6 @@ from utils.util_funcs import print_progress
 
 
 def prepare_input_data():
-    # dataset = "kitti_raw"
-    # split = "train"
-    # loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
-    # prepare_and_save_snippets(loader, dataset, split)
-    # return
     for dataset in ["kitti_raw", "kitti_odom"]:
         for split in ["train", "test"]:
             loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
@@ -67,8 +62,8 @@ def prepare_and_save_snippets(loader, dataset, split):
                 print("##### intrinsic parameters\n", intrinsic)
                 np.savetxt(filename, intrinsic, fmt="%3.5f")
 
-            cv2.imshow("snippet frames", frames)
-            cv2.waitKey(1)
+            # cv2.imshow("snippet frames", frames)
+            # cv2.waitKey(1)
             print_progress(f"mean depth={mean_depth:0.3f}, {i}")
 
 

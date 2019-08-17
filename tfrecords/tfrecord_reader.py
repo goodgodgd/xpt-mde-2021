@@ -47,6 +47,7 @@ class TfrecordGenerator:
     def get_generator(self):
         file_pattern = f"{self.tfrpath}/*.tfrecord"
         filenames = tf.io.gfile.glob(file_pattern)
+        print("[tfrecord reader]", file_pattern, filenames)
         dataset = tf.data.TFRecordDataset(filenames)
 
         dataset = dataset.map(self.parse_example)
@@ -69,7 +70,7 @@ class TfrecordGenerator:
         x = {"image": decoded["image"], "pose_gt": decoded["pose"],
              "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
         # dummy outputs for training
-        y = {"loss": tf.constant(0, dtype=tf.float32), "metric": tf.constant(0, dtype=tf.float32)}
+        y = {"loss_out": tf.constant(0, dtype=tf.float32), "metric_out": tf.constant(0, dtype=tf.float32)}
         return x, y
 
     def dataset_process(self, dataset):

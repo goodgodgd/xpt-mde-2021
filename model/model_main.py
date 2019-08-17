@@ -29,6 +29,18 @@ class LM:
 
 
 def train(train_dirname, val_dirname, model_dir=None):
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
     stacked_image_shape = (opts.IM_HEIGHT*opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
     instrinsic_shape = (3, 3)
     depth_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 1)
@@ -38,8 +50,8 @@ def train(train_dirname, val_dirname, model_dir=None):
         model_train.load_weights(op.join(opts.DATAPATH_CKP, model_dir))
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
-    losses = {"loss": LM.loss_for_loss, "metric": LM.loss_for_metric}
-    metrics = {"loss": LM.metric_for_loss, "metric": LM.metric_for_metric}
+    losses = {"loss_out": LM.loss_for_loss, "metric_out": LM.loss_for_metric}
+    metrics = {"loss_out": LM.metric_for_loss, "metric_out": LM.metric_for_metric}
     model_train.compile(optimizer=optimizer, loss=losses, metrics=metrics)
 
     # create tf.data.Dataset objects
@@ -49,17 +61,17 @@ def train(train_dirname, val_dirname, model_dir=None):
     dataset_val = tfrgen_val.get_generator()
     callbacks, model_path = get_callbacks(model_dir)
     steps_per_epoch = count_steps(train_dirname)
-    val_steps = np.clip(count_steps(train_dirname)/2, 0, 50).astype(np.int32)
+    val_steps = np.clip(count_steps(train_dirname)/2, 0, 100).astype(np.int32)
 
     history = model_train.fit(dataset_train, epochs=opts.EPOCHS, callbacks=callbacks,
                               validation_data=dataset_val, steps_per_epoch=steps_per_epoch,
                               validation_steps=val_steps, validation_freq=2)
 
-    histfile = op.join(model_path, "history.txt")
-    histdata = np.array([history.history["loss"], history.history["acc"],
-                         history.history["val_loss"], history.history["val_acc"]])
-    np.savetxt(histfile, histdata, fmt="%.3f")
-    print(f"[history]", history)
+    # histfile = op.join(model_path, "history.txt")
+    # histdata = np.array([history.history["loss"], history.history["acc"],
+    #                      history.history["val_loss"], history.history["val_acc"]])
+    # np.savetxt(histfile, histdata, fmt="%.3f")
+    # print(f"[history]", history)
 
 
 def get_callbacks(model_dir):
@@ -77,7 +89,7 @@ def get_callbacks(model_dir):
             filepath=model_path,
             monitor="val_loss",
             save_best_only=True,
-            period=5
+            save_freq="epoch"
         ),
         tf.keras.callbacks.TensorBoard(
             log_dir=log_dir

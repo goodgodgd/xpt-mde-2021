@@ -76,14 +76,14 @@ def create_train_model(model_pred, target_image, intrinsic, depth_gt):
     photo_loss = lm.photometric_loss_multi_scale(synth_target_ms, target_ms)
     height_orig = target_image.get_shape().as_list()[2]
     smooth_loss = lm.smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
-    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="loss")\
+    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="loss_out")\
                         ([photo_loss, smooth_loss])
 
     metric = layers.Lambda(lambda depths: lm.depth_error_metric(depths[0], depths[1]),
-                           name="metric")([pred_depth_ms[0], depth_gt])
+                           name="metric_out")([pred_depth_ms[0], depth_gt])
 
     inputs = {"image": stacked_image, "intrinsic": intrinsic, "depth_gt": depth_gt}
-    outputs = {"loss": loss, "metric": metric}
+    outputs = {"loss_out": loss, "metric_out": metric}
     model_train = tf.keras.Model(inputs, outputs)
     return model_train
 
