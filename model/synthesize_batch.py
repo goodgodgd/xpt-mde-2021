@@ -34,6 +34,8 @@ def synthesize_batch_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_p
         # reorganize source images: [batch, 4, height, width, 3]
         source_images_sc = layers.Lambda(lambda image: reshape_source_images(image, scale),
                                          name=f"reorder_source_sc{scale}")(stacked_image)
+        # print(f"[synthesize_batch_multi_scale] {scale}, source_images_sc {source_images_sc.get_shape()}, "
+        #       f"depth_sc {depth_sc.get_shape()}, poses_matr {poses_matr.get_shape()}, ")
         recon_image_sc = synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
                                                intrinsic_sc, suffix=f"sc{scale}")
         recon_images.append(recon_image_sc)
@@ -84,7 +86,7 @@ def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic, suffix):
                                      name="warp_pixel_"+suffix)\
                                     ([tgt_depth, pose, intrinsic])
     tgt_image_synthesized = layers.Lambda(lambda inputs:
-                                          reconstruct_bilinear_interp_layer(inputs),
+                                          reconstruct_bilinear_interp(inputs[0], inputs[1], inputs[2]),
                                           name="recon_interp_"+suffix)\
                                          ([src_pixel_coords, src_image, tgt_depth])
     return tgt_image_synthesized
@@ -170,11 +172,6 @@ def cam2pixel(cam_coords, intrinsic):
     pixel_scales = pixel_coords[:, :, 2:3, :]
     pixel_coords = pixel_coords / (pixel_scales + 1e-10)
     return pixel_coords
-
-
-def reconstruct_bilinear_interp_layer(inputs):
-    pixel_coords, image, depth = inputs
-    return reconstruct_bilinear_interp(pixel_coords, image, depth)
 
 
 def reconstruct_bilinear_interp(pixel_coords, image, depth):

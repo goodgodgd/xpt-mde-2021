@@ -30,28 +30,18 @@ class LM:
 
 
 def train(train_dirname, val_dirname, src_model, dst_model):
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    if gpus:
-        try:
-            # Currently, memory growth needs to be the same across GPUs
-            for gpu in gpus:
-                tf.config.experimental.set_memory_growth(gpu, True)
-            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
-            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
-        except RuntimeError as e:
-            # Memory growth must be set before GPUs have been initialized
-            print(e)
+    set_gpu_config()
 
-    stacked_image_shape = (opts.IM_HEIGHT*opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
-    instrinsic_shape = (3, 3)
-    depth_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 1)
-    model_pred, model_train = create_models(stacked_image_shape, instrinsic_shape, depth_shape)
+    # model_train = None
+    # if model_train is None:
+    model_pred, model_train = create_models()
 
     if src_model:
         src_model_path = op.join(opts.DATAPATH_CKP, src_model)
         if op.isfile(src_model_path):
-            print("load weights", src_model_path)
+            print("===== load model", src_model_path)
             model_train.load_weights(src_model_path)
+            # model_train = tf.keras.models.load_model()
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
     losses = {"loss_out": LM.loss_for_loss, "metric_out": LM.loss_for_metric}
@@ -68,13 +58,15 @@ def train(train_dirname, val_dirname, src_model, dst_model):
     val_steps = np.clip(count_steps(train_dirname)/2, 0, 100).astype(np.int32)
 
     history = model_train.fit(dataset_train, epochs=opts.EPOCHS, callbacks=callbacks,
-                              validation_data=dataset_val, steps_per_epoch=20,
-                              validation_steps=val_steps, validation_freq=2)
+                              validation_data=dataset_val, steps_per_epoch=10,
+                              validation_steps=val_steps)
+
     if dst_model:
         dst_model_path = op.join(opts.DATAPATH_CKP, dst_model)
         os.makedirs(op.dirname(dst_model_path), exist_ok=True)
         model_train.save_weights(dst_model_path)
 
+    print("history", history.history.keys())
     # histfile = op.join(model_path, "history.txt")
     # histdata = np.array([history.history["loss"], history.history["acc"],
     #                      history.history["val_loss"], history.history["val_acc"]])
@@ -82,23 +74,38 @@ def train(train_dirname, val_dirname, src_model, dst_model):
     # print(f"[history]", history)
 
 
+def set_gpu_config():
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
+
 def get_callbacks(model_dir):
     if model_dir is None:
         nowtime = datetime.datetime.now()
         nowtime = nowtime.strftime("%m%d_%H%M%S")
-        model_path = op.join(opts.DATAPATH_CKP, nowtime, "model-{epoch:02d}-{val_loss:.2f}.hdf5")
+        model_path = op.join(opts.DATAPATH_CKP, nowtime, "model-{epoch:02d}-{val_loss:.2f}.h5")
         log_dir = op.join(opts.DATAPATH_LOG, nowtime)
     else:
-        model_path = op.join(opts.DATAPATH_CKP, model_dir, "model-{epoch:02d}-{val_loss:.2f}.hdf5")
+        model_path = op.join(opts.DATAPATH_CKP, model_dir, "model-{epoch:02d}-{val_loss:.2f}.h5")
         log_dir = op.join(opts.DATAPATH_LOG, model_dir)
 
     callbacks = [
-        # tf.keras.callbacks.ModelCheckpoint(
-        #     filepath=model_path,
-        #     monitor="val_loss",
-        #     save_best_only=True,
-        #     save_freq="epoch"
-        # ),
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=model_path,
+            monitor="val_loss",
+            save_best_only=True,
+            save_freq="epoch",
+            save_weights_only=True
+        ),
         tf.keras.callbacks.TensorBoard(
             log_dir=log_dir
         ),
@@ -124,4 +131,4 @@ def evaluate():
 
 
 if __name__ == "__main__":
-    train("kitti_raw_train", "kitti_raw_test", "vode_model/weights1.h5", "vode_model/weights1.h5")
+    train("kitti_raw_train", "kitti_raw_test", "vode_model/model1.h5", "vode_model/model1.h5")

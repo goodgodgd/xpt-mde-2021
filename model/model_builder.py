@@ -10,10 +10,14 @@ from model.synthesize_batch import synthesize_batch_multi_scale
 import model.loss_and_metric as lm
 
 
-def create_models(image_shape, intrin_shape, depth_shape):
+def create_models():
+    image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
+    intrin_shape = (3, 3)
+    depth_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 1)
+
     # prepare input tensors
     stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
-    target_image = layers.Lambda(lambda image: extract_target(image))(stacked_image)
+    target_image = layers.Lambda(lambda image: extract_target(image), name="extract_target")(stacked_image)
     intrinsic = layers.Input(shape=intrin_shape, batch_size=opts.BATCH_SIZE, name="intrinsic")
     if depth_shape is None:
         depth_gt = None
@@ -68,7 +72,7 @@ def create_train_model(model_pred, target_image, intrinsic, depth_gt):
     stacked_image = model_pred.input["image"]
     pred_disp_ms = model_pred.output["disp_ms"]
     pred_pose = model_pred.output["pose"]
-    pred_depth_ms = [1./disp for disp in pred_disp_ms]
+    pred_depth_ms = disp_to_depth(pred_disp_ms)
     target_ms = multi_scale_like(target_image, pred_disp_ms)
 
     synth_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic,
@@ -88,6 +92,14 @@ def create_train_model(model_pred, target_image, intrinsic, depth_gt):
     return model_train
 
 
+def disp_to_depth(disp_ms):
+    target_ms = []
+    for i, disp in enumerate(disp_ms):
+        target = layers.Lambda(lambda dis: 1./dis, name=f"todepth_{i}")(disp)
+        target_ms.append(target)
+    return target_ms
+
+
 def multi_scale_like(image, disp_ms):
     """
     :param image: [batch, height, width, 3]
@@ -95,9 +107,10 @@ def multi_scale_like(image, disp_ms):
     :return: image_ms: list of [batch, height/scale, width/scale, 3]
     """
     image_ms = []
-    for disp in disp_ms:
+    for i, disp in enumerate(disp_ms):
         batch, height_sc, width_sc, _ = disp.get_shape().as_list()
-        image_sc = tf.image.resize(image, size=(height_sc, width_sc), method="bilinear")
+        image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
+                                 name=f"target_resize_{i}")(image)
         image_ms.append(image_sc)
     return image_ms
 
@@ -196,8 +209,8 @@ def build_visual_odom_layers(stacked_image):
     conv7 = convolution(conv6, 256, 3, 2, "vo_conv7")
 
     poses = tf.keras.layers.Conv2D(num_sources*6, 1, strides=1, padding="same",
-                                   activation=None, name="vo_pred")(conv7)
-    poses = tf.keras.backend.mean(poses, axis=(1, 2))
+                                   activation=None, name="vo_conv8")(conv7)
+    poses = tf.keras.layers.GlobalAveragePooling2D("channels_last", name="vo_pred")(poses)
     poses = tf.keras.layers.Reshape((num_sources, 6), name="vo_reshape")(poses)
     return poses
 
@@ -237,9 +250,7 @@ def test_restack_on_channels():
 
 
 def test_create_models():
-    image_shape = (opts.IM_HEIGHT*opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
-    intrin_shape = (3, 3)
-    model_pred, model_train = create_models(image_shape, intrin_shape)
+    model_pred, model_train = create_models()
     model_pred.summary()
     tf.keras.utils.plot_model(model_pred, to_file="model_pred.png", show_shapes=True, show_layer_names=True)
     model_train.summary()
@@ -247,9 +258,18 @@ def test_create_models():
     print("!!! test_create_models passed")
 
 
+def test_load_model():
+    model_path = opts.DATAPATH_CKP + "/vode_model/model1.hdf5"
+    print("model path", model_path)
+    if op.isfile(model_path):
+        model = tf.keras.models.load_model(model_path)
+        model.summary()
+
+
 def test():
-    test_create_models()
-    test_restack_on_channels()
+    # test_create_models()
+    # test_restack_on_channels()
+    test_load_model()
 
 
 if __name__ == "__main__":
