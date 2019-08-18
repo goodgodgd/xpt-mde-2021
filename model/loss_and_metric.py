@@ -118,14 +118,14 @@ import numpy as np
 
 
 def test_depth_error_metric():
-    depth_pred = np.zeros((8, 10, 10, 1))
-    depth_pred[:, :3] = 1.6
-    depth_pred[:, 3:6] = 2.4
-    print("depth pred\n", depth_pred[0, :, :, 0])
-    depth_pred = tf.constant(depth_pred, dtype=tf.float32)
-    depth_true = tf.constant(np.ones((8, 10, 10, 1)), dtype=tf.float32)
+    depth_true = np.zeros((8, 10, 10, 1))
+    depth_true[:, :3] = 1.6
+    depth_true[:, 3:6] = 2.4
+    print("depth true\n", depth_true[0, :, :, 0])
+    depth_true = tf.constant(depth_true, dtype=tf.float32)
+    depth_pred = tf.constant(np.ones((8, 10, 10, 1)), dtype=tf.float32)
 
-    error = depth_error_metric(depth_true, depth_pred)
+    error = depth_error_metric(depth_pred, depth_true)
     assert np.isclose(error, 0.2).all()
 
     print("!!! test_depth_error_metric passed")

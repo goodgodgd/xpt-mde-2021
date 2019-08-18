@@ -31,34 +31,29 @@ class LM:
         return y_pred
 
 
-def train(train_dirname, val_dirname, model_dir="", model_name="", initial_epoch=0):
+def train(train_dirname, val_dirname, model_dir="", src_model_name="", dst_model_name="", initial_epoch=0):
     set_gpu_config()
 
     model_pred, model_train = create_models()
-
-    model_file_path = op.join(opts.DATAPATH_CKP, model_dir, model_name)
-    if op.isfile(model_file_path):
-        print("===== load model", model_file_path)
-        model_train.load_weights(model_file_path)
+    model_train = try_load_weights(model_train, model_dir, src_model_name)
 
     optimizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
     losses = {"loss_out": LM.loss_for_loss, "metric_out": LM.loss_for_metric}
     metrics = {"loss_out": LM.metric_for_loss, "metric_out": LM.metric_for_metric}
     model_train.compile(optimizer=optimizer, loss=losses, metrics=metrics)
 
-    # create tf.data.Dataset objects
-    tfrgen_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dirname), shuffle=True, epochs=opts.EPOCHS)
-    dataset_train = tfrgen_train.get_generator()
-    tfrgen_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dirname), shuffle=True, epochs=opts.EPOCHS)
-    dataset_val = tfrgen_val.get_generator()
+    dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dirname), shuffle=True, epochs=opts.EPOCHS).get_generator()
+    dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dirname), shuffle=True, epochs=opts.EPOCHS).get_generator()
     callbacks = get_callbacks(model_dir)
     steps_per_epoch = count_steps(train_dirname)
     val_steps = np.clip(count_steps(train_dirname)/2, 0, 100).astype(np.int32)
 
+    print(f"\n\n\n========== START TRAINING ON {model_dir} ==========\n\n\n")
     history = model_train.fit(dataset_train, epochs=opts.EPOCHS, callbacks=callbacks,
                               validation_data=dataset_val, steps_per_epoch=steps_per_epoch,
                               validation_steps=val_steps, initial_epoch=initial_epoch)
 
+    save_model_weights(model_train, model_dir, dst_model_name)
     if model_dir:
         dump_history(history.history, model_dir)
 
@@ -77,6 +72,23 @@ def set_gpu_config():
             print(e)
 
 
+def try_load_weights(model, model_dir, model_name):
+    if model_dir and model_name:
+        model_file_path = op.join(opts.DATAPATH_CKP, model_dir, model_name)
+        if op.isfile(model_file_path):
+            print("===== load model", model_file_path)
+            model.load_weights(model_file_path)
+    return model
+
+
+def save_model_weights(model, model_dir, model_name):
+    model_dir_path = op.join(opts.DATAPATH_CKP, model_dir)
+    if not op.isdir(model_dir_path):
+        os.makedirs(model_dir_path, exist_ok=True)
+    model_file_path = op.join(opts.DATAPATH_CKP, model_dir, model_name)
+    model.save_weights(model_file_path)
+
+
 def get_callbacks(model_dir):
     if model_dir:
         model_path = op.join(opts.DATAPATH_CKP, model_dir, "model-{epoch:02d}-{val_loss:.2f}.h5")
@@ -86,6 +98,9 @@ def get_callbacks(model_dir):
         nowtime = nowtime.strftime("%m%d_%H%M%S")
         model_path = op.join(opts.DATAPATH_CKP, nowtime, "model-{epoch:02d}-{val_loss:.2f}.h5")
         log_dir = op.join(opts.DATAPATH_LOG, nowtime)
+
+    if not op.isdir(model_path):
+        os.makedirs(op.dirname(model_path), exist_ok=True)
 
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
@@ -126,5 +141,6 @@ def evaluate():
 
 
 if __name__ == "__main__":
-    train("kitti_raw_train", "kitti_raw_test", model_dir="vode_model",
-          model_name="model-01-97.80.hdf5", initial_epoch=1)
+    for i in range(5):
+        train("kitti_raw_train", "kitti_raw_test", model_dir=f"vode_model_{i}",
+              src_model_name="weights.h5", dst_model_name="weights.h5", initial_epoch=0)

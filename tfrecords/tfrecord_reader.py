@@ -66,7 +66,7 @@ class TfrecordGenerator:
                 decoded[key] = tf.reshape(decoded[key], shape=feat_conf["shape"])
 
         # raw uint8 type may saturate during bilinear interpolation
-        decoded["image"] = tf.cast(decoded["image"], tf.float32)
+        decoded["image"] = tf.image.convert_image_dtype(decoded["image"], dtype=tf.float32) * 2 - 1
         x = {"image": decoded["image"], "pose_gt": decoded["pose"],
              "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
         # dummy outputs for training
