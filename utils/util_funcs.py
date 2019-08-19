@@ -7,7 +7,7 @@ import tensorflow as tf
 def print_progress(count, is_total: bool = False):
     if is_total:
         # static variable in function
-        print_progress.total = getattr(print_progress, 'last_hour', count)
+        print_progress.total = getattr(print_progress, 'count', count)
     else:
         # Status-message.
         # Note the \r which means the line should overwrite itself.

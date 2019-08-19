@@ -5,20 +5,51 @@ import numpy as np
 import settings
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
-from utils.util_funcs import pose_rvec2matr
+import utils.util_funcs as uf
 
 
-def evaluate(test_dir_name, model_dir):
-    total_depth_pred, total_pose_pred = load_predictions(model_dir)
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name), batch_size=1).get_generator()
+def evaluate_by_user_interaction():
+    options = {"data_dir_name": "kitti_raw_test",
+               "model_name": "vode_model",
+               }
+
+    print("\n===== Select evaluation options")
+
+    print(f"Default options:")
+    for key, value in options.items():
+        print(f"\t{key} = {value}")
+    print("\nIf you are happy with default options, please press enter")
+    print("Otherwise, please press any other key")
+    select = input()
+
+    if select == "":
+        print(f"You selected default options.")
+    else:
+        message = "Type 1 or 2 to specify dataset: 1) kitti_raw_test, 2) kitti_odom_test"
+        ds_id = uf.input_integer(message, 1, 2)
+        if ds_id == 1:
+            options["data_dir_name"] = "kitti_raw_test"
+        if ds_id == 2:
+            options["data_dir_name"] = "kitti_odom_test"
+
+        print("Type model_name: dir name under opts.DATAPATH_CKP and opts.DATAPATH_PRD")
+        options["model_name"] = input()
+
+    print("Prediction options:", options)
+    evaluate(**options)
+
+
+def evaluate(data_dir_name, model_name):
+    total_depth_pred, total_pose_pred = load_predictions(model_name)
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_generator()
     depth_errors = []
     trajectory_errors = []
     rotational_errors = []
-
+    uf.print_progress(None, is_total=True)
     for i, (x, y) in enumerate(dataset):
         if i >= total_pose_pred.shape[0]:
             break
-        print("===== index:", i)
+        uf.print_progress(i)
         depth_true = x["depth_gt"].numpy()[0]
         pose_true = x["pose_gt"].numpy()[0]
         depth_pred = total_depth_pred[i]
@@ -41,8 +72,8 @@ def evaluate(test_dir_name, model_dir):
     print(rotational_errors[:5])
 
 
-def load_predictions(model_dir):
-    pred_dir_path = op.join(opts.DATAPATH_PRD, model_dir)
+def load_predictions(model_name):
+    pred_dir_path = op.join(opts.DATAPATH_PRD, model_name)
     os.makedirs(pred_dir_path, exist_ok=True)
     depth_pred = np.load(op.join(pred_dir_path, "depth.npy"))
     print(f"[load_predictions] load depth from {pred_dir_path}, shape={depth_pred.shape}")
@@ -116,7 +147,7 @@ def recover_pred_snippet_poses(poses):
     """
     target_pose = np.zeros(shape=(1, 6), dtype=np.float32)
     poses_vec = np.concatenate([poses[:2], target_pose, poses[2:]], axis=0)
-    poses_mat = pose_rvec2matr(poses_vec)
+    poses_mat = uf.pose_rvec2matr(poses_vec)
     recovered_pose = relative_pose_from_first(poses_mat)
     return recovered_pose
 
@@ -184,4 +215,4 @@ def calc_rotational_error(pose_pred_mat, pose_true_mat):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    evaluate("kitti_raw_test", "vode_model")
+    evaluate_by_user_interaction()
