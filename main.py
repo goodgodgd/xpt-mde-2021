@@ -12,10 +12,12 @@ def main():
               "\t-> see model/model_main.py \n" \
               "4) predict depth and pose from test data \n" \
               "\t-> see model/model_main.py \n" \
-              "5) evaluate predicted data \n" \
-              "\t-> see evaluate/evaluate_main.py \n"
+              "5) evaluate predictions \n" \
+              "\t-> see evaluate/evaluate_main.py \n" \
+              "6) visualize predictions \n" \
+              "\t-> see evaluate/visualize_main.py \n"
 
-    task_id = input_integer(message, 1, 5)
+    task_id = input_integer(message, 1, 6)
     print(f"You selected task #{task_id}")
 
     if task_id == 1:
@@ -33,6 +35,9 @@ def main():
     elif task_id == 5:
         from evaluate.evaluate_main import evaluate_by_user_interaction
         evaluate_by_user_interaction()
+    elif task_id == 6:
+        from evaluate.visualize_main import visualize_by_user_interaction
+        visualize_by_user_interaction()
 
 
 if __name__ == "__main__":

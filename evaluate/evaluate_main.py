@@ -71,6 +71,11 @@ def evaluate(data_dir_name, model_name):
     print("rotational error shape:", rotational_errors.shape)
     print(rotational_errors[:5])
 
+    os.makedirs(op.join(opts.DATAPATH_EVL, model_name), exist_ok=True)
+    np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "depthe_error.txt"), depth_errors, fmt="%1.4f")
+    np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "trajectory_error.txt"), trajectory_errors, fmt="%1.4f")
+    np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "rotation_error.txt"), rotational_errors, fmt="%1.4f")
+
 
 def load_predictions(model_name):
     pred_dir_path = op.join(opts.DATAPATH_PRD, model_name)
@@ -93,8 +98,8 @@ def evaluate_depth(depth_pred, depth_true):
     crop_mask[crop[0]:crop[1], crop[2]:crop[3]] = 1
     mask = np.logical_and(mask, crop_mask)
     # scale matching
-    scalor = np.median(depth_true[mask]) / np.median(depth_pred[mask])
-    depth_pred[mask] *= scalor
+    scaler = np.median(depth_true[mask]) / np.median(depth_pred[mask])
+    depth_pred[mask] *= scaler
     # clip prediction and compute error metrics
     depth_pred = np.clip(depth_pred, opts.MIN_DEPTH, opts.MAX_DEPTH)
     metrics = compute_errors(depth_true[mask], depth_pred[mask])
