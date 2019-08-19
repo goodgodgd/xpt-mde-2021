@@ -19,6 +19,8 @@ class PriorOptions:
         self.IM_HEIGHT = 128
         self.BATCH_SIZE = 8
         self.EPOCHS = 100
+        self.MIN_DEPTH = 1e-3
+        self.MAX_DEPTH = 80
 
 
 class VodeOptions(PriorOptions):
@@ -28,7 +30,8 @@ class VodeOptions(PriorOptions):
         self.DATAPATH_TFR = op.join(self.DATAPATH, "tfrecords")
         self.DATAPATH_CKP = op.join(self.DATAPATH, "checkpts")
         self.DATAPATH_LOG = op.join(self.DATAPATH, "log")
-        self.DATAPATH_EVL = op.join(self.DATAPATH, "evaluate")
+        self.DATAPATH_PRD = op.join(self.DATAPATH, "prediction")
+        self.DATAPATH_EVL = op.join(self.DATAPATH, "evaluation")
 
     def get_dataset_path(self, dataset=None):
         if dataset is None:
