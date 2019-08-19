@@ -143,7 +143,51 @@ def reconstruct_image_roundup(pixel_coords, image, depth):
     return recon_image
 
 
-def main():
+# --------------------------------------------------------------------------------
+# TESTS
+
+def test_pixel_meshgrid():
+    height, width = (3, 4)
+    x = np.linspace(0, width-1, width)
+    y = np.linspace(0, height-1, height)
+    XY = pixel_meshgrid(height, width)
+    # print("meshgrid result", XY)
+    out_height, out_width = XY.get_shape().as_list()
+    assert (out_height == 3), f"out_width={out_height}"
+    assert (out_width == height*width)
+    assert (np.isclose(XY[0, :width].numpy(), x).all())
+    assert (np.isclose(XY[0, -width:].numpy(), x).all())
+    assert (np.isclose(XY[1, :height].numpy(), y[0]).all())
+    assert (np.isclose(XY[1, -height:].numpy(), y[-1]).all())
+    print("test_pixel_meshgrid passed")
+
+
+def test_pixel2cam2pixel():
+    height, width = (5, 7)
+    intrinsic = tf.constant([[5, 0, width//2], [0, 5, height//2], [0, 0, 1]], dtype=tf.float64)
+    depth = tf.ones(shape=(height, width), dtype=tf.float64)*3
+    pixel_coords = pixel_meshgrid(height, width)
+    cam_coords = pixel2cam(pixel_coords, depth, intrinsic)
+    prj_pixel_coords = cam2pixel(cam_coords, intrinsic)
+    # print("projected pixel coordinates\n", prj_pixel_coords.numpy())
+    assert (np.isclose(pixel_coords.numpy(), prj_pixel_coords.numpy()).all())
+    print("test_pixel2cam2pixel passed")
+
+
+def test_gather_nd():
+    mesh = pixel_meshgrid(3, 4)
+    mesh = tf.reshape(tf.transpose(mesh[:2, :]), (3, 4, -1))
+    # print("mesh", mesh)
+    indices = tf.constant([[0, 0], [1, 2]])
+    expect = tf.stack((mesh[0, 0, :], mesh[1, 2, :]), axis=0)
+    result = tf.gather_nd(mesh, indices)
+    # print("gather_nd expect", expect)
+    # print("gather_nd result", result)
+    assert (np.isclose(expect, result).all())
+    print("test_gather_nd passed")
+
+
+def test_synthesize_view():
     np.set_printoptions(precision=3, suppress=True)
     src_image, tgt_image, tgt_depth, t2s_pose, intrinsic = load_data()
 
@@ -155,5 +199,13 @@ def main():
     cv2.waitKey()
 
 
+def test():
+    np.set_printoptions(precision=3, suppress=True)
+    test_pixel_meshgrid()
+    test_pixel2cam2pixel()
+    test_gather_nd()
+    test_synthesize_view()
+
+
 if __name__ == "__main__":
-    main()
+    test()

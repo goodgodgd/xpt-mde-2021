@@ -139,7 +139,7 @@ def pose_reader(filename):
     poses = np.delete(poses, half_len, 0)
     pose_mats = []
     for pose in poses:
-        tmat = uf.pose_quat2mat(pose)
+        tmat = uf.pose_quat2matr(pose)
         pose_mats.append(tmat)
     pose_mats = np.stack(pose_mats, axis=0)
     return pose_mats.astype(np.float32)

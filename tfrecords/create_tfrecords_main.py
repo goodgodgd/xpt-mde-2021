@@ -10,7 +10,7 @@ from tfrecords.tfrecord_writer import TfrecordMaker
 
 def convert_to_tfrecords():
     src_paths = glob(op.join(opts.DATAPATH_SRC, "*"))
-    src_paths = [path for path in src_paths if op.isdir(path) and ("kitti_odom" in path)]
+    src_paths = [path for path in src_paths if op.isdir(path)]
     print("[convert_to_tfrecords] top paths:", src_paths)
 
     for srcpath in src_paths:

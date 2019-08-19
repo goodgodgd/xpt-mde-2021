@@ -227,7 +227,9 @@ def restack_on_channels(vertical_stack, num_stack):
     return channel_stack_image
 
 
-# ==================== tests ====================
+# --------------------------------------------------------------------------------
+# TESTS
+
 def test_restack_on_channels():
     print("===== start test_restack_on_channels")
     filename = op.join(opts.DATAPATH_SRC, "kitti_raw_train", "2011_09_26_0001", "000024.png")

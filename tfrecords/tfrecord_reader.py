@@ -8,10 +8,11 @@ from config import opts
 
 
 class TfrecordGenerator:
-    def __init__(self, tfrpath, shuffle=False, epochs=1):
+    def __init__(self, tfrpath, shuffle=False, epochs=1, batch_size=opts.BATCH_SIZE):
         self.tfrpath = tfrpath
         self.shuffle = shuffle
         self.epochs = epochs
+        self.batch_size = batch_size
         self.config = self.read_tfrecord_config(tfrpath)
         self.feature_dict = self.parse_config(self.config)
 
@@ -76,28 +77,31 @@ class TfrecordGenerator:
     def dataset_process(self, dataset):
         if self.shuffle:
             dataset = dataset.shuffle(buffer_size=1000)
-        print(f"===== num epochs={self.epochs}, batchsize={opts.BATCH_SIZE}")
+        print(f"===== num epochs={self.epochs}, batchsize={self.batch_size}")
         dataset = dataset.repeat(self.epochs)
-        dataset = dataset.batch(batch_size=opts.BATCH_SIZE, drop_remainder=True)
+        dataset = dataset.batch(batch_size=self.batch_size, drop_remainder=True)
         return dataset
 
 
-# =========
+# --------------------------------------------------------------------------------
+# TESTS
 
-def test():
+def test_read_dataset():
     tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"))
     dataset = tfrgen.get_generator()
-    for x, y in dataset:
+    for i, (x, y) in enumerate(dataset):
+        print("===== index:", i)
         print("x keys:", x.keys())
-        print("y data:", y)
+        print("y data:", y.keys())
         for key, value in x.items():
             print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
 
-        x["image"] = tf.cast(x["image"], tf.uint8)
+        x["image"] = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8)
+        # x["image"] = tf.cast(x["image"], tf.uint8)
         image = x["image"].numpy()
         cv2.imshow("image", image[0])
         cv2.waitKey(100)
 
 
 if __name__ == "__main__":
-    test()
+    test_read_dataset()

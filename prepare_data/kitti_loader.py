@@ -76,9 +76,9 @@ class KittiDataLoader:
 
     def to_local_pose(self, poses, target_index):
         tgt_to_src_poses = []
-        target_pose_mat = uf.pose_quat2mat(poses[target_index])
+        target_pose_mat = uf.pose_quat2matr(poses[target_index])
         for pose in poses:
-            cur_pose_mat = uf.pose_quat2mat(pose)
+            cur_pose_mat = uf.pose_quat2matr(pose)
             tgt_to_src_mat = np.matmul(np.linalg.inv(cur_pose_mat), target_pose_mat)
             tgt_to_src_qpose = uf.pose_mat2quat(tgt_to_src_mat)
             tgt_to_src_poses.append(tgt_to_src_qpose)

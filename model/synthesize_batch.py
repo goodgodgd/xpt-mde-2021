@@ -360,7 +360,9 @@ def erase_invalid_pixels(inputs):
     return flat_image
 
 
-# ==================== tests ====================
+# --------------------------------------------------------------------------------
+# TESTS
+
 def test_reshape_source_images():
     print("===== start test_reshape_source_images")
     filename = op.join(opts.DATAPATH_SRC, "kitti_raw_test", "2011_09_26_0002", "000024.png")
