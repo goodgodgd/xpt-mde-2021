@@ -190,7 +190,7 @@ def dump_history(history, model_name, initial_epoch):
 def predict_by_user_interaction():
     options = {"test_dir_name": "kitti_raw_test",
                "model_name": "vode_model",
-               "weights_name": "weights.h5"
+               "weights_name": "latest.h5"
                }
 
     print("\n===== Select prediction options")
@@ -249,5 +249,5 @@ def save_predictions(model_name, pred_depth, pred_pose):
 
 if __name__ == "__main__":
     train(train_dir_name="kitti_raw_train", val_dir_name="kitti_raw_test",
-          model_name="vode1", src_weights_name="weights.h5", dst_weights_name="weights.h5",
+          model_name="vode1", src_weights_name="latest.h5", dst_weights_name="latest.h5",
           learning_rate=0.0002, initial_epoch=0, final_epoch=2)
