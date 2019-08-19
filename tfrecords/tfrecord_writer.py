@@ -20,7 +20,12 @@ class TfrecordMaker:
         self.depth_avail = True if depths else False
 
     def make(self):
-        data_feeders = self.create_feeders()
+        try:
+            data_feeders = self.create_feeders()
+        except ValueError as e:
+            print(e)
+            return
+
         self.write_tfrecord_config(data_feeders)
         num_images = len(data_feeders["image"])
         num_shards = max(min(num_images // 5000, 10), 1)
@@ -43,7 +48,6 @@ class TfrecordMaker:
 
     def create_feeders(self):
         image_files, depth_files, pose_files, intrin_files = self.list_sequence_files()
-
         if depth_files:
             depth_feeder = df.NpyFeeder(depth_files, depth_reader)
         else:
@@ -59,6 +63,8 @@ class TfrecordMaker:
 
     def list_sequence_files(self):
         image_files = glob(op.join(self.srcpath, "*/*.png"))
+        if not image_files:
+            raise ValueError(f"[list_sequence_files] no image file in {self.srcpath}")
         if self.depth_avail:
             depth_files = [op.join(op.dirname(file_path), "depth",
                                    op.basename(file_path).replace(".png", ".txt"))

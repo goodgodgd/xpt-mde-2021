@@ -3,8 +3,8 @@ import os.path as op
 
 class PriorOptions:
     def __init__(self):
-        self.KITTI_RAW_PATH = "/content/gdrive/My Drive/colab_data/dataset_samples/kitti_raw_data"
-        self.KITTI_ODOM_PATH = "/content/gdrive/My Drive/colab_data/dataset_samples/kitti_odom_data"
+        self.KITTI_RAW_PATH = "/content/dataset_samples/kitti_raw_data"
+        self.KITTI_ODOM_PATH = "/content/dataset_samples/kitti_odom_data"
         if not op.isdir(self.KITTI_RAW_PATH):
             print("===== WARNING: kitti raw data path does NOT exists")
         if not op.isdir(self.KITTI_ODOM_PATH):
