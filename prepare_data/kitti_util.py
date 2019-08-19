@@ -27,7 +27,7 @@ class KittiUtil:
         print(f"[remove_static_frames] {len(frames)} -> {len(valid_frames)}")
         return valid_frames
 
-    def list_drives(self, split):
+    def list_drives(self, split, base_path):
         raise NotImplementedError()
 
     def get_drive_path(self, base_path, drive):
@@ -54,14 +54,15 @@ class KittiRawUtil(KittiUtil):
         return op.join(op.dirname(op.abspath(__file__)), "resources",
                        "kitti_raw_static_frames.txt")
 
-    def list_drives(self, split):
+    def list_drives(self, split, base_path):
         filename = op.join(op.dirname(op.abspath(__file__)), "resources",
                            f"kitti_raw_{split}_scenes.txt")
         with open(filename, "r") as f:
             drives = f.readlines()
             drives = [tuple(drive.strip("\n").split()) for drive in drives]
-            print("drive list:", drives)
-            return drives
+            existing_drives = [drive for drive in drives if op.isdir(self.get_drive_path(base_path, drive))]
+            print("drive list:", existing_drives)
+            return existing_drives
 
     def create_drive_loader(self, base_path, drive):
         date, drive_id = drive
@@ -152,7 +153,7 @@ class KittiOdomUtil(KittiUtil):
         return op.join(op.dirname(op.abspath(__file__)), "resources",
                        "kitti_odom_static_frames.txt")
 
-    def list_drives(self, split):
+    def list_drives(self, split, base_path):
         raise NotImplementedError()
 
     def create_drive_loader(self, base_path, drive):
@@ -196,8 +197,11 @@ class KittiOdomTrainUtil(KittiOdomUtil):
     def __init__(self):
         super().__init__()
 
-    def list_drives(self, split):
-        return [f"{i:02d}" for i in range(11, 22)]
+    def list_drives(self, split, base_path):
+        drives = [f"{i:02d}" for i in range(11, 22)]
+        existing_drives = [drive for drive in drives if op.isdir(self.get_drive_path(base_path, drive))]
+        print("drive list:", existing_drives)
+        return existing_drives
 
     def create_drive_loader(self, base_path, drive):
         loader = pykitti.odometry(base_path, drive)
@@ -212,8 +216,11 @@ class KittiOdomTestUtil(KittiOdomUtil):
     def __init__(self):
         super().__init__()
 
-    def list_drives(self, split):
-        return [f"{i:02d}" for i in range(0, 11)]
+    def list_drives(self, split, base_path):
+        drives = [f"{i:02d}" for i in range(0, 11)]
+        existing_drives = [drive for drive in drives if op.isdir(self.get_drive_path(base_path, drive))]
+        print("drive list:", existing_drives)
+        return existing_drives
 
     def create_drive_loader(self, base_path, drive):
         pose_file = op.join(base_path, "poses", drive+".txt")

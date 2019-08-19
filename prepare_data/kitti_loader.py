@@ -13,7 +13,7 @@ class KittiDataLoader:
     def __init__(self, base_path, dataset, split):
         self.base_path = base_path
         self.kitti_util = self.kitti_util_factory(dataset, split)
-        self.drive_list = self.kitti_util.list_drives(split)
+        self.drive_list = self.kitti_util.list_drives(split, base_path)
         self.drive_loader = None
         self.drive_path = ""
         self.frame_inds = []
