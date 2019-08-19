@@ -10,15 +10,16 @@ import settings
 from config import opts
 from model.model_builder import create_models
 from tfrecords.tfrecord_reader import TfrecordGenerator
-from utils.util_funcs import input_integer
+from utils.util_funcs import input_integer, input_float, print_progress
 
 
 def train_by_user_interaction():
     options = {"train_dir_name": "kitti_raw_train",
                "val_dir_name": "kitti_raw_test",
                "model_name": "vode_model",
-               "src_weights_name": "weights.h5",
-               "dst_weights_name": "weights.h5",
+               "src_weights_name": "latest.h5",
+               "dst_weights_name": "latest.h5",
+               "learning_rate": 0.0002,
                "initial_epoch": 0,
                "final_epoch": opts.EPOCHS}
 
@@ -50,6 +51,8 @@ def train_by_user_interaction():
         print("Type dst_weights_name: save weights to {model_name/dst_weights_name}")
         options["dst_weights_name"] = input()
 
+        message = "Type learning_rate: learning rate"
+        options["learning_rate"] = input_float(message, 0, 10000)
         message = "Type initial_epoch: number of epochs previously trained"
         options["initial_epoch"] = input_integer(message, 0, 10000)
         message = "Type final_epoch: number of epochs to train model upto"
@@ -78,31 +81,30 @@ class LM:
 
 
 def train(train_dir_name, val_dir_name, model_name, src_weights_name, dst_weights_name,
-          initial_epoch, final_epoch):
+          learning_rate, initial_epoch, final_epoch):
     set_gpu_config()
 
     model_pred, model_train = create_models()
     model_train = try_load_weights(model_train, model_name, src_weights_name)
 
-    optimizer = tf.keras.optimizers.Adam(learning_rate=0.0002)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
     losses = {"loss_out": LM.loss_for_loss, "metric_out": LM.loss_for_metric}
     metrics = {"loss_out": LM.metric_for_loss, "metric_out": LM.metric_for_metric}
     model_train.compile(optimizer=optimizer, loss=losses, metrics=metrics)
 
     dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), True, opts.EPOCHS).get_generator()
     dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), True, opts.EPOCHS).get_generator()
-    callbacks = get_callbacks(model_name)
+    callbacks = get_callbacks(model_name, dst_weights_name)
     steps_per_epoch = count_steps(train_dir_name)
     val_steps = np.clip(count_steps(train_dir_name)/2, 0, 100).astype(np.int32)
 
-    print(f"\n\n\n========== START TRAINING ON {model_name} ==========\n\n\n")
+    print(f"\n\n========== START TRAINING ON {model_name} ==========\n\n")
     history = model_train.fit(dataset_train, epochs=final_epoch, callbacks=callbacks,
                               validation_data=dataset_val, steps_per_epoch=steps_per_epoch,
                               validation_steps=val_steps, initial_epoch=initial_epoch)
 
-    save_model_weights(model_train, model_name, dst_weights_name)
     if model_name:
-        dump_history(history.history, model_name)
+        dump_history(history.history, model_name, initial_epoch)
 
 
 def set_gpu_config():
@@ -138,24 +140,23 @@ def save_model_weights(model, model_name, weights_name):
     model.save_weights(model_file_path)
 
 
-def get_callbacks(model_name):
-    if model_name:
-        model_path = op.join(opts.DATAPATH_CKP, model_name, "model-{epoch:02d}-{val_loss:.2f}.h5")
-        log_dir = op.join(opts.DATAPATH_LOG, model_name)
-    else:
-        nowtime = datetime.datetime.now()
-        nowtime = nowtime.strftime("%m%d_%H%M%S")
-        model_path = op.join(opts.DATAPATH_CKP, nowtime, "model-{epoch:02d}-{val_loss:.2f}.h5")
-        log_dir = op.join(opts.DATAPATH_LOG, nowtime)
-
-    if not op.isdir(model_path):
-        os.makedirs(op.dirname(model_path), exist_ok=True)
+def get_callbacks(model_name, weights_name):
+    model_dir_path = op.join(opts.DATAPATH_CKP, model_name)
+    best_ckpt_file = op.join(model_dir_path, "model-{epoch:02d}-{val_loss:.2f}.h5")
+    regular_ckpt_file = op.join(model_dir_path, weights_name)
+    os.makedirs(model_dir_path, exist_ok=True)
+    log_dir = op.join(opts.DATAPATH_LOG, model_name)
 
     callbacks = [
         tf.keras.callbacks.ModelCheckpoint(
-            filepath=model_path,
+            filepath=best_ckpt_file,
             monitor="val_loss",
             save_best_only=True,
+            save_freq="epoch",
+            save_weights_only=True
+        ),
+        tf.keras.callbacks.ModelCheckpoint(
+            filepath=regular_ckpt_file,
             save_freq="epoch",
             save_weights_only=True
         ),
@@ -175,10 +176,15 @@ def count_steps(dataset_dir):
     return steps
 
 
-def dump_history(history, model_name):
-    df = pd.DataFrame(history)
-    df.to_csv(op.join(opts.DATAPATH_CKP, model_name, "history.txt"), float_format="%.3f")
-    print("save history\n", df)
+def dump_history(history, model_name, initial_epoch):
+    filename = op.join(opts.DATAPATH_CKP, model_name, "history.txt")
+    hist_df = pd.DataFrame(history)
+    if op.isfile(filename) and initial_epoch > 0:
+        existing_df = pd.read_csv(filename)
+        hist_df = pd.concat([existing_df, hist_df])
+        print("concat hist")
+    hist_df.to_csv(filename, encoding="utf-8", index=False, float_format="%1.3f")
+    print("save history\n", hist_df)
 
 
 def predict_by_user_interaction():
@@ -242,5 +248,6 @@ def save_predictions(model_name, pred_depth, pred_pose):
 
 
 if __name__ == "__main__":
-    # train_by_user_interaction()
-    predict("kitti_raw_test", "vode_model", "weights.h5")
+    train(train_dir_name="kitti_raw_train", val_dir_name="kitti_raw_test",
+          model_name="vode1", src_weights_name="weights.h5", dst_weights_name="weights.h5",
+          learning_rate=0.0002, initial_epoch=0, final_epoch=2)

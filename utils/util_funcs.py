@@ -103,12 +103,28 @@ def pose_rvec2matr(poses):
     return tmat
 
 
-def input_integer(message, minval, maxval):
+def input_integer(message, minval=0, maxval=10000):
     while True:
         print(message)
         key = input()
         try:
             key = int(key)
+            if key < minval or key > maxval:
+                raise ValueError(f"Expected input is within range [{minval}~{maxval}], "
+                                 f"but you typed {key}")
+        except ValueError as e:
+            print(e)
+            continue
+        break
+    return key
+
+
+def input_float(message, minval=0., maxval=10000.):
+    while True:
+        print(message)
+        key = input()
+        try:
+            key = float(key)
             if key < minval or key > maxval:
                 raise ValueError(f"Expected input is within range [{minval}~{maxval}], "
                                  f"but you typed {key}")

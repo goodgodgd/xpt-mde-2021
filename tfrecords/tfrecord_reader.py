@@ -77,7 +77,8 @@ class TfrecordGenerator:
     def dataset_process(self, dataset):
         if self.shuffle:
             dataset = dataset.shuffle(buffer_size=1000)
-        print(f"===== num epochs={self.epochs}, batchsize={self.batch_size}")
+            print("[dataset] dataset suffled")
+        print(f"[dataset] num epochs={self.epochs}, batch size={self.batch_size}")
         dataset = dataset.repeat(self.epochs)
         dataset = dataset.batch(batch_size=self.batch_size, drop_remainder=True)
         return dataset
@@ -103,5 +104,31 @@ def test_read_dataset():
         cv2.waitKey(100)
 
 
+from utils.util_funcs import print_progress
+
+
+def load_from_generator():
+    dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_train"), True, opts.EPOCHS).get_generator()
+    dataset_test = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), True, opts.EPOCHS).get_generator()
+    print_progress(None, True)
+    for i, (x, y) in enumerate(dataset_train):
+        if i == 400:
+            break
+        print_progress(i)
+
+    print("\ntest dataset")
+    for i, (x, y) in enumerate(dataset_test):
+        if i == 50:
+            break
+        print_progress(i)
+
+
+def test_generator():
+    for i in range(5):
+        print(f"\n\n================= {i} ================\n\n")
+        load_from_generator()
+
+
 if __name__ == "__main__":
-    test_read_dataset()
+    # test_read_dataset()
+    test_generator()
