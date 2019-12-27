@@ -2,7 +2,6 @@ import os.path as op
 from glob import glob
 import numpy as np
 import pykitti
-import quaternion
 
 import prepare_data.kitti_depth_generator as kdg
 import utils.util_funcs as uf
@@ -39,7 +38,7 @@ class KittiUtil:
     def frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def get_quat_pose(self, drive_loader, index, drive_path):
+    def get_quat_pose(self, drive_loader, index):
         raise NotImplementedError()
 
     def load_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape, target_shape):
@@ -75,7 +74,7 @@ class KittiRawUtil(KittiUtil):
     def frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def get_quat_pose(self, drive_loader, index, drive_path):
+    def get_quat_pose(self, drive_loader, index):
         T_cam2_imu = drive_loader.calib.T_cam2_imu
         T_imu_cam2 = np.linalg.inv(T_cam2_imu)
         T_w_imu = drive_loader.oxts[index].T_w_imu
@@ -95,7 +94,6 @@ class KittiRawTrainUtil(KittiRawUtil):
         super().__init__()
 
     def frame_indices(self, drive_path, snippet_len):
-        print("drive path", drive_path)
         # list frame files in drive_path
         frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
         frame_paths = glob(frame_pattern)
@@ -112,7 +110,6 @@ class KittiRawTrainUtil(KittiRawUtil):
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
         frame_inds.sort()
         frame_inds = np.array(frame_inds, dtype=int)
-        print("[frame_indices] frame ids:", frame_inds[0:-1:5])
         return frame_inds
 
 
@@ -121,7 +118,6 @@ class KittiRawTestUtil(KittiRawUtil):
         super().__init__()
 
     def frame_indices(self, drive_path, snippet_len):
-        print("drive path", drive_path)
         # count total frames in drive
         frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
         num_frames = len(glob(frame_pattern))
@@ -164,7 +160,6 @@ class KittiOdomUtil(KittiUtil):
         return drive_path
 
     def frame_indices(self, drive_path, snippet_len):
-        print("drive path", drive_path)
         # list frame files in drive_path
         frame_pattern = op.join(drive_path, "image_2", "*.png")
         frame_paths = glob(frame_pattern)
@@ -181,10 +176,9 @@ class KittiOdomUtil(KittiUtil):
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
         frame_inds.sort()
         frame_inds = np.array(frame_inds, dtype=int)
-        print("[frame_indices] frame ids:", frame_inds[0:-1:10])
         return frame_inds
 
-    def get_quat_pose(self, drive_loader, index, drive_path):
+    def get_quat_pose(self, drive_loader, index):
         tmat = self.poses[index].reshape((3, 4))
         return uf.pose_mat2quat(tmat)
 

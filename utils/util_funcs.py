@@ -11,7 +11,7 @@ def print_progress(count, is_total: bool = False):
     else:
         # Status-message.
         # Note the \r which means the line should overwrite itself.
-        msg = "\r- Progress: {}/{}".format(count, print_progress.total)
+        msg = f"\r- Progress: {count}/{print_progress.total}"
         # Print it.
         sys.stdout.write(msg)
         sys.stdout.flush()

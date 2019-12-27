@@ -19,14 +19,15 @@ def prepare_input_data():
 def prepare_and_save_snippets(loader, dataset, split):
     dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
     os.makedirs(dstpath, exist_ok=True)
+    num_drives = len(loader.drive_list)
 
-    for drive in loader.drive_list:
+    for i, drive in enumerate(loader.drive_list):
         snippet_path, pose_path, depth_path = get_destination_paths(dstpath, dataset, drive)
-        print("\ndrive path:", snippet_path)
         if op.isdir(snippet_path):
             print(f"this drive may have already prepared, check this path completed: {snippet_path}")
             continue
 
+        print(f"\n{'=' * 50}\n[load drive] [{i}/{num_drives}] drive path: {snippet_path}")
         frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
         if frame_indices.size == 0:
             print("this drive is EMPTY")

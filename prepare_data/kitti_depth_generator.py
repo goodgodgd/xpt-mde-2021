@@ -2,92 +2,7 @@
 # https://github.com/mrharicot/monodepth/blob/master/utils/evaluation_utils.py
 import numpy as np
 import os
-import cv2
 from collections import Counter
-
-
-def compute_depth_errors(gt, pred):
-    thresh = np.maximum((gt / pred), (pred / gt))
-    a1 = (thresh < 1.25).mean()
-    a2 = (thresh < 1.25 ** 2).mean()
-    a3 = (thresh < 1.25 ** 3).mean()
-
-    rmse = (gt - pred) ** 2
-    rmse = np.sqrt(rmse.mean())
-
-    rmse_log = (np.log(gt) - np.log(pred)) ** 2
-    rmse_log = np.sqrt(rmse_log.mean())
-
-    abs_rel = np.mean(np.abs(gt - pred) / gt)
-    sq_rel = np.mean(((gt - pred) ** 2) / gt)
-
-    return abs_rel, sq_rel, rmse, rmse_log, a1, a2, a3
-
-
-def save_gt_depths(depths, output_root):
-    if not os.path.isdir(output_root):
-        raise FileNotFoundError(output_root)
-
-    save_path = os.path.join(output_root, "ground_truth", "depth")
-    if not os.path.isdir(save_path):
-        os.makedirs(save_path)
-
-    for i, depth in enumerate(depths):
-        filename = os.path.join(save_path, "{:06d}".format(i))
-        np.save(filename, depth)
-
-
-def save_pred_depths(depths, output_root, modelname):
-    if not os.path.isdir(os.path.join(output_root, modelname)):
-        raise FileNotFoundError()
-
-    save_path = os.path.join(output_root, modelname, "depth")
-    if not os.path.isdir(save_path):
-        os.makedirs(save_path)
-
-    depths = np.concatenate(depths, axis=0)
-    filename = os.path.join(save_path, "kitti_eigen_depth_predictions")
-    np.save(filename, depths)
-    print("predicted depths were saved!! shape=", depths.shape)
-
-
-# ==================================================
-
-def lin_interp(shape, xyd):
-    # taken from https://github.com/hunse/kitti
-    m, n = shape
-    ij, d = xyd[:, 1::-1], xyd[:, 2]
-    f = LinearNDInterpolator(ij, d, fill_value=0)
-    J, I = np.meshgrid(np.arange(n), np.arange(m))
-    IJ = np.vstack([I.flatten(), J.flatten()]).T
-    disparity = f(IJ).reshape(shape)
-    return disparity
-
-
-def read_calib_file(path):
-    # taken from https://github.com/hunse/kitti
-    float_chars = set("0123456789.e+- ")
-    data = {}
-    with open(path, 'r') as f:
-        for line in f.readlines():
-            key, value = line.split(':', 1)
-            value = value.strip()
-            data[key] = value
-            # if value is array of numbers, not date time, convert to numpy array
-            if float_chars.issuperset(value):
-                # try to cast to float array
-                try:
-                    # change: np.array(map(f, v)) -> np.array(list(map(f, v)))
-                    data[key] = np.array(list(map(float, value.split(' '))))
-                except ValueError:
-                    # casting error: data[key] already eq. value, so pass
-                    pass
-    return data
-
-
-def sub2ind(matrixSize, rowSub, colSub):
-    m, n = matrixSize
-    return rowSub * (n - 1) + colSub - 1
 
 
 def generate_depth_map(velo_data, calib_dir, orig_shape, target_shape, cam='02', interp=False):
@@ -151,3 +66,40 @@ def generate_depth_map(velo_data, calib_dir, orig_shape, target_shape, cam='02',
     else:
         return depth
 
+
+def read_calib_file(path):
+    # taken from https://github.com/hunse/kitti
+    float_chars = set("0123456789.e+- ")
+    data = {}
+    with open(path, 'r') as f:
+        for line in f.readlines():
+            key, value = line.split(':', 1)
+            value = value.strip()
+            data[key] = value
+            # if value is array of numbers, not date time, convert to numpy array
+            if float_chars.issuperset(value):
+                # try to cast to float array
+                try:
+                    # change: np.array(map(f, v)) -> np.array(list(map(f, v)))
+                    data[key] = np.array(list(map(float, value.split(' '))))
+                except ValueError:
+                    # casting error: data[key] already eq. value, so pass
+                    pass
+    return data
+
+
+def sub2ind(matrixSize, rowSub, colSub):
+    m, n = matrixSize
+    return rowSub * (n - 1) + colSub - 1
+
+
+# deprecated
+def lin_interp(shape, xyd):
+    # taken from https://github.com/hunse/kitti
+    m, n = shape
+    ij, d = xyd[:, 1::-1], xyd[:, 2]
+    f = LinearNDInterpolator(ij, d, fill_value=0)
+    J, I = np.meshgrid(np.arange(n), np.arange(m))
+    IJ = np.vstack([I.flatten(), J.flatten()]).T
+    disparity = f(IJ).reshape(shape)
+    return disparity

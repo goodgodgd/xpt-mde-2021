@@ -40,9 +40,11 @@ def train_by_user_interaction():
         if ds_id == 1:
             options["train_dir_name"] = "kitti_raw_train"
             options["val_dir_name"] = "kitti_raw_test"
-        if ds_id == 2:
+        elif ds_id == 2:
             options["train_dir_name"] = "kitti_odom_train"
             options["val_dir_name"] = "kitti_odom_test"
+        else:
+            print("invalid option, dataset selection stay as default")
 
         print("Type model_name: dir name under opts.DATAPATH_CKP to save or load model")
         options["model_name"] = input()

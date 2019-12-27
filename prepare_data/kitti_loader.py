@@ -1,7 +1,5 @@
-import os.path as op
 import cv2
 import numpy as np
-import quaternion
 
 import settings
 from config import opts
@@ -31,10 +29,11 @@ class KittiDataLoader:
             raise ValueError()
 
     def load_drive(self, drive, snippet_len):
-        print("=" * 50)
         self.drive_loader = self.kitti_util.create_drive_loader(self.base_path, drive)
         self.drive_path = self.kitti_util.get_drive_path(self.base_path, drive)
         self.frame_inds = self.kitti_util.frame_indices(self.drive_path, snippet_len)
+        if self.frame_inds.size > 1:
+            print(f"frame_indices: {self.frame_inds[0]} ~ {self.frame_inds[-1]}")
         return self.frame_inds
 
     def snippet_generator(self, index, snippet_len):
@@ -65,7 +64,7 @@ class KittiDataLoader:
         halflen = snippet_len//2
         poses = []
         for ind in range(frame_idx-halflen, frame_idx+halflen+1):
-            pose = self.kitti_util.get_quat_pose(self.drive_loader, ind, self.drive_path)
+            pose = self.kitti_util.get_quat_pose(self.drive_loader, ind)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
