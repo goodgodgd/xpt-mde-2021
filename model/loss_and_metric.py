@@ -1,5 +1,74 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+from model.synthesize_batch import synthesize_batch_multi_scale
+
+
+# TODO: check input dimensions, test results
+def loss_vode(predictions, features):
+    """
+    :param predictions: {"disp_ms": disps_ms, "pose": poses}
+        disp_ms: multi scale disparity, list of [batch, height/scale, width/scale, 1]
+        pose: 6-DoF poses [batch, num_src, 6]
+    :param features: {"image": image, "pose_gt": pose_gt, "depth_gt": depth_gt, "intrinsic": intrinsic}
+        image: stacked image [batch, height*snippet_len, width, 3]
+        pose_gt: 4x4 transformation matrix [batch, num_src, 4, 4]
+        depth_gt: gt depth [batch, height, width, 1]
+        intrinsic: camera projection matrix [batch, 3, 3]
+    """
+    # TODO: test_read_tfrecord 먼저해서 입력 dimension 다 확인하고 그걸
+    #   tfrecord_reader에 적기
+    stacked_image = features['image']
+    intrinsic = features['intrinsic']
+    target_image = extract_target(stacked_image)
+
+    pred_disp_ms = predictions['disp_ms']
+    pred_pose = predictions['pose']
+    pred_depth_ms = disp_to_depth(pred_disp_ms)
+
+    target_ms = multi_scale_like(target_image, pred_disp_ms)
+
+    synth_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_pose)
+    photo_loss = photometric_loss_multi_scale(synth_target_ms, target_ms)
+    height_orig = target_image.get_shape().as_list()[2]
+    smooth_loss = smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
+    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="loss_out")\
+                        ([photo_loss, smooth_loss])
+
+
+def extract_target(stacked_image):
+    """
+    :param stacked_image: [batch, snippet_len*height, width, 3]
+    :return: target_image, [batch, height, width, 3]
+    """
+    batch, imheight, imwidth, _ = stacked_image.get_shape().as_list()
+    imheight = int(imheight // opts.SNIPPET_LEN)
+    target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
+                            (-1, imheight, -1, -1))
+    print("extracted target image shape=", target_image.get_shape())
+    return target_image
+
+
+def disp_to_depth(disp_ms):
+    target_ms = []
+    for i, disp in enumerate(disp_ms):
+        target = layers.Lambda(lambda dis: 1./dis, name=f"todepth_{i}")(disp)
+        target_ms.append(target)
+    return target_ms
+
+
+def multi_scale_like(image, disp_ms):
+    """
+    :param image: [batch, height, width, 3]
+    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :return: image_ms: list of [batch, height/scale, width/scale, 3]
+    """
+    image_ms = []
+    for i, disp in enumerate(disp_ms):
+        batch, height_sc, width_sc, _ = disp.get_shape().as_list()
+        image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
+                                 name=f"target_resize_{i}")(image)
+        image_ms.append(image_sc)
+    return image_ms
 
 
 def photometric_loss_multi_scale(synthesized_target_ms, original_target_ms):

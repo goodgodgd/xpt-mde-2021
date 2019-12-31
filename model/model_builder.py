@@ -10,7 +10,15 @@ from model.synthesize_batch import synthesize_batch_multi_scale
 import model.loss_and_metric as lm
 
 
-def create_models():
+def create_model():
+    image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
+    stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
+    target_image = layers.Lambda(lambda image: extract_target(image), name="extract_target")(stacked_image)
+    model = create_pred_model(stacked_image, target_image)
+    return model
+
+
+def create_models_old():
     image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
     intrin_shape = (3, 3)
     depth_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 1)
@@ -251,6 +259,7 @@ def test_restack_on_channels():
     print("!!! test_restack_on_channels passed")
 
 
+# TODO: 바뀐 모델에서 돌아가게 수정
 def test_create_models():
     model_pred, model_train = create_models()
     model_pred.summary()

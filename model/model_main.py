@@ -8,9 +8,10 @@ import pandas as pd
 
 import settings
 from config import opts
-from model.model_builder import create_models
+from model.model_builder import create_model
 from tfrecords.tfrecord_reader import TfrecordGenerator
 from utils.util_funcs import input_integer, input_float, print_progress
+import model.loss_and_metric as lm
 
 
 def train_by_user_interaction():
@@ -64,49 +65,70 @@ def train_by_user_interaction():
     train(**options)
 
 
-class LM:
-    @staticmethod
-    def loss_for_loss(y_true, y_pred):
-        return y_pred
-
-    @staticmethod
-    def loss_for_metric(y_true, y_pred):
-        return tf.constant(0, dtype=tf.float32)
-
-    @staticmethod
-    def metric_for_loss(y_true, y_pred):
-        return tf.constant(0, dtype=tf.float32)
-
-    @staticmethod
-    def metric_for_metric(y_true, y_pred):
-        return y_pred
-
-
-def train(train_dir_name, val_dir_name, model_name, src_weights_name, dst_weights_name,
-          learning_rate, initial_epoch, final_epoch):
+def train_by_tape(train_dir_name, val_dir_name, model_name, src_weights_name, dst_weights_name,
+                  learning_rate, initial_epoch, final_epoch):
     set_gpu_config()
-
-    model_pred, model_train = create_models()
-    model_train = try_load_weights(model_train, model_name, src_weights_name)
-
-    optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
-    losses = {"loss_out": LM.loss_for_loss, "metric_out": LM.loss_for_metric}
-    metrics = {"loss_out": LM.metric_for_loss, "metric_out": LM.metric_for_metric}
-    model_train.compile(optimizer=optimizer, loss=losses, metrics=metrics)
-
+    model = create_model()
+    model = try_load_weights(model, model_name, src_weights_name)
+    optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
     dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), True, opts.EPOCHS).get_generator()
     dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), True, opts.EPOCHS).get_generator()
-    callbacks = get_callbacks(model_name, dst_weights_name)
     steps_per_epoch = count_steps(train_dir_name)
-    val_steps = np.clip(count_steps(train_dir_name)/2, 0, 100).astype(np.int32)
+    results_train = []
+    results_val = []
 
     print(f"\n\n========== START TRAINING ON {model_name} ==========\n\n")
-    history = model_train.fit(dataset_train, epochs=final_epoch, callbacks=callbacks,
-                              validation_data=dataset_val, steps_per_epoch=steps_per_epoch,
-                              validation_steps=val_steps, initial_epoch=initial_epoch)
+    for epoch in range(initial_epoch, final_epoch):
+        print(f"\n========== Start epoch: {epoch} ==========")
+        results = train_an_epoch(epoch, model, dataset_train, optimizer, steps_per_epoch)
+        results_train.append(results)
 
-    if model_name:
-        dump_history(history.history, model_name, initial_epoch)
+        results = validate_an_epoch(epoch, model, dataset_val, steps_per_epoch)
+        results_val.append(results)
+
+        summarize_results(model, results_train, results_val)
+
+
+def train_an_epoch(epoch, model, dataset, optimizer, steps_per_epoch):
+    results = []
+
+    # TODO: dataset은 한번 for loop 돌고나서 또 써도 되나?
+    for step, features in enumerate(dataset):
+        with tf.GradientTape() as tape:
+            preds = model(features)
+            # predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
+            loss = loss_vode(preds, features)
+            # TODO: 스케일만 다른 y_true, y_pred 넣었을 때 값이 0 나오는지 테스트 함수 만들기
+            pose_metric = metric_pose(preds, features)
+
+        grads = tape.gradient(loss, model.trainable_weights)
+        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        results.append((epoch, step, loss.numpy(), pose_metric.numpy()))
+
+        if step % 200 == 0:
+            mean_res = np.array(results[-200:-1]).mean(axis=0)
+            print(f"Training {step}/{steps_per_epoch}, loss={mean_res[2]}, metric={mean_res[3]}")
+
+        return results
+
+
+def validate_an_epoch(epoch, model, dataset, steps_per_epoch):
+    results = []
+
+    # TODO: dataset은 한번 for loop 돌고나서 또 써도 되나?
+    for step, features in enumerate(dataset):
+        preds = model(features)
+        # predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
+        loss = lm.loss_vode(preds, features)
+        # TODO: 스케일만 다른 y_true, y_pred 넣었을 때 값이 0 나오는지 테스트 함수 만들기
+        pose_metric = lm.metric_pose(preds, features)
+        results.append((epoch, step, loss.numpy(), pose_metric.numpy()))
+
+        if step % 200 == 0:
+            mean_res = np.array(results[-200:-1]).mean(axis=0)
+            print(f"Training {step}/{steps_per_epoch}, loss={mean_res[2]}, metric={mean_res[3]}")
+
+        return results
 
 
 def set_gpu_config():
@@ -142,33 +164,7 @@ def save_model_weights(model, model_name, weights_name):
     model.save_weights(model_file_path)
 
 
-def get_callbacks(model_name, weights_name):
-    model_dir_path = op.join(opts.DATAPATH_CKP, model_name)
-    best_ckpt_file = op.join(model_dir_path, "model-{epoch:02d}-{val_loss:.2f}.h5")
-    regular_ckpt_file = op.join(model_dir_path, weights_name)
-    os.makedirs(model_dir_path, exist_ok=True)
-    log_dir = op.join(opts.DATAPATH_LOG, model_name)
-
-    callbacks = [
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath=best_ckpt_file,
-            monitor="val_loss",
-            save_best_only=True,
-            save_freq="epoch",
-            save_weights_only=True
-        ),
-        tf.keras.callbacks.ModelCheckpoint(
-            filepath=regular_ckpt_file,
-            save_freq="epoch",
-            save_weights_only=True
-        ),
-        tf.keras.callbacks.TensorBoard(
-            log_dir=log_dir
-        ),
-    ]
-    return callbacks
-
-
+# TODO: tfrecord config 파일에 카운트 수 넣고 읽기
 def count_steps(dataset_dir):
     srcpath = op.join(opts.DATAPATH_SRC, dataset_dir)
     files = glob(op.join(srcpath, "*/*.png"))

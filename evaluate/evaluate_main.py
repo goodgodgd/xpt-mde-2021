@@ -142,6 +142,7 @@ def evaluate_pose(pose_pred, pose_true):
     return trj_error, rot_error
 
 
+# TODO: check shape
 def recover_pred_snippet_poses(poses):
     """
     :param poses: source poses that transforms points in target to source frame
@@ -157,6 +158,7 @@ def recover_pred_snippet_poses(poses):
     return recovered_pose
 
 
+# TODO: check shape
 def recover_true_snippet_poses(poses):
     """
     :param poses: source poses that transforms points in target to source frame

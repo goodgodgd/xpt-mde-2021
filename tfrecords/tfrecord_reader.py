@@ -68,11 +68,9 @@ class TfrecordGenerator:
 
         # raw uint8 type may saturate during bilinear interpolation
         decoded["image"] = tf.image.convert_image_dtype(decoded["image"], dtype=tf.float32) * 2 - 1
-        x = {"image": decoded["image"], "pose_gt": decoded["pose"],
-             "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
-        # dummy outputs for training
-        y = {"loss_out": tf.constant(0, dtype=tf.float32), "metric_out": tf.constant(0, dtype=tf.float32)}
-        return x, y
+        features = {"image": decoded["image"], "pose_gt": decoded["pose"],
+                    "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
+        return features
 
     def dataset_process(self, dataset):
         if self.shuffle:
@@ -90,15 +88,12 @@ class TfrecordGenerator:
 def test_read_dataset():
     tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"))
     dataset = tfrgen.get_generator()
-    for i, (x, y) in enumerate(dataset):
+    for i, x in enumerate(dataset):
         print("===== index:", i)
-        print("x keys:", x.keys())
-        print("y data:", y.keys())
         for key, value in x.items():
-            print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
+            print(f"x shape and type: {key}={value.shape}, {value.dtype}")
 
         x["image"] = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8)
-        # x["image"] = tf.cast(x["image"], tf.uint8)
         image = x["image"].numpy()
         cv2.imshow("image", image[0])
         cv2.waitKey(100)
@@ -107,28 +102,28 @@ def test_read_dataset():
 from utils.util_funcs import print_progress
 
 
-def load_from_generator():
-    dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_train"), True, opts.EPOCHS).get_generator()
-    dataset_test = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), True, opts.EPOCHS).get_generator()
-    print_progress(None, True)
-    for i, (x, y) in enumerate(dataset_train):
-        if i == 400:
-            break
-        print_progress(i)
-
-    print("\ntest dataset")
-    for i, (x, y) in enumerate(dataset_test):
-        if i == 50:
-            break
-        print_progress(i)
-
-
 def test_generator():
     for i in range(5):
         print(f"\n\n================= {i} ================\n\n")
         load_from_generator()
 
 
+def load_from_generator():
+    dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_train"), True, opts.EPOCHS).get_generator()
+    dataset_test = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), True, opts.EPOCHS).get_generator()
+    print_progress(None, True)
+    for i, x in enumerate(dataset_train):
+        if i == 400:
+            break
+        print_progress(i)
+
+    print("\ntest dataset")
+    for i, x in enumerate(dataset_test):
+        if i == 50:
+            break
+        print_progress(i)
+
+
 if __name__ == "__main__":
-    # test_read_dataset()
+    test_read_dataset()
     test_generator()
