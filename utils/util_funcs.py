@@ -4,19 +4,22 @@ import quaternion
 import tensorflow as tf
 
 
-def print_progress(count, is_total: bool = False):
-    if is_total:
-        # static variable in function
-        print_progress.total = getattr(print_progress, 'count', count)
-    else:
-        # Status-message.
-        # Note the \r which means the line should overwrite itself.
-        msg = f"\r- Progress: {count}/{print_progress.total}"
-        # Print it.
-        sys.stdout.write(msg)
-        sys.stdout.flush()
+def print_progress_status(status_msg):
+    # Note the \r which means the line should overwrite itself.
+    msg = "\r" + status_msg
+    # Print it.
+    sys.stdout.write(msg)
+    sys.stdout.flush()
 
-    if count == print_progress.total:
+
+def print_numeric_progress(count, total):
+    # Status-message.
+    # Note the \r which means the line should overwrite itself.
+    msg = f"\r- Progress: {count}/{total}"
+    # Print it.
+    sys.stdout.write(msg)
+    sys.stdout.flush()
+    if count == total:
         print("")
 
 

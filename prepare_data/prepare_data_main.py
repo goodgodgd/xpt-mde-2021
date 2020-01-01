@@ -6,7 +6,7 @@ import numpy as np
 import settings
 from config import opts
 from kitti_loader import KittiDataLoader
-from utils.util_funcs import print_progress
+from utils.util_funcs import print_progress_status
 
 
 def prepare_input_data():
@@ -37,8 +37,8 @@ def prepare_and_save_snippets(loader, dataset, split):
         os.makedirs(pose_path, exist_ok=True)
         os.makedirs(depth_path, exist_ok=True)
 
-        print_progress(len(frame_indices), True)
-        for i, index in enumerate(frame_indices):
+        num_frames = len(frame_indices)
+        for k, index in enumerate(frame_indices):
             snippet = loader.snippet_generator(index, opts.SNIPPET_LEN)
             index = snippet["index"]
             frames = snippet["frames"]
@@ -65,7 +65,9 @@ def prepare_and_save_snippets(loader, dataset, split):
 
             # cv2.imshow("snippet frames", frames)
             # cv2.waitKey(1)
-            print_progress(f"mean depth={mean_depth:0.3f}, {i}")
+            print_progress_status(f"- Progress: mean depth={mean_depth:0.3f}, {k}/{num_frames}")
+        print("\t progress done")
+    print(f"Data preparation of {dataset}_{split} is done")
 
 
 def get_destination_paths(dstpath, dataset, drive):

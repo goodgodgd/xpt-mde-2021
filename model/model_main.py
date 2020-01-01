@@ -1,16 +1,16 @@
 import os
 import os.path as op
+import json
 import tensorflow as tf
-import datetime
 import numpy as np
-from glob import glob
 import pandas as pd
+import time
 
 import settings
 from config import opts
 from model.model_builder import create_model
 from tfrecords.tfrecord_reader import TfrecordGenerator
-from utils.util_funcs import input_integer, input_float, print_progress
+from utils.util_funcs import input_integer, input_float, print_progress_status
 import model.loss_and_metric as lm
 
 
@@ -19,7 +19,6 @@ def train_by_user_interaction():
                "val_dir_name": "kitti_raw_test",
                "model_name": "vode_model",
                "src_weights_name": "latest.h5",
-               "dst_weights_name": "latest.h5",
                "learning_rate": 0.0002,
                "initial_epoch": 0,
                "final_epoch": opts.EPOCHS}
@@ -51,8 +50,6 @@ def train_by_user_interaction():
         options["model_name"] = input()
         print("Type src_weights_name: load weights from {model_name/src_weights_name}")
         options["src_weights_name"] = input()
-        print("Type dst_weights_name: save weights to {model_name/dst_weights_name}")
-        options["dst_weights_name"] = input()
 
         message = "Type learning_rate: learning rate"
         options["learning_rate"] = input_float(message, 0, 10000)
@@ -65,73 +62,36 @@ def train_by_user_interaction():
     train(**options)
 
 
-def train_by_tape(train_dir_name, val_dir_name, model_name, src_weights_name, dst_weights_name,
-                  learning_rate, initial_epoch, final_epoch):
-    set_gpu_config()
+def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_rate,
+          initial_epoch, final_epoch):
+    set_configs(model_name)
     model = create_model()
     model = try_load_weights(model, model_name, src_weights_name)
     optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
-    dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), True, opts.EPOCHS).get_generator()
-    dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), True, opts.EPOCHS).get_generator()
+    dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), shuffle=True).get_generator()
+    dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), shuffle=False).get_generator()
     steps_per_epoch = count_steps(train_dir_name)
-    results_train = []
-    results_val = []
+    results_train, results_val = [], []
 
-    print(f"\n\n========== START TRAINING ON {model_name} ==========\n\n")
+    print(f"\n\n========== START TRAINING ON {model_name} ==========")
     for epoch in range(initial_epoch, final_epoch):
-        print(f"\n========== Start epoch: {epoch} ==========")
+        print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
         results = train_an_epoch(epoch, model, dataset_train, optimizer, steps_per_epoch)
         results_train.append(results)
 
         results = validate_an_epoch(epoch, model, dataset_val, steps_per_epoch)
         results_val.append(results)
 
-        summarize_results(model, results_train, results_val)
+        save_log(results_train, results_val, model_name)
+        save_model(model, model_name, results_val[-1][1])
 
 
-def train_an_epoch(epoch, model, dataset, optimizer, steps_per_epoch):
-    results = []
+def set_configs(model_name):
+    np.set_printoptions(precision=3, suppress=True)
+    if not op.isdir(op.join(opts.DATAPATH_CKP, model_name)):
+        os.makedirs(op.join(opts.DATAPATH_CKP, model_name), exist_ok=True)
 
-    # TODO: dataset은 한번 for loop 돌고나서 또 써도 되나?
-    for step, features in enumerate(dataset):
-        with tf.GradientTape() as tape:
-            preds = model(features)
-            # predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
-            loss = loss_vode(preds, features)
-            # TODO: 스케일만 다른 y_true, y_pred 넣었을 때 값이 0 나오는지 테스트 함수 만들기
-            pose_metric = metric_pose(preds, features)
-
-        grads = tape.gradient(loss, model.trainable_weights)
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
-        results.append((epoch, step, loss.numpy(), pose_metric.numpy()))
-
-        if step % 200 == 0:
-            mean_res = np.array(results[-200:-1]).mean(axis=0)
-            print(f"Training {step}/{steps_per_epoch}, loss={mean_res[2]}, metric={mean_res[3]}")
-
-        return results
-
-
-def validate_an_epoch(epoch, model, dataset, steps_per_epoch):
-    results = []
-
-    # TODO: dataset은 한번 for loop 돌고나서 또 써도 되나?
-    for step, features in enumerate(dataset):
-        preds = model(features)
-        # predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
-        loss = lm.loss_vode(preds, features)
-        # TODO: 스케일만 다른 y_true, y_pred 넣었을 때 값이 0 나오는지 테스트 함수 만들기
-        pose_metric = lm.metric_pose(preds, features)
-        results.append((epoch, step, loss.numpy(), pose_metric.numpy()))
-
-        if step % 200 == 0:
-            mean_res = np.array(results[-200:-1]).mean(axis=0)
-            print(f"Training {step}/{steps_per_epoch}, loss={mean_res[2]}, metric={mean_res[3]}")
-
-        return results
-
-
-def set_gpu_config():
+    # set gpu configs
     gpus = tf.config.experimental.list_physical_devices('GPU')
     if gpus:
         try:
@@ -156,33 +116,98 @@ def try_load_weights(model, model_name, weights_name):
     return model
 
 
+def count_steps(dataset_dir):
+    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
+    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
+        config = json.load(fr)
+    frames = config['length']
+    steps = frames // opts.BATCH_SIZE
+    print(f"[count steps] frames={frames}, steps={steps}")
+    return steps
+
+
+def train_an_epoch(epoch, model, dataset, optimizer, steps_per_epoch):
+    results = []
+    # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
+    for step, features in enumerate(dataset):
+        start = time.time()
+        with tf.GradientTape() as tape:
+            preds = model(features['image'])
+            loss = lm.compute_loss_vode(preds, features)
+
+        grads = tape.gradient(loss, model.trainable_weights)
+        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        trjerr, roterr = lm.compute_metric_pose(preds, features)
+        loss_num = loss.numpy().mean()
+        results.append((loss_num, trjerr, roterr))
+        print_progress_status(f"\tTraining {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+                              f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+
+    mean_res = np.array(results).mean(axis=0)
+    print(f"\n[Epoch {epoch:03d}], train loss={mean_res[0]:1.4f}, metric={mean_res[1]:1.4f} {mean_res[2]:1.4f}")
+    return epoch, mean_res[0], mean_res[1]
+
+
+def validate_an_epoch(epoch, model, dataset, steps_per_epoch):
+    results = []
+    # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
+    for step, features in enumerate(dataset):
+        start = time.time()
+        preds = model(features['image'])
+        loss = lm.compute_loss_vode(preds, features)
+        trjerr, roterr = lm.compute_metric_pose(preds, features)
+        loss_num = loss.numpy().mean()
+        results.append((loss_num, trjerr, roterr))
+        print_progress_status(f"\tEvaluating {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+                              f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+
+    mean_res = np.array(results).mean(axis=0)
+    print(f"\n[Epoch {epoch:03d}], val loss={mean_res[0]:1.4f}, metric={mean_res[1]:1.4f} {mean_res[2]:1.4f}")
+    return epoch, mean_res[0], mean_res[1]
+
+
+def save_log(results_train, results_val, model_name):
+    """
+    :param results_train: list of (epoch, loss, metric) from train data
+    :param results_val: list of (epoch, loss, metric) from validation data
+    :param model_name: model directory name
+    """
+    results_train = np.array(results_train)
+    results_val = np.array(results_val)
+    results = np.concatenate([results_train, results_val[:, 1:]], axis=1)
+    results = pd.DataFrame(data=results, columns=['epoch', 'train_loss', 'train_metric', 'val_loss', 'val_metric'])
+    results['epoch'] = results['epoch'].astype(int)
+
+    # save log
+    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    if op.isfile(filename):
+        existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
+        results = pd.concat([results, existing], axis=0)
+        results = results.drop_duplicates(subset='epoch', keep='first')
+    results.to_csv(filename, encoding='utf-8', index=False, float_format='%.4f')
+
+
+def save_model(model, model_name, val_loss):
+    """
+    :param model: nn model object
+    :param model_name: model directory name
+    :param val_loss: current validation loss
+    """
+    # save the latest model
+    save_model_weights(model, model_name, 'latest.h5')
+    # save the best model
+    save_model.best = getattr(save_model, 'best', 10000)
+    if val_loss < save_model.best:
+        save_model_weights(model, model_name, 'best.h5')
+        save_model.best = val_loss
+
+
 def save_model_weights(model, model_name, weights_name):
     model_dir_path = op.join(opts.DATAPATH_CKP, model_name)
     if not op.isdir(model_dir_path):
         os.makedirs(model_dir_path, exist_ok=True)
     model_file_path = op.join(opts.DATAPATH_CKP, model_name, weights_name)
     model.save_weights(model_file_path)
-
-
-# TODO: tfrecord config 파일에 카운트 수 넣고 읽기
-def count_steps(dataset_dir):
-    srcpath = op.join(opts.DATAPATH_SRC, dataset_dir)
-    files = glob(op.join(srcpath, "*/*.png"))
-    frames = len(files)
-    steps = frames // opts.BATCH_SIZE
-    print(f"[count steps] frames={frames}, steps={steps}")
-    return steps
-
-
-def dump_history(history, model_name, initial_epoch):
-    filename = op.join(opts.DATAPATH_CKP, model_name, "history.txt")
-    hist_df = pd.DataFrame(history)
-    if op.isfile(filename) and initial_epoch > 0:
-        existing_df = pd.read_csv(filename)
-        hist_df = pd.concat([existing_df, hist_df])
-        print("concat hist")
-    hist_df.to_csv(filename, encoding="utf-8", index=False, float_format="%1.3f")
-    print("save history\n", hist_df)
 
 
 def predict_by_user_interaction():
@@ -219,8 +244,9 @@ def predict_by_user_interaction():
     predict(**options)
 
 
+# TODO: pred model 만 나오는 create_model 로 수정
 def predict(test_dir_name, model_name, weights_name):
-    set_gpu_config()
+    set_configs(model_name)
 
     model_pred, model_train = create_models()
     model_train = try_load_weights(model_train, model_name, weights_name)
@@ -245,7 +271,18 @@ def save_predictions(model_name, pred_depth, pred_pose):
     np.save(op.join(pred_dir_path, "pose.npy"), pred_pose)
 
 
+# ==================== tests ====================
+
+def test_count_steps():
+    steps = count_steps('kitti_raw_train')
+
+
+def run_train_default():
+    train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
+          model_name="vode1", src_weights_name="latest.h5",
+          learning_rate=0.0002, initial_epoch=0, final_epoch=10)
+
+
 if __name__ == "__main__":
-    train(train_dir_name="kitti_raw_train", val_dir_name="kitti_raw_test",
-          model_name="vode1", src_weights_name="latest.h5", dst_weights_name="latest.h5",
-          learning_rate=0.0002, initial_epoch=0, final_epoch=2)
+    # test_count_steps()
+    run_train_default()

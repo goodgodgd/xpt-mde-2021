@@ -1,22 +1,21 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 from model.synthesize_batch import synthesize_batch_multi_scale
+from evaluate.evaluate_main import evaluate_pose
+from config import opts
 
 
-# TODO: check input dimensions, test results
-def loss_vode(predictions, features):
+# TODO: 모델 대충 학습시켜서 loss따로 계산하는 테스트 함수 만들기
+#   gt 값 넣었을 때 임의의 값 넣었을 때보다 적게 나오는지 확인
+def compute_loss_vode(predictions, features):
     """
-    :param predictions: {"disp_ms": disps_ms, "pose": poses}
+    :param predictions: {"disp_ms": .., "pose": ..}
         disp_ms: multi scale disparity, list of [batch, height/scale, width/scale, 1]
         pose: 6-DoF poses [batch, num_src, 6]
-    :param features: {"image": image, "pose_gt": pose_gt, "depth_gt": depth_gt, "intrinsic": intrinsic}
+    :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
         image: stacked image [batch, height*snippet_len, width, 3]
-        pose_gt: 4x4 transformation matrix [batch, num_src, 4, 4]
-        depth_gt: gt depth [batch, height, width, 1]
         intrinsic: camera projection matrix [batch, 3, 3]
     """
-    # TODO: test_read_tfrecord 먼저해서 입력 dimension 다 확인하고 그걸
-    #   tfrecord_reader에 적기
     stacked_image = features['image']
     intrinsic = features['intrinsic']
     target_image = extract_target(stacked_image)
@@ -31,8 +30,23 @@ def loss_vode(predictions, features):
     photo_loss = photometric_loss_multi_scale(synth_target_ms, target_ms)
     height_orig = target_image.get_shape().as_list()[2]
     smooth_loss = smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
-    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="loss_out")\
+    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="train_loss")\
                         ([photo_loss, smooth_loss])
+    return loss
+
+
+# TODO: 스케일만 다른 y_true, y_pred 넣었을 때 값이 0 나오는지 테스트 함수 만들기
+def compute_metric_pose(predictions, features):
+    """
+    :param predictions: {"disp_ms": .., "pose": ..}
+        pose: 6-DoF poses [batch, num_src, 6]
+    :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
+        pose_gt: 4x4 transformation matrix [batch, num_src, 4, 4]
+    """
+    pose_pred = predictions['pose'].numpy()[0]
+    pose_true = features['pose_gt'].numpy()[0]
+    trj_error, rot_error = evaluate_pose(pose_pred, pose_true)
+    return trj_error.mean(), rot_error.mean()
 
 
 def extract_target(stacked_image):
@@ -44,7 +58,6 @@ def extract_target(stacked_image):
     imheight = int(imheight // opts.SNIPPET_LEN)
     target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
                             (-1, imheight, -1, -1))
-    print("extracted target image shape=", target_image.get_shape())
     return target_image
 
 

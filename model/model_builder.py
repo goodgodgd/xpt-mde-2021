@@ -13,32 +13,12 @@ import model.loss_and_metric as lm
 def create_model():
     image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
     stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
-    target_image = layers.Lambda(lambda image: extract_target(image), name="extract_target")(stacked_image)
+    target_image = layers.Lambda(lambda image: extract_target_image(image), name="extract_target_image")(stacked_image)
     model = create_pred_model(stacked_image, target_image)
     return model
 
 
-def create_models_old():
-    image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
-    intrin_shape = (3, 3)
-    depth_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 1)
-
-    # prepare input tensors
-    stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
-    target_image = layers.Lambda(lambda image: extract_target(image), name="extract_target")(stacked_image)
-    intrinsic = layers.Input(shape=intrin_shape, batch_size=opts.BATCH_SIZE, name="intrinsic")
-    if depth_shape is None:
-        depth_gt = None
-    else:
-        depth_gt = layers.Input(shape=depth_shape, batch_size=opts.BATCH_SIZE, name="depth_gt")
-        print("depth gt", depth_gt.get_shape())
-
-    model_pred = create_pred_model(stacked_image, target_image)
-    model_train = create_train_model(model_pred, target_image, intrinsic, depth_gt)
-    return model_pred, model_train
-
-
-def extract_target(stacked_image):
+def extract_target_image(stacked_image):
     """
     :param stacked_image: [batch, snippet_len*height, width, 3]
     :return: target_image, [batch, height, width, 3]
@@ -47,7 +27,6 @@ def extract_target(stacked_image):
     imheight = int(imheight // opts.SNIPPET_LEN)
     target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
                             (-1, imheight, -1, -1))
-    print("extracted target image shape=", target_image.get_shape())
     return target_image
 
 

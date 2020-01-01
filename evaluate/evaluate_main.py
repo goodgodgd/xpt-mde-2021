@@ -45,11 +45,11 @@ def evaluate(data_dir_name, model_name):
     depth_errors = []
     trajectory_errors = []
     rotational_errors = []
-    uf.print_progress(None, is_total=True)
+    uf.print_numeric_progress(None, is_total=True)
     for i, (x, y) in enumerate(dataset):
         if i >= total_pose_pred.shape[0]:
             break
-        uf.print_progress(i)
+        uf.print_numeric_progress(i)
         depth_true = x["depth_gt"].numpy()[0]
         pose_true = x["pose_gt"].numpy()[0]
         depth_pred = total_depth_pred[i]
@@ -142,13 +142,12 @@ def evaluate_pose(pose_pred, pose_true):
     return trj_error, rot_error
 
 
-# TODO: check shape
 def recover_pred_snippet_poses(poses):
     """
     :param poses: source poses that transforms points in target to source frame
                     format=(tx, ty, tz, ux, uy, uz) shape=[num_src, 6]
     :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
-                    format=(4x4 transformation) shape=[snippet_len, 5, 4, 4]
+                    format=(4x4 transformation) shape=[snippet_len, 4, 4]
                     order=[source[0], source[1], target, source[2], source[3]]
     """
     target_pose = np.zeros(shape=(1, 6), dtype=np.float32)
@@ -158,13 +157,12 @@ def recover_pred_snippet_poses(poses):
     return recovered_pose
 
 
-# TODO: check shape
 def recover_true_snippet_poses(poses):
     """
     :param poses: source poses that transforms points in target to source frame
-                    format=(4x4 transformation), shape=[snippet_len, 4, 4, 4]
+                    format=(4x4 transformation), shape=[snippet_len, 4, 4]
     :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
-                    format=(4x4 transformation) shape=[snippet_len, 5, 4, 4]
+                    format=(4x4 transformation) shape=[snippet_len, 4, 4]
                     order=[source[0], source[1], target, source[2], source[3]]
     """
     target_pose = np.expand_dims(np.identity(4, dtype=np.float32), axis=0)
@@ -216,7 +214,8 @@ def calc_rotational_error(pose_pred_mat, pose_true_mat):
     rot_true = pose_true_mat[:, :3, :3]
     rot_rela = np.matmul(np.linalg.inv(rot_pred), rot_true)
     trace = np.trace(rot_rela, axis1=1, axis2=2)
-    angle = np.arccos((trace - 1.) / 2.)
+    angle = np.clip((trace - 1.) / 2., -1., 1.)
+    angle = np.arccos(angle)
     return angle
 
 
