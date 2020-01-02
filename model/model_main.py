@@ -20,7 +20,6 @@ def train_by_user_interaction():
                "model_name": "vode_model",
                "src_weights_name": "latest.h5",
                "learning_rate": 0.0002,
-               "initial_epoch": 0,
                "final_epoch": opts.EPOCHS}
 
     print("\n===== Select training options")
@@ -53,8 +52,6 @@ def train_by_user_interaction():
 
         message = "Type learning_rate: learning rate"
         options["learning_rate"] = input_float(message, 0, 10000)
-        message = "Type initial_epoch: number of epochs previously trained"
-        options["initial_epoch"] = input_integer(message, 0, 10000)
         message = "Type final_epoch: number of epochs to train model upto"
         options["final_epoch"] = input_integer(message, 0, 10000)
 
@@ -62,8 +59,7 @@ def train_by_user_interaction():
     train(**options)
 
 
-def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_rate,
-          initial_epoch, final_epoch):
+def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_rate, final_epoch):
     set_configs(model_name)
     model = create_model()
     model = try_load_weights(model, model_name, src_weights_name)
@@ -71,6 +67,7 @@ def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_r
     dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), shuffle=True).get_generator()
     dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), shuffle=False).get_generator()
     steps_per_epoch = count_steps(train_dir_name)
+    initial_epoch = read_previous_epoch(model_name)
     results_train, results_val = [], []
 
     print(f"\n\n========== START TRAINING ON {model_name} ==========")
@@ -128,6 +125,21 @@ def count_steps(dataset_dir):
     return steps
 
 
+def read_previous_epoch(model_name):
+    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    if op.isfile(filename):
+        history = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
+        if history.empty:
+            return 0
+        epochs = history['epoch'].tolist()
+        epochs.sort()
+        prev_epoch = epochs[-1]
+        print(f"start from epoch {prev_epoch + 1}")
+        return prev_epoch + 1
+    else:
+        return 0
+
+
 # Eager training is slow ...
 def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
     results = []
@@ -144,7 +156,7 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
         trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
         results.append((loss_num, trjerr.numpy(), roterr.numpy()))
-        print_progress_status(f"\tValidating (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+        print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
                               f"metric={trjerr.numpy():1.4f}, {roterr.numpy():1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
@@ -160,7 +172,7 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
         result = train_a_batch(model, features, optimizer)
         result = result.numpy()
         results.append(result)
-        print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
+        print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
                               f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
 
     results = np.stack(results, axis=0)
@@ -192,7 +204,7 @@ def validate_an_epoch_eager(model, dataset, steps_per_epoch):
         trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
         results.append((loss_num, trjerr, roterr))
-        print_progress_status(f"\tEvaluating {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+        print_progress_status(f"\tValidating {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
                               f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
@@ -206,7 +218,7 @@ def validate_an_epoch_graph(model, dataset, steps_per_epoch):
         result = validate_a_batch(model, features)
         result = result.numpy()
         results.append(result)
-        print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
+        print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
                               f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
 
     results = np.stack(results, axis=0)
@@ -338,7 +350,7 @@ def test_count_steps():
 def run_train_default():
     train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
           model_name="vode1", src_weights_name="latest.h5",
-          learning_rate=0.0002, initial_epoch=0, final_epoch=10)
+          learning_rate=0.0002, final_epoch=10)
 
 
 def run_pred_default():

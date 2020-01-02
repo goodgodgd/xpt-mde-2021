@@ -9,8 +9,6 @@ import utils.util_funcs as util
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 
-# TODO: use tensor broadcasting
-
 
 def synthesize_batch_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_pose):
     """
