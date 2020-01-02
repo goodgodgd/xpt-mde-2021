@@ -1,8 +1,11 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 from model.synthesize_batch import synthesize_batch_multi_scale
-from evaluate.evaluate_main import evaluate_pose
+
+import settings
 from config import opts
+import utils.util_funcs as uf
+import evaluate.eval_funcs as ef
 
 
 # TODO: 모델 대충 학습시켜서 loss따로 계산하는 테스트 함수 만들기
@@ -35,18 +38,15 @@ def compute_loss_vode(predictions, features):
     return loss
 
 
-# TODO: 스케일만 다른 y_true, y_pred 넣었을 때 값이 0 나오는지 테스트 함수 만들기
-def compute_metric_pose(predictions, features):
+def compute_metric_pose(pose_pred, pose_true_mat):
     """
-    :param predictions: {"disp_ms": .., "pose": ..}
-        pose: 6-DoF poses [batch, num_src, 6]
-    :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
-        pose_gt: 4x4 transformation matrix [batch, num_src, 4, 4]
+    :param pose_pred: 6-DoF poses [batch, num_src, 6]
+    :param pose_true_mat: 4x4 transformation matrix [batch, num_src, 4, 4]
     """
-    pose_pred = predictions['pose'].numpy()[0]
-    pose_true = features['pose_gt'].numpy()[0]
-    trj_error, rot_error = evaluate_pose(pose_pred, pose_true)
-    return trj_error.mean(), rot_error.mean()
+    pose_pred_mat = uf.pose_rvec2matr_batch(pose_pred)
+    trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat)
+    rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
+    return tf.reduce_mean(trj_err), tf.reduce_mean(rot_err)
 
 
 def extract_target(stacked_image):

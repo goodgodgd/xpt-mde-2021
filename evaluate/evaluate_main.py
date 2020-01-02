@@ -6,6 +6,7 @@ import settings
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
+import evaluate.eval_funcs as ef
 
 
 def evaluate_by_user_interaction():
@@ -102,27 +103,8 @@ def evaluate_depth(depth_pred, depth_true):
     depth_pred[mask] *= scaler
     # clip prediction and compute error metrics
     depth_pred = np.clip(depth_pred, opts.MIN_DEPTH, opts.MAX_DEPTH)
-    metrics = compute_errors(depth_true[mask], depth_pred[mask])
+    metrics = ef.compute_depth_metrics(depth_true[mask], depth_pred[mask])
     return metrics
-
-
-def compute_errors(gt, pred):
-    thresh = np.maximum((gt / pred), (pred / gt))
-    a1 = (thresh < 1.25   ).mean()
-    a2 = (thresh < 1.25 ** 2).mean()
-    a3 = (thresh < 1.25 ** 3).mean()
-
-    rmse = (gt - pred) ** 2
-    rmse = np.sqrt(rmse.mean())
-
-    rmse_log = (np.log(gt) - np.log(pred)) ** 2
-    rmse_log = np.sqrt(rmse_log.mean())
-
-    abs_rel = np.mean(np.abs(gt - pred) / gt)
-
-    sq_rel = np.mean(((gt - pred)**2) / gt)
-
-    return [abs_rel, sq_rel, rmse, rmse_log, a1, a2, a3]
 
 
 def evaluate_pose(pose_pred, pose_true):
@@ -134,89 +116,12 @@ def evaluate_pose(pose_pred, pose_true):
     """
     # convert source and target poses to relative poses w.r.t first source pose
     # in 4x4 transformation matrix form
-    pose_pred_mat = recover_pred_snippet_poses(pose_pred)
-    pose_true_mat = recover_true_snippet_poses(pose_true)
+    pose_pred_mat = ef.recover_pred_snippet_poses(pose_pred)
+    pose_true_mat = ef.recover_true_snippet_poses(pose_true)
 
-    trj_error = calc_trajectory_error(pose_pred_mat, pose_true_mat)
-    rot_error = calc_rotational_error(pose_pred_mat, pose_true_mat)
+    trj_error = ef.calc_trajectory_error(pose_pred_mat, pose_true_mat)
+    rot_error = ef.calc_rotational_error(pose_pred_mat, pose_true_mat)
     return trj_error, rot_error
-
-
-def recover_pred_snippet_poses(poses):
-    """
-    :param poses: source poses that transforms points in target to source frame
-                    format=(tx, ty, tz, ux, uy, uz) shape=[num_src, 6]
-    :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
-                    format=(4x4 transformation) shape=[snippet_len, 4, 4]
-                    order=[source[0], source[1], target, source[2], source[3]]
-    """
-    target_pose = np.zeros(shape=(1, 6), dtype=np.float32)
-    poses_vec = np.concatenate([poses[:2], target_pose, poses[2:]], axis=0)
-    poses_mat = uf.pose_rvec2matr(poses_vec)
-    recovered_pose = relative_pose_from_first(poses_mat)
-    return recovered_pose
-
-
-def recover_true_snippet_poses(poses):
-    """
-    :param poses: source poses that transforms points in target to source frame
-                    format=(4x4 transformation), shape=[snippet_len, 4, 4]
-    :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
-                    format=(4x4 transformation) shape=[snippet_len, 4, 4]
-                    order=[source[0], source[1], target, source[2], source[3]]
-    """
-    target_pose = np.expand_dims(np.identity(4, dtype=np.float32), axis=0)
-    poses_mat = np.concatenate([poses[:2], target_pose, poses[2:]], axis=0)
-    recovered_pose = relative_pose_from_first(poses_mat)
-    return recovered_pose
-
-
-def relative_pose_from_first(poses_mat):
-    """
-    :param poses_mat: 4x4 transformation matrices, [N, 4, 4]
-    :return: 4x4 transformation matrices with origin of poses_mat[0], [N, 4, 4]
-    """
-    poses_mat_transformed = []
-    pose_origin = poses_mat[0]
-    for pose_mat in poses_mat:
-        # inv(source[0] to target) * (source[i] to target)
-        # = (target to source[0]) * (source[i] to target)
-        # = (source[i] to source[0])
-        pose_mat_tfm = np.matmul(np.linalg.inv(pose_origin), pose_mat)
-        poses_mat_transformed.append(pose_mat_tfm)
-
-    poses_mat_transformed = np.stack(poses_mat_transformed, axis=0)
-    return poses_mat_transformed
-
-
-def calc_trajectory_error(pose_pred_mat, pose_true_mat):
-    """
-    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :return: trajectory error in meter [snippet_len]
-    """
-    xyz_pred = pose_pred_mat[:, :3, 3]
-    xyz_true = pose_true_mat[:, :3, 3]
-    # optimize the scaling factor
-    scale = np.sum(xyz_true * xyz_pred) / np.sum(xyz_pred ** 2)
-    traj_error = xyz_true - xyz_pred * scale
-    rmse = np.sqrt(np.sum(traj_error ** 2, axis=1)) / len(traj_error)
-    return rmse
-
-
-def calc_rotational_error(pose_pred_mat, pose_true_mat):
-    """
-    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :return: rotational error in rad [snippet_len]
-    """
-    rot_pred = pose_pred_mat[:, :3, :3]
-    rot_true = pose_true_mat[:, :3, :3]
-    rot_rela = np.matmul(np.linalg.inv(rot_pred), rot_true)
-    trace = np.trace(rot_rela, axis1=1, axis2=2)
-    angle = np.clip((trace - 1.) / 2., -1., 1.)
-    angle = np.arccos(angle)
-    return angle
 
 
 if __name__ == "__main__":

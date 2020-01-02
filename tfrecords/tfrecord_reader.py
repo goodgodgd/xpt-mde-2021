@@ -120,8 +120,7 @@ def test_read_dataset():
         for key, value in x.items():
             print(f"x shape and type: {key}={value.shape}, {value.dtype}")
 
-        x["image"] = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8)
-        image = x["image"].numpy()
+        image = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8).numpy()
         cv2.imshow("image", image[0])
         cv2.waitKey(50)
 

@@ -51,20 +51,26 @@ def pose_rvec2matr_batch(poses):
     :param poses: poses with twist coordinates in tf.tensor, (tx, ty, tz, u1, u2, u3) [batch, N, 6]
     :return: poses in transformation matrix [batch, N, 4, 4]
     """
+    # shape to [batch, N, 6, 1]
     poses = tf.expand_dims(poses, -1)
     batch, num_src, _, _ = poses.get_shape().as_list()
-    # TODO: remove last ':' before retraining
-    trans = poses[:, :, :3, :]
-    uvec = poses[:, :, 3:, :]
+    # split into translation and rotation [batch, N, 3, 1]
+    trans = poses[:, :, :3]
+    uvec = poses[:, :, 3:]
     unorm = tf.expand_dims(tf.linalg.norm(uvec, axis=2), axis=2)
     uvec = uvec / unorm
-    w1 = uvec[:, :, 0:1, :]
-    w2 = uvec[:, :, 1:2, :]
-    w3 = uvec[:, :, 2:3, :]
+    # w1.shape = [batch, N, 1, 1]
+    w1 = uvec[:, :, 0:1]
+    w2 = uvec[:, :, 1:2]
+    w3 = uvec[:, :, 2:3]
     z = tf.zeros(shape=(batch, num_src, 1, 1))
+    # w_hat.shape = [batch, N, 9, 1]
     w_hat = tf.concat([z, -w3, w2, w3, z, -w1, -w2, w1, z], axis=2)
+    # w_hat.shape = [batch, N, 3, 3]
     w_hat = tf.reshape(w_hat, shape=(batch, num_src, 3, 3))
+    # identity.shape = [1, 1, 3, 3]
     identity = tf.expand_dims(tf.expand_dims(tf.eye(3), axis=0), axis=0)
+    # identity.shape = [batch, N, 3, 3]
     identity = tf.tile(identity, (batch, num_src, 1, 1))
     rotmat = identity + w_hat*tf.sin(unorm) + tf.matmul(w_hat, w_hat)*(1 - tf.cos(unorm))
 
@@ -170,12 +176,16 @@ def test_pose_rvec2matr_batch():
     print("===== start test_pose_rvec2matr_batch")
     poses = tf.random.uniform(shape=(8, 4, 6), minval=-1, maxval=1)
     print("input pose vector shape:", poses.get_shape())
+
     matrices = pose_rvec2matr_batch(poses)
+
     print("output pose matrix shape:", matrices.get_shape())
     pose0 = poses[3, 2, :].numpy()
     matr0 = matrices[3, 2, :, :].numpy()
-    print(f"compare pose and matrix {pose0}\n{matr0}")
+    print(f"compare poses in vector and matrix:\n{pose0} (vector)\n{matr0} (matrix)")
+    # 위치 비교
     assert (np.isclose(pose0[:3], matr0[:3, 3]).all())
+    # 회전 각도 비교
     angle_mat = np.arccos((np.trace(matr0) - 2) / 2)
     angle_vec = np.linalg.norm(pose0[3:])
     assert (np.isclose(angle_vec, angle_mat))

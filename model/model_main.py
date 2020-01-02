@@ -76,11 +76,13 @@ def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_r
     print(f"\n\n========== START TRAINING ON {model_name} ==========")
     for epoch in range(initial_epoch, final_epoch):
         print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
-        results = train_an_epoch(epoch, model, dataset_train, optimizer, steps_per_epoch)
-        results_train.append(results)
+        result = train_an_epoch_graph(model, dataset_train, optimizer, steps_per_epoch)
+        print(f"\n[Train Epoch MEAN], loss={result[0]:1.4f}, metric={result[1]:1.4f} {result[2]:1.4f}")
+        results_train.append(np.insert(result, 0, epoch))
 
-        results = validate_an_epoch(epoch, model, dataset_val, steps_per_epoch)
-        results_val.append(results)
+        result = validate_an_epoch(model, dataset_val, steps_per_epoch)
+        print(f"\n[Val Epoch MEAN],   loss={result[0]:1.4f}, metric={result[1]:1.4f} {result[2]:1.4f}")
+        results_val.append(np.insert(result, 0, epoch))
 
         save_log(results_train, results_val, model_name)
         save_model(model, model_name, results_val[-1][1])
@@ -126,9 +128,10 @@ def count_steps(dataset_dir):
     return steps
 
 
-def train_an_epoch(epoch, model, dataset, optimizer, steps_per_epoch):
+# Eager training is slow ...
+def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
     results = []
-    # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
+    # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     for step, features in enumerate(dataset):
         start = time.time()
         with tf.GradientTape() as tape:
@@ -137,33 +140,63 @@ def train_an_epoch(epoch, model, dataset, optimizer, steps_per_epoch):
 
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
-        trjerr, roterr = lm.compute_metric_pose(preds, features)
+
+        trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
-        results.append((loss_num, trjerr, roterr))
-        print_progress_status(f"\tTraining {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
-                              f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+        results.append((loss_num, trjerr.numpy(), roterr.numpy()))
+        print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+                              f"metric={trjerr.numpy():1.4f}, {roterr.numpy():1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
-    print(f"\n[Epoch {epoch:03d}], train loss={mean_res[0]:1.4f}, metric={mean_res[1]:1.4f} {mean_res[2]:1.4f}")
-    return epoch, mean_res[0], mean_res[1]
+    return mean_res
 
 
-def validate_an_epoch(epoch, model, dataset, steps_per_epoch):
+# Graph training is faster than eager training TWO TIMES!!
+def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
+    results = []
+    # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
+    for step, features in enumerate(dataset):
+        start = time.time()
+        result = train_a_batch(model, features, optimizer)
+        result = result.numpy()
+        results.append(result)
+        print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
+                              f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
+
+    results = np.stack(results, axis=0)
+    mean_res = results.mean(axis=0)
+    return mean_res
+
+
+@tf.function
+def train_a_batch(model, features, optimizer):
+    with tf.GradientTape() as tape:
+        preds = model(features['image'])
+        loss = lm.compute_loss_vode(preds, features)
+
+    grads = tape.gradient(loss, model.trainable_weights)
+    optimizer.apply_gradients(zip(grads, model.trainable_weights))
+
+    trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
+    loss_mean = tf.reduce_mean(loss)
+    return tf.stack([loss_mean, trjerr, roterr], 0)
+
+
+def validate_an_epoch(model, dataset, steps_per_epoch):
     results = []
     # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
     for step, features in enumerate(dataset):
         start = time.time()
         preds = model(features['image'])
         loss = lm.compute_loss_vode(preds, features)
-        trjerr, roterr = lm.compute_metric_pose(preds, features)
+        trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
         results.append((loss_num, trjerr, roterr))
         print_progress_status(f"\tEvaluating {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
                               f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
-    print(f"\n[Epoch {epoch:03d}], val loss={mean_res[0]:1.4f}, metric={mean_res[1]:1.4f} {mean_res[2]:1.4f}")
-    return epoch, mean_res[0], mean_res[1]
+    return mean_res
 
 
 def save_log(results_train, results_val, model_name):
@@ -175,11 +208,12 @@ def save_log(results_train, results_val, model_name):
     results_train = np.array(results_train)
     results_val = np.array(results_val)
     results = np.concatenate([results_train, results_val[:, 1:]], axis=1)
-    results = pd.DataFrame(data=results, columns=['epoch', 'train_loss', 'train_metric', 'val_loss', 'val_metric'])
+    columns = ['epoch', 'train_loss', 'train_metric_trj', 'train_metric_rot', 'val_loss', 'val_metric_trj', 'val_metric_rot']
+    results = pd.DataFrame(data=results, columns=columns)
     results['epoch'] = results['epoch'].astype(int)
 
-    # save log
     filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    # if the file existed, append new data to it
     if op.isfile(filename):
         existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
         results = pd.concat([results, existing], axis=0)
@@ -246,7 +280,6 @@ def predict_by_user_interaction():
     predict(**options)
 
 
-# TODO: pred model 만 나오는 create_model 로 수정
 def predict(test_dir_name, model_name, weights_name):
     set_configs(model_name)
     model = create_model()
@@ -290,5 +323,5 @@ def run_pred_default():
 
 if __name__ == "__main__":
     # test_count_steps()
-    # run_train_default()
-    run_pred_default()
+    run_train_default()
+    # run_pred_default()
