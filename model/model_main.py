@@ -80,7 +80,7 @@ def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_r
         print(f"\n[Train Epoch MEAN], loss={result[0]:1.4f}, metric={result[1]:1.4f} {result[2]:1.4f}")
         results_train.append(np.insert(result, 0, epoch))
 
-        result = validate_an_epoch(model, dataset_val, steps_per_epoch)
+        result = validate_an_epoch_graph(model, dataset_val, steps_per_epoch)
         print(f"\n[Val Epoch MEAN],   loss={result[0]:1.4f}, metric={result[1]:1.4f} {result[2]:1.4f}")
         results_val.append(np.insert(result, 0, epoch))
 
@@ -144,7 +144,7 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
         trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
         results.append((loss_num, trjerr.numpy(), roterr.numpy()))
-        print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+        print_progress_status(f"\tValidating (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
                               f"metric={trjerr.numpy():1.4f}, {roterr.numpy():1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
@@ -160,7 +160,7 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
         result = train_a_batch(model, features, optimizer)
         result = result.numpy()
         results.append(result)
-        print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
+        print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
                               f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
 
     results = np.stack(results, axis=0)
@@ -182,7 +182,7 @@ def train_a_batch(model, features, optimizer):
     return tf.stack([loss_mean, trjerr, roterr], 0)
 
 
-def validate_an_epoch(model, dataset, steps_per_epoch):
+def validate_an_epoch_eager(model, dataset, steps_per_epoch):
     results = []
     # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
     for step, features in enumerate(dataset):
@@ -197,6 +197,30 @@ def validate_an_epoch(model, dataset, steps_per_epoch):
 
     mean_res = np.array(results).mean(axis=0)
     return mean_res
+
+
+def validate_an_epoch_graph(model, dataset, steps_per_epoch):
+    results = []
+    for step, features in enumerate(dataset):
+        start = time.time()
+        result = validate_a_batch(model, features)
+        result = result.numpy()
+        results.append(result)
+        print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
+                              f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
+
+    results = np.stack(results, axis=0)
+    mean_res = results.mean(axis=0)
+    return mean_res
+
+
+@tf.function
+def validate_a_batch(model, features):
+    preds = model(features['image'])
+    loss = lm.compute_loss_vode(preds, features)
+    trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
+    loss_mean = tf.reduce_mean(loss)
+    return tf.stack([loss_mean, trjerr, roterr], 0)
 
 
 def save_log(results_train, results_val, model_name):
