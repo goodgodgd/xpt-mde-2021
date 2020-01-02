@@ -48,7 +48,7 @@ def train_by_user_interaction():
 
         print("Type model_name: dir name under opts.DATAPATH_CKP to save or load model")
         options["model_name"] = input()
-        print("Type src_weights_name: load weights from {model_name/src_weights_name}")
+        print("Type src_weights_name: load weights from [model_name/src_weights_name]")
         options["src_weights_name"] = input()
 
         message = "Type learning_rate: learning rate"
@@ -232,12 +232,14 @@ def predict_by_user_interaction():
         ds_id = input_integer(message, 1, 2)
         if ds_id == 1:
             options["test_dir_name"] = "kitti_raw_test"
-        if ds_id == 2:
+        elif ds_id == 2:
             options["test_dir_name"] = "kitti_odom_test"
+        else:
+            raise ValueError("Wrong value for dataset")
 
-        print("Type model_name: dir name under opts.DATAPATH_CKP and opts.DATAPATH_PRD")
+        print("Type model_name: dir name under opts.DATAPATH_CKP")
         options["model_name"] = input()
-        print("Type weights_name: load weights from {model_name/src_weights_name}")
+        print("Type weights_name: load weights from [model_name/weights_name]")
         options["weights_name"] = input()
 
     print("Prediction options:", options)
@@ -247,13 +249,12 @@ def predict_by_user_interaction():
 # TODO: pred model 만 나오는 create_model 로 수정
 def predict(test_dir_name, model_name, weights_name):
     set_configs(model_name)
-
-    model_pred, model_train = create_models()
-    model_train = try_load_weights(model_train, model_name, weights_name)
-    model_pred.compile(optimizer="sgd", loss="mean_absolute_error")
+    model = create_model()
+    model = try_load_weights(model, model_name, weights_name)
+    model.compile(optimizer="sgd", loss="mean_absolute_error")
 
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
-    predictions = model_pred.predict(dataset)
+    predictions = model.predict(dataset)
     for pred in predictions:
         print(f"prediction shape={pred.shape}")
 
@@ -283,6 +284,11 @@ def run_train_default():
           learning_rate=0.0002, initial_epoch=0, final_epoch=10)
 
 
+def run_pred_default():
+    predict(test_dir_name="kitti_raw_test", model_name="vode1", weights_name="latest.h5")
+
+
 if __name__ == "__main__":
     # test_count_steps()
-    run_train_default()
+    # run_train_default()
+    run_pred_default()
