@@ -68,21 +68,20 @@ def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_r
     dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), shuffle=False).get_generator()
     steps_per_epoch = count_steps(train_dir_name)
     initial_epoch = read_previous_epoch(model_name)
-    results_train, results_val = [], []
 
     print(f"\n\n========== START TRAINING ON {model_name} ==========")
     for epoch in range(initial_epoch, final_epoch):
         print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
-        result = train_an_epoch_graph(model, dataset_train, optimizer, steps_per_epoch)
-        print(f"\n[Train Epoch MEAN], loss={result[0]:1.4f}, metric={result[1]:1.4f} {result[2]:1.4f}")
-        results_train.append(np.insert(result, 0, epoch))
+        result_train = train_an_epoch_graph(model, dataset_train, optimizer, steps_per_epoch)
+        print(f"\n[Train Epoch MEAN], loss={result_train[0]:1.4f}, "
+              f"metric={result_train[1]:1.4f}, {result_train[2]:1.4f}")
 
-        result = validate_an_epoch_graph(model, dataset_val, steps_per_epoch)
-        print(f"\n[Val Epoch MEAN],   loss={result[0]:1.4f}, metric={result[1]:1.4f} {result[2]:1.4f}")
-        results_val.append(np.insert(result, 0, epoch))
+        result_val = validate_an_epoch_graph(model, dataset_val, steps_per_epoch)
+        print(f"\n[Val Epoch MEAN],   loss={result_val[0]:1.4f}, "
+              f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
 
-        save_log(results_train, results_val, model_name)
-        save_model(model, model_name, results_val[-1][1])
+        save_log(epoch, result_train, result_val, model_name)
+        save_model(model, model_name, result_val[1])
 
 
 def set_configs(model_name):
@@ -134,7 +133,7 @@ def read_previous_epoch(model_name):
         epochs = history['epoch'].tolist()
         epochs.sort()
         prev_epoch = epochs[-1]
-        print(f"start from epoch {prev_epoch + 1}")
+        print(f"[read_previous_epoch] start from epoch {prev_epoch + 1}")
         return prev_epoch + 1
     else:
         return 0
@@ -235,15 +234,15 @@ def validate_a_batch(model, features):
     return tf.stack([loss_mean, trjerr, roterr], 0)
 
 
-def save_log(results_train, results_val, model_name):
+def save_log(epoch, results_train, results_val, model_name):
     """
+    :param epoch: current epoch
     :param results_train: list of (epoch, loss, metric) from train data
     :param results_val: list of (epoch, loss, metric) from validation data
     :param model_name: model directory name
     """
-    results_train = np.array(results_train)
-    results_val = np.array(results_val)
-    results = np.concatenate([results_train, results_val[:, 1:]], axis=1)
+    results = np.concatenate([[epoch], results_train, results_val], axis=0)
+    results = np.expand_dims(results, 0)
     columns = ['epoch', 'train_loss', 'train_metric_trj', 'train_metric_rot', 'val_loss', 'val_metric_trj', 'val_metric_rot']
     results = pd.DataFrame(data=results, columns=columns)
     results['epoch'] = results['epoch'].astype(int)
@@ -252,8 +251,9 @@ def save_log(results_train, results_val, model_name):
     # if the file existed, append new data to it
     if op.isfile(filename):
         existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
-        results = pd.concat([results, existing], axis=0)
+        results = pd.concat([existing, results], axis=0, ignore_index=True)
         results = results.drop_duplicates(subset='epoch', keep='first')
+        results = results.sort_values(by=['epoch'])
     results.to_csv(filename, encoding='utf-8', index=False, float_format='%.4f')
 
 
