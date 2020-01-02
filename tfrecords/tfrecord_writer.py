@@ -28,18 +28,17 @@ class TfrecordMaker:
 
         self.write_tfrecord_config(data_feeders)
         num_images = len(data_feeders["image"])
-        num_shards = max(min(num_images // 5000, 10), 1)
+        num_shards = max(min(num_images // 2000, 10), 1)
         num_images_per_shard = num_images // num_shards
         print(f"========== tfrecord maker started: srcpath={self.srcpath}, dstpath={self.dstpath}")
         print(f"num images={num_images}, shards={num_shards}, images per shard={num_images_per_shard}")
-        uf.print_progress(num_images, is_total=True)
 
         for si in range(num_shards):
             outfile = f"{self.dstpath}/shard_{si:02d}.tfrecord"
             print("\n===== start creating:", outfile)
             with tf.io.TFRecordWriter(outfile) as writer:
                 for fi in range(si*num_images_per_shard, (si+1)*num_images_per_shard):
-                    uf.print_progress(fi)
+                    uf.print_numeric_progress(fi, num_images)
                     raw_example = self.create_next_example_dict(data_feeders)
                     serialized = self.make_serialized_example(raw_example)
                     writer.write(serialized)
@@ -79,10 +78,10 @@ class TfrecordMaker:
                         for file_path in image_files]
 
         print("=== list sequence files")
-        print(f"frame: {image_files[0:1000:100]}")
-        print(f"depth: {depth_files[0:1000:100]}")
-        print(f"pose: {pose_files[0:1000:100]}")
-        print(f"intrin: {intrin_files[0:1000:100]}")
+        print(f"frame: {image_files[0:1000:200]}")
+        print(f"depth: {depth_files[0:1000:200]}")
+        print(f"pose: {pose_files[0:1000:200]}")
+        print(f"intrin: {intrin_files[0:1000:200]}")
         
         for files in [image_files, depth_files, pose_files, intrin_files]:
             for file in files:
@@ -96,6 +95,7 @@ class TfrecordMaker:
             single_config = {"parse_type": feeder.parse_type, "decode_type": feeder.decode_type, "shape": feeder.shape}
             config[key] = single_config
 
+        config["length"] = len(feeders['image'])
         print("=== config", config)
         with open(op.join(self.dstpath, "tfr_config.txt"), "w") as fr:
             json.dump(config, fr)

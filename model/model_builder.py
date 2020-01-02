@@ -6,31 +6,24 @@ from tensorflow.keras import layers
 
 import settings
 from config import opts
-from model.synthesize_batch import synthesize_batch_multi_scale
-import model.loss_and_metric as lm
 
 
-def create_models():
+def create_model():
+    # input tensor
     image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
-    intrin_shape = (3, 3)
-    depth_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 1)
-
-    # prepare input tensors
     stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
-    target_image = layers.Lambda(lambda image: extract_target(image), name="extract_target")(stacked_image)
-    intrinsic = layers.Input(shape=intrin_shape, batch_size=opts.BATCH_SIZE, name="intrinsic")
-    if depth_shape is None:
-        depth_gt = None
-    else:
-        depth_gt = layers.Input(shape=depth_shape, batch_size=opts.BATCH_SIZE, name="depth_gt")
-        print("depth gt", depth_gt.get_shape())
-
-    model_pred = create_pred_model(stacked_image, target_image)
-    model_train = create_train_model(model_pred, target_image, intrinsic, depth_gt)
-    return model_pred, model_train
+    target_image = layers.Lambda(lambda image: extract_target_image(image), name="extract_target_image")(stacked_image)
+    # build a network that outputs depth and pose
+    pred_disps_ms = build_depth_estim_layers(target_image)
+    pred_poses = build_visual_odom_layers(stacked_image)
+    # create model
+    model_input = {"image": stacked_image}
+    predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
+    model = tf.keras.Model(model_input, predictions)
+    return model
 
 
-def extract_target(stacked_image):
+def extract_target_image(stacked_image):
     """
     :param stacked_image: [batch, snippet_len*height, width, 3]
     :return: target_image, [batch, height, width, 3]
@@ -39,80 +32,7 @@ def extract_target(stacked_image):
     imheight = int(imheight // opts.SNIPPET_LEN)
     target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
                             (-1, imheight, -1, -1))
-    print("extracted target image shape=", target_image.get_shape())
     return target_image
-
-
-def create_pred_model(stacked_image, target_image):
-    """
-    :param stacked_image: [batch, snippet_len*height, width, 3]
-    :param target_image: [batch, height, width, 3]
-    :return: prediction model
-    """
-    print(f"pred model input shapes: stacked_image {stacked_image.get_shape()}, "
-          f"target_image {target_image.get_shape()}")
-    pred_disps_ms = build_depth_estim_layers(target_image)
-    pred_poses = build_visual_odom_layers(stacked_image)
-
-    model_input = {"image": stacked_image}
-    predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
-    model_pred = tf.keras.Model(model_input, predictions)
-    return model_pred
-
-
-def create_train_model(model_pred, target_image, intrinsic, depth_gt):
-    """
-    :param model_pred: pose and depth prediction model
-    :param target_image: [batch, height, width, 3]
-    :param intrinsic: camera projection matrix [batch, num_src, 3, 3]
-    :param depth_gt: ground truth depth [batch, height, width, 1] or None
-    :return: trainable model
-    """
-    # calculate loss and make model for training
-    stacked_image = model_pred.input["image"]
-    pred_disp_ms = model_pred.output["disp_ms"]
-    pred_pose = model_pred.output["pose"]
-    pred_depth_ms = disp_to_depth(pred_disp_ms)
-    target_ms = multi_scale_like(target_image, pred_disp_ms)
-
-    synth_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic,
-                                                   pred_depth_ms, pred_pose)
-    photo_loss = lm.photometric_loss_multi_scale(synth_target_ms, target_ms)
-    height_orig = target_image.get_shape().as_list()[2]
-    smooth_loss = lm.smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
-    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="loss_out")\
-                        ([photo_loss, smooth_loss])
-
-    metric = layers.Lambda(lambda depths: lm.depth_error_metric(depths[0], depths[1]),
-                           name="metric_out")([pred_depth_ms[0], depth_gt])
-
-    inputs = {"image": stacked_image, "intrinsic": intrinsic, "depth_gt": depth_gt}
-    outputs = {"loss_out": loss, "metric_out": metric}
-    model_train = tf.keras.Model(inputs, outputs)
-    return model_train
-
-
-def disp_to_depth(disp_ms):
-    target_ms = []
-    for i, disp in enumerate(disp_ms):
-        target = layers.Lambda(lambda dis: 1./dis, name=f"todepth_{i}")(disp)
-        target_ms.append(target)
-    return target_ms
-
-
-def multi_scale_like(image, disp_ms):
-    """
-    :param image: [batch, height, width, 3]
-    :param disp_ms: list of [batch, height/scale, width/scale, 1]
-    :return: image_ms: list of [batch, height/scale, width/scale, 3]
-    """
-    image_ms = []
-    for i, disp in enumerate(disp_ms):
-        batch, height_sc, width_sc, _ = disp.get_shape().as_list()
-        image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
-                                 name=f"target_resize_{i}")(image)
-        image_ms.append(image_sc)
-    return image_ms
 
 
 # ==================== build DepthNet layers ====================
@@ -230,48 +150,44 @@ def restack_on_channels(vertical_stack, num_stack):
 # --------------------------------------------------------------------------------
 # TESTS
 
+from tfrecords.tfrecord_reader import TfrecordGenerator
+
+
 def test_restack_on_channels():
     print("===== start test_restack_on_channels")
-    filename = op.join(opts.DATAPATH_SRC, "kitti_raw_train", "2011_09_26_0001", "000024.png")
-    image = cv2.imread(filename)
-    batch_image = np.expand_dims(image, 0)
-    batch_image = np.tile(batch_image, (8, 1, 1, 1))
-    print("batch image shape", batch_image.shape)
-    batch_image_tensor = tf.constant(batch_image, dtype=tf.float32)
+    batch_size = 4
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), batch_size=batch_size).get_generator()
+    itdataset = iter(dataset)
+    features = next(itdataset)
+    vertical_stack_image = features['image']
 
-    channel_stack_image = restack_on_channels(batch_image_tensor, opts.SNIPPET_LEN)
+    channel_stack_image = restack_on_channels(vertical_stack_image, opts.SNIPPET_LEN)
 
-    channel_stack_image = channel_stack_image.numpy()
-    print("channel stack image shape", channel_stack_image.shape)
-    # cv2.imshow("original image", image)
-    # cv2.imshow("restack image1", channel_stack_image[0, :, :, :3])
-    # cv2.imshow("restack image2", channel_stack_image[0, :, :, 3:6])
+    vertical_stack_image = tf.image.convert_image_dtype((vertical_stack_image + 1.) / 2., dtype=tf.uint8).numpy()
+    channel_stack_image = tf.image.convert_image_dtype((channel_stack_image + 1.) / 2., dtype=tf.uint8).numpy()
+    print("channel stacked image shape:", channel_stack_image.shape)
+    # 위아래로 쌓인 이미지를 채널로 잘 쌓았는지 shape 확인
+    assert (channel_stack_image.shape == (batch_size, opts.IM_HEIGHT, opts.IM_WIDTH, opts.SNIPPET_LEN*3))
+    # 이미지가 맞게 배치됐는지 확인: snippet에서 두번째 이미지를 비교
+    assert (vertical_stack_image[1, opts.IM_HEIGHT:opts.IM_HEIGHT*2, :, :] == channel_stack_image[1, :, :, 3:6]).all()
+    print("!!! test [restack_on_channels] passed")
+    # cv2.imshow("original image full", vertical_stack_image[0])
+    # cv2.imshow("restack image0", channel_stack_image[0, :, :, :3])
+    # cv2.imshow("restack image1", channel_stack_image[0, :, :, 3:6])
     # cv2.waitKey()
-    assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == channel_stack_image[0, :, :, 3:6]).all()
-    print("!!! test_restack_on_channels passed")
 
 
-def test_create_models():
-    model_pred, model_train = create_models()
-    model_pred.summary()
-    tf.keras.utils.plot_model(model_pred, to_file="model_pred.png", show_shapes=True, show_layer_names=True)
-    model_train.summary()
-    tf.keras.utils.plot_model(model_train, to_file="model_train.png", show_shapes=True, show_layer_names=True)
+def test_create_model():
+    # load model and plot the network structure to a png file
+    model = create_model()
+    model.summary()
+    tf.keras.utils.plot_model(model, to_file="model.png", show_shapes=True, show_layer_names=True)
     print("!!! test_create_models passed")
 
 
-def test_load_model():
-    model_path = opts.DATAPATH_CKP + "/vode_model/model1.hdf5"
-    print("model path", model_path)
-    if op.isfile(model_path):
-        model = tf.keras.models.load_model(model_path)
-        model.summary()
-
-
 def test():
-    # test_create_models()
-    # test_restack_on_channels()
-    test_load_model()
+    test_restack_on_channels()
+    # test_create_model()
 
 
 if __name__ == "__main__":
