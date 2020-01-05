@@ -120,9 +120,10 @@ def test_read_dataset():
         for key, value in x.items():
             print(f"x shape and type: {key}={value.shape}, {value.dtype}")
 
+        print("gt poses:\n", x['pose_gt'].numpy()[0])
         image = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8).numpy()
         cv2.imshow("image", image[0])
-        cv2.waitKey(50)
+        cv2.waitKey(0)
 
 
 import numpy as np
@@ -143,5 +144,6 @@ def test_reuse_dataset():
 
 
 if __name__ == "__main__":
+    np.set_printoptions(precision=4, suppress=True)
     test_read_dataset()
     test_reuse_dataset()

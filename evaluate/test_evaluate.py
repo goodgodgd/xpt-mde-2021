@@ -1,11 +1,8 @@
-import os
-import os.path as op
 import numpy as np
 
 import settings
-from config import opts
 import evaluate.evaluate_main as ev
-import utils.util_funcs as uf
+import utils.convert_pose as cp
 
 
 def test_evaluate_pose():
@@ -16,7 +13,7 @@ def test_evaluate_pose():
     pose_pred1 = pose_pred0.copy()
     pose_pred1[:, :3] = pose_pred1[:, :3] * 2
     print("predicted_pose\n", pose_pred1)
-    pose_true = uf.pose_rvec2matr(pose_true)
+    pose_true = cp.pose_rvec2matr(pose_true)
     trj_err, rot_err = ev.evaluate_pose(pose_pred1, pose_true)
     print("trajectory error\n", trj_err)
     assert np.isclose(trj_err, 0).all()

@@ -8,6 +8,7 @@ import json
 import settings
 from config import opts
 import utils.util_funcs as uf
+import utils.convert_pose as cp
 import tfrecords.data_feeders as df
 
 
@@ -127,6 +128,9 @@ def image_reader(filename):
     image = cv2.imread(filename)
     height = int(image.shape[0] // opts.SNIPPET_LEN)
     half_len = int(opts.SNIPPET_LEN // 2)
+    # TODO) IMPORTANT! Target image is median image in the snippet sequence
+    #   but target image is located at the bottom of the image for future convinience
+    #   the images are split into sources and target in [split_into_source_and_target]
     src_up = image[:height*half_len]
     target = image[height*half_len:height*(half_len+1)]
     src_dw = image[height*(half_len+1):]
@@ -145,7 +149,7 @@ def pose_reader(filename):
     poses = np.delete(poses, half_len, 0)
     pose_mats = []
     for pose in poses:
-        tmat = uf.pose_quat2matr(pose)
+        tmat = cp.pose_quat2matr(pose)
         pose_mats.append(tmat)
     pose_mats = np.stack(pose_mats, axis=0)
     return pose_mats.astype(np.float32)

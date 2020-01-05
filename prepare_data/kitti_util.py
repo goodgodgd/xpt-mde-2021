@@ -4,7 +4,7 @@ import numpy as np
 import pykitti
 
 import prepare_data.kitti_depth_generator as kdg
-import utils.util_funcs as uf
+import utils.convert_pose as cp
 
 
 class KittiUtil:
@@ -79,7 +79,7 @@ class KittiRawUtil(KittiUtil):
         T_imu_cam2 = np.linalg.inv(T_cam2_imu)
         T_w_imu = drive_loader.oxts[index].T_w_imu
         T_W_cam2 = np.matmul(T_w_imu, T_imu_cam2)
-        return uf.pose_mat2quat(T_W_cam2)
+        return cp.pose_matr2quat(T_W_cam2)
 
     def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
         calib_dir = op.dirname(drive_path)
@@ -180,7 +180,7 @@ class KittiOdomUtil(KittiUtil):
 
     def get_quat_pose(self, drive_loader, index):
         tmat = self.poses[index].reshape((3, 4))
-        return uf.pose_mat2quat(tmat)
+        return cp.pose_matr2quat(tmat)
 
     def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
         # no depth available for kitti_odom

@@ -1,7 +1,7 @@
 import numpy as np
 import tensorflow as tf
 import settings
-import utils.util_funcs as uf
+import utils.convert_pose as cp
 
 
 def compute_depth_metrics(gt, pred):
@@ -33,7 +33,7 @@ def recover_pred_snippet_poses(poses):
     """
     target_pose = np.zeros(shape=(1, 6), dtype=np.float32)
     poses_vec = np.concatenate([poses[:2], target_pose, poses[2:]], axis=0)
-    poses_mat = uf.pose_rvec2matr(poses_vec)
+    poses_mat = cp.pose_rvec2matr(poses_vec)
     recovered_pose = relative_pose_from_first(poses_mat)
     return recovered_pose
 
@@ -41,7 +41,7 @@ def recover_pred_snippet_poses(poses):
 def recover_true_snippet_poses(poses):
     """
     :param poses: source poses that transforms points in target to source frame
-                    format=(4x4 transformation), shape=[snippet_len, 4, 4]
+                    format=(4x4 transformation), shape=[num_src, 4, 4]
     :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
                     format=(4x4 transformation) shape=[snippet_len, 4, 4]
                     order=[source[0], source[1], target, source[2], source[3]]
@@ -148,10 +148,10 @@ def test_calc_trajectory_error_tensor():
     pose_vec3 = tf.constant(pose_vec3, dtype=tf.float32)
     pose_vec4 = tf.constant(pose_vec4, dtype=tf.float32)
     # matrix로 변환
-    pose_mat1 = uf.pose_rvec2matr_batch(pose_vec1)
-    pose_mat2 = uf.pose_rvec2matr_batch(pose_vec2)
-    pose_mat3 = uf.pose_rvec2matr_batch(pose_vec3)
-    pose_mat4 = uf.pose_rvec2matr_batch(pose_vec4)
+    pose_mat1 = cp.pose_rvec2matr_batch(pose_vec1)
+    pose_mat2 = cp.pose_rvec2matr_batch(pose_vec2)
+    pose_mat3 = cp.pose_rvec2matr_batch(pose_vec3)
+    pose_mat4 = cp.pose_rvec2matr_batch(pose_vec4)
 
     # TEST
     trjerr12 = calc_trajectory_error_tensor(pose_mat1, pose_mat2).numpy()
@@ -176,9 +176,9 @@ def test_calc_rotational_error_tensor():
     pose_vec2 = tf.constant(pose_vec2, dtype=tf.float32)
     pose_vec3 = tf.constant(pose_vec3, dtype=tf.float32)
     # matrix로 변환
-    pose_mat1 = uf.pose_rvec2matr_batch(pose_vec1)
-    pose_mat2 = uf.pose_rvec2matr_batch(pose_vec2)
-    pose_mat3 = uf.pose_rvec2matr_batch(pose_vec3)
+    pose_mat1 = cp.pose_rvec2matr_batch(pose_vec1)
+    pose_mat2 = cp.pose_rvec2matr_batch(pose_vec2)
+    pose_mat3 = cp.pose_rvec2matr_batch(pose_vec3)
 
     # TEST
     roterr12 = calc_rotational_error_tensor(pose_mat1, pose_mat2)

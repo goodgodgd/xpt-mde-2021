@@ -5,22 +5,24 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 import settings
-import utils.util_funcs as util
+import utils.convert_pose as cp
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
+from utils.decorators import InOutShape
 
 
-def synthesize_batch_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_pose):
+@InOutShape
+def synthesize_batch_multi_scale(src_img_stacked, intrinsic, pred_depth_ms, pred_pose):
     """
-    :param stacked_image: [batch, height*5, width, 3]
+    :param src_img_stacked: [batch, height*num_src, width, 3]
     :param intrinsic: [batch, 3, 3]
     :param pred_depth_ms: predicted depth in multi scale, list of [batch, height/scale, width/scale, 1]}
-    :param pred_pose: predicted source pose (tx, ty, tz, ux, uy, uz) [batch, num_src, 6]
+    :param pred_pose: predicted source pose in twist form [batch, num_src, 6]
     :return: reconstructed target view in multi scale, list of [batch, height/scale, width/scale, 3]}
     """
-    width_ori = stacked_image.get_shape().as_list()[2]
+    width_ori = src_img_stacked.get_shape().as_list()[2]
     # convert pose vector to transformation matrix
-    poses_matr = layers.Lambda(lambda pose: util.pose_rvec2matr_batch(pose),
+    poses_matr = layers.Lambda(lambda pose: cp.pose_rvec2matr_batch(pose),
                                name="pose2matrix")(pred_pose)
     recon_images = []
     for depth_sc in pred_depth_ms:
@@ -31,7 +33,7 @@ def synthesize_batch_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_p
                                      name=f"scale_intrin_sc{scale}")(intrinsic)
         # reorganize source images: [batch, 4, height, width, 3]
         source_images_sc = layers.Lambda(lambda image: reshape_source_images(image, scale),
-                                         name=f"reorder_source_sc{scale}")(stacked_image)
+                                         name=f"reorder_source_sc{scale}")(src_img_stacked)
         # print(f"[synthesize_batch_multi_scale] {scale}, source_images_sc {source_images_sc.get_shape()}, "
         #       f"depth_sc {depth_sc.get_shape()}, poses_matr {poses_matr.get_shape()}, ")
         recon_image_sc = synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
@@ -50,25 +52,27 @@ def scale_intrinsic(intrinsic, scale):
     return scaled_intrinsic
 
 
-def reshape_source_images(stacked_image, scale):
+@InOutShape
+def reshape_source_images(src_img_stacked, scale):
     """
-    :param stacked_image: [batch, 5*height, width, 3]
+    :param src_img_stacked: [batch, height*num_src, width, 3]
     :param scale: scale to reduce image size
-    :return: reorganized source images [batch, 4, height, width, 3]
+    :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
     """
     # resize image
-    batch, stheight, stwidth, _ = stacked_image.get_shape().as_list()
-    scaled_size = (int(stheight//scale), int(stwidth//scale))
-    scaled_image = tf.image.resize(stacked_image, size=scaled_size, method="bilinear")
+    batch, stheight, stwidth, _ = src_img_stacked.get_shape().as_list()
+    scaled_size = (int(stheight // scale), int(stwidth // scale))
+    scaled_image = tf.image.resize(src_img_stacked, size=scaled_size, method="bilinear")
     # slice only source images
     batch, scheight, scwidth, _ = scaled_image.get_shape().as_list()
-    scheight = int(scheight // opts.SNIPPET_LEN)
-    source_images = tf.slice(scaled_image, (0, 0, 0, 0), (-1, scheight*(opts.SNIPPET_LEN - 1), -1, -1))
-    # reorganize source images: (4*height,) -> (4, height)
-    source_images = tf.reshape(source_images, shape=(batch, -1, scheight, scwidth, 3))
+    num_src = (opts.SNIPPET_LEN - 1)
+    scheight = int(scheight // num_src)
+    # reorganize scaled images: (4*height/scale,) -> (4, height/scale)
+    source_images = tf.reshape(scaled_image, shape=(batch, num_src, scheight, scwidth, 3))
     return source_images
 
 
+@InOutShape
 def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic, suffix):
     """
     src_image, tgt_depth and intrinsic are scaled
@@ -137,6 +141,7 @@ def pixel2cam(pixel_coords, depth, intrinsic):
     return cam_coords
 
 
+@InOutShape
 def transform_to_source(tgt_coords, t2s_pose):
     """
     :param tgt_coords: target frame coordinates like (x,y,z,1) [batch, 4, height*width]
@@ -172,6 +177,7 @@ def cam2pixel(cam_coords, intrinsic):
     return pixel_coords
 
 
+@InOutShape
 def reconstruct_bilinear_interp(pixel_coords, image, depth):
     """
     :param pixel_coords: floating-point pixel coordinates (u,v,1) [batch, num_src, 3, height*width]
@@ -363,8 +369,7 @@ def erase_invalid_pixels(inputs):
 
 def test_reshape_source_images():
     print("===== start test_reshape_source_images")
-    filename = op.join(opts.DATAPATH_SRC, "kitti_raw_test", "2011_09_26_0002", "000024.png")
-    image = cv2.imread(filename)
+    image = cv2.imread("samples/000024.png")
     batch_image = np.expand_dims(image, 0)
     batch_image = np.tile(batch_image, (8, 1, 1, 1))
     print("batch image shape", batch_image.shape)
@@ -375,11 +380,11 @@ def test_reshape_source_images():
     sources = tf.cast(sources, tf.uint8)
     sources = sources.numpy()
     print("reordered source image shape", sources.shape)
-    # cv2.imshow("original image", image)
-    # cv2.imshow("reordered image1", sources[0, 1])
-    # cv2.imshow("reordered image2", sources[0, 2])
-    # cv2.waitKey()
-    # assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == sources[0, 1]).all()
+    cv2.imshow("original image", image)
+    cv2.imshow("reordered image1", sources[0, 1])
+    cv2.imshow("reordered image2", sources[0, 2])
+    cv2.waitKey()
+    assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == sources[0, 1]).all()
     print("!!! test_reshape_source_images passed")
 
 

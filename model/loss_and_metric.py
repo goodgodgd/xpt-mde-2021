@@ -4,7 +4,7 @@ from model.synthesize_batch import synthesize_batch_multi_scale
 
 import settings
 from config import opts
-import utils.util_funcs as uf
+import utils.convert_pose as cp
 import evaluate.eval_funcs as ef
 
 
@@ -43,22 +43,10 @@ def compute_metric_pose(pose_pred, pose_true_mat):
     :param pose_pred: 6-DoF poses [batch, num_src, 6]
     :param pose_true_mat: 4x4 transformation matrix [batch, num_src, 4, 4]
     """
-    pose_pred_mat = uf.pose_rvec2matr_batch(pose_pred)
+    pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
     trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat)
     rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
     return tf.reduce_mean(trj_err), tf.reduce_mean(rot_err)
-
-
-def extract_target(stacked_image):
-    """
-    :param stacked_image: [batch, snippet_len*height, width, 3]
-    :return: target_image, [batch, height, width, 3]
-    """
-    batch, imheight, imwidth, _ = stacked_image.get_shape().as_list()
-    imheight = int(imheight // opts.SNIPPET_LEN)
-    target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
-                            (-1, imheight, -1, -1))
-    return target_image
 
 
 def disp_to_depth(disp_ms):
