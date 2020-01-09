@@ -83,6 +83,16 @@ def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic, suffix):
     src_pixel_coords = layers.Lambda(lambda inputs: warp_pixel_coords(inputs, height, width),
                                      name="warp_pixel_"+suffix)\
                                     ([tgt_depth, pose, intrinsic])
+    # src_pixel_coords: [batch, num_src, 3, height*width]
+    src_coords = src_pixel_coords.numpy()
+    x = src_coords[0, 3, 0].reshape((height, width))
+    y = src_coords[0, 3, 1].reshape((height, width))
+    d = tgt_depth.numpy()[0].reshape((height, width))
+    print(f"x, y in src_pixel_coords "
+          f"\n10~20   \nx: {x[40, 10:20]} \ny: {y[40, 10:20]} \nd: {d[40, 10:20]}"
+          f"\n100~110 \nx: {x[40, 100:110]} \ny: {y[40, 100:110]} \nd: {d[40, 100:110]}"
+          f"\n190~200 \nx: {x[40, 190:200]} \ny: {y[40, 190:200]} \nd: {d[40, 190:200]}")
+
     tgt_image_synthesized = layers.Lambda(lambda inputs:
                                           reconstruct_bilinear_interp(inputs[0], inputs[1], inputs[2]),
                                           name="recon_interp_"+suffix)\
@@ -182,23 +192,31 @@ def reconstruct_bilinear_interp(pixel_coords, image, depth):
     :return: reconstructed image [batch, num_src, height, width, 3]
     """
     batch, num_src, height, width, _ = image.get_shape().as_list()
-    padded_image = zero_pad_image(image)
 
-    # adjust pixel coordinates for padded image
-    pixel_coords_pad = shift_and_clip_pixels(pixel_coords, height, width)
+    # pixel_floorceil[batch, num_src, :, height*width] = (u_ceil, u_floor, v_ceil, v_floor)
+    pixel_floorceil = neighbor_int_pixels(pixel_coords, height, width)
 
-    # pixel_floorceil[batch, num_src, :, i] = (u_ceil, u_floor, v_ceil, v_floor)
-    pixel_floorceil = neighbor_int_pixels(pixel_coords_pad, height, width)
+    # valid_mask: [batch, num_src, 1, height*width]
+    valid_mask = make_valid_mask(pixel_floorceil)
 
-    # weights[batch, num_src, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
-    weights = calc_neighbor_weights([pixel_coords_pad, pixel_floorceil])
+    # weights[batch, num_src, :, height*width] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
+    weights = calc_neighbor_weights([pixel_coords, pixel_floorceil, valid_mask])
+
+    # src_pixel_coords: [batch, num_src, 3, height*width]
+    pixels = pixel_floorceil.numpy()
+    mask = valid_mask.numpy()
+    weights_np = weights.numpy()
+    x = pixels[0, 3, 0].reshape((height, width))
+    m = mask[0, 3, 0].reshape((height, width))
+    w = weights_np[0, 3, 0].reshape((height, width))
+    print(f"x, y in src_pixel_coords "
+          f"\n10~20   \nx: {x[40, 10:20]} \nm: {m[40, 10:20]} \nw: {w[40, 10:20]}"
+          f"\n100~110 \nx: {x[40, 100:110]} \nm: {m[40, 100:110]} \nw: {w[40, 100:110]}"
+          f"\n190~200 \nx: {x[40, 190:200]} \nm: {m[40, 190:200]} \nw: {w[40, 190:200]}")
 
     # sampled_image[batch, num_src, :, height, width, 3] =
     # (im_uf_vf, im_uf_vc, im_uc_vf, im_uc_vc)
-    sampled_images = sample_neighbor_images([padded_image, pixel_floorceil])
-
-    # sampled_view = sampled_images.numpy().astype(np.uint8)
-    # cv2.imshow("sampled", sampled_view[1, 0, 0].reshape((height, width, 3)))
+    sampled_images = sample_neighbor_images([image, pixel_floorceil])
 
     # recon_image[batch, num_src, height*width, 3]
     flat_image = merge_images([sampled_images, weights])
@@ -206,39 +224,6 @@ def reconstruct_bilinear_interp(pixel_coords, image, depth):
     flat_image = erase_invalid_pixels([flat_image, depth])
     recon_image = tf.reshape(flat_image, shape=(batch, num_src, height, width, 3))
     return recon_image
-
-
-@ShapeCheck
-def zero_pad_image(image):
-    """
-    :param image: [batch, num_src, height, width, 3]
-    :return: [batch, num_src, height+2, width+2, 3]
-    """
-    # pad 1 pixel around image
-    top_pad, bottom_pad, left_pad, right_pad = (1, 1, 1, 1)
-    paddings = tf.constant([[0, 0], [0, 0], [top_pad, bottom_pad], [left_pad, right_pad], [0, 0]])
-    padded_image = tf.pad(image, paddings, "CONSTANT")
-    batch, num_src, height, width, _ = image.get_shape().as_list()
-    padded_image = tf.reshape(padded_image, (batch, num_src, height+2, width+2, 3))
-    # print("zero pad\n", padded_image[0, 0, 0:5, 0:5, 0])
-    return padded_image
-
-
-@ShapeCheck
-def shift_and_clip_pixels(pixel_coords, height, width):
-    """
-    transform pixel coordinates into the 1-pixel padded image
-    :param pixel_coords: (u, v, 1) [batch, num_src, 3, height*width]
-    :param height: image height
-    :param width: image width
-    :return: (u, v) [batch, num_src, 2, height*width]
-    """
-    u = tf.slice(pixel_coords, (0, 0, 0, 0), (-1, -1, 1, -1))
-    u = tf.clip_by_value(u + 1, 0, width + 1)
-    v = tf.slice(pixel_coords, (0, 0, 1, 0), (-1, -1, 1, -1))
-    v = tf.clip_by_value(v + 1, 0, height + 1)
-    adjusted_pixels = tf.concat([u, v], axis=2)
-    return adjusted_pixels
 
 
 def neighbor_int_pixels(pixel_coords, height, width):
@@ -249,21 +234,42 @@ def neighbor_int_pixels(pixel_coords, height, width):
     :return: (u_floor, u_ceil, v_floor, v_ceil) [batch, num_src, 4, height*width]
     """
     u = tf.slice(pixel_coords, (0, 0, 0, 0), (-1, -1, 1, -1))
-    u_floor = tf.clip_by_value(tf.floor(u), 0, width+1)
-    u_ceil = tf.clip_by_value(u_floor + 1, 0, width+1)
+    u_floor = tf.floor(u)
+    u_ceil = tf.clip_by_value(u_floor + 1, 0, width - 1)
+    u_floor = tf.clip_by_value(u_floor, 0, width - 1)
     v = tf.slice(pixel_coords, (0, 0, 1, 0), (-1, -1, 1, -1))
-    v_floor = tf.clip_by_value(tf.floor(v), 0, height+1)
-    v_ceil = tf.clip_by_value(v_floor + 1, 0, height+1)
+    v_floor = tf.floor(v)
+    v_ceil = tf.clip_by_value(v_floor + 1, 0, height - 1)
+    v_floor = tf.clip_by_value(v_floor, 0, height - 1)
     pixel_floorceil = tf.concat([u_floor, u_ceil, v_floor, v_ceil], axis=2)
     return pixel_floorceil
 
 
+@ShapeCheck
+def make_valid_mask(pixel_floorceil):
+    """
+    :param pixel_floorceil: (u_floor, u_ceil, v_floor, v_ceil) (int) [batch, num_src, 4, height*width]
+    :return: mask [batch, num_src, 1, height*width]
+    """
+    batch, num_src, _, num_pxs = pixel_floorceil.get_shape().as_list()
+    uf = tf.slice(pixel_floorceil, (0, 0, 0, 0), (-1, -1, 1, -1))
+    uc = tf.slice(pixel_floorceil, (0, 0, 1, 0), (-1, -1, 1, -1))
+    vf = tf.slice(pixel_floorceil, (0, 0, 2, 0), (-1, -1, 1, -1))
+    vc = tf.slice(pixel_floorceil, (0, 0, 3, 0), (-1, -1, 1, -1))
+    mask = tf.equal(uf + 1, uc)
+    mask = tf.logical_and(mask, tf.equal(vf + 1, vc))
+    mask = tf.cast(mask, tf.float32)
+    return mask
+
+
+@ShapeCheck
 def calc_neighbor_weights(inputs):
-    pixel_coords, pixel_floorceil = inputs
+    pixel_coords, pixel_floorceil, valid_mask = inputs
     """
     pixel_coords: (u, v) (float) [batch, num_src, 2, height*width]
     pixel_floorceil: (u_floor, u_ceil, v_floor, v_ceil) (int) [batch, num_src, 4, height*width]
-    return: 4 neighbor pixel weights (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc) 
+    valid_mask: [batch, num_src, 1, height*width]
+    return: weights of four neighbor pixels (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc) 
             [batch, num_src, 4, height*width]
     """
     ui, vi = (0, 1)
@@ -277,6 +283,7 @@ def calc_neighbor_weights(inputs):
     w_ucvf = w_uc * w_vf
     w_ucvc = w_uc * w_vc
     weights = tf.concat([w_ufvf, w_ufvc, w_ucvf, w_ucvc], axis=2)
+    weights = weights * valid_mask
     return weights
 
 

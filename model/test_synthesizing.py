@@ -1,3 +1,5 @@
+from tensorflow.keras import layers
+
 from config import opts
 from model.synthesize_batch import *
 from tfrecords.tfrecord_reader import TfrecordGenerator
@@ -44,6 +46,49 @@ def test_synthesize_batch_multi_scale():
     print("!!! test_synthesize_batch_multi_scale passed")
 
 
+def test_synthesize_batch_view():
+    print("===== start test_synthesize_batch_view")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    scale_idx = 1
+
+    for i, features in enumerate(dataset):
+        stacked_image = features['image']
+        intrinsic = features['intrinsic']
+        depth_gt = features['depth_gt']
+        pose_gt = features['pose_gt']
+        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        pred_depth_ms = multi_scale_depths(depth_gt, [1, 2, 4, 8])
+
+        # check only 1 scale
+        depth_scaled = pred_depth_ms[scale_idx]
+        width_ori = source_image.get_shape().as_list()[2]
+        batch, height_sc, width_sc, _ = depth_scaled.get_shape().as_list()
+        scale = int(width_ori // width_sc)
+        # adjust intrinsic upto scale
+        intrinsic_sc = layers.Lambda(lambda intrin: scale_intrinsic(intrin, scale),
+                                     name=f"scale_intrin_sc{scale}")(intrinsic)
+        # reorganize source images: [batch, 4, height, width, 3]
+        srcimg_scaled = layers.Lambda(lambda image: reshape_source_images(image, scale),
+                                      name=f"reorder_source_sc{scale}")(source_image)
+
+        recon_image_sc = synthesize_batch_view(srcimg_scaled, depth_scaled, pose_gt,
+                                               intrinsic_sc, suffix=f"sc{scale}")
+
+        print("reconstructed image", recon_image_sc.get_shape())
+        # convert single target image in batch
+        target_image = tf.image.resize(target_image[0], size=recon_image_sc.get_shape().as_list()[2:4], method="bilinear")
+        target_image = uf.to_uint8_image(target_image).numpy()
+        recon_image_sc = uf.to_uint8_image(recon_image_sc[0]).numpy()
+        recon_image_sc = recon_image_sc.reshape((4*height_sc, width_sc, 3))
+        view = np.concatenate([target_image, recon_image_sc], axis=0)
+        cv2.imshow("synthesize_batch", view)
+        cv2.waitKey()
+        if i >= 3:
+            break
+
+    cv2.destroyAllWindows()
+
+
 def test_reshape_source_images():
     print("===== start test_reshape_source_images")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
@@ -70,6 +115,7 @@ def test_reshape_source_images():
     cv2.imshow("original and reshaped", view)
     cv2.waitKey()
     print("!!! test_reshape_source_images passed")
+    cv2.destroyAllWindows()
 
 
 def multi_scale_depths(depth, scales):
@@ -97,7 +143,7 @@ def test_scale_intrinsic():
     # EXECUTE
     intrinsic_sc = scale_intrinsic(intrinsic, scale)
 
-    print("original intrinsic:", intrinsic)
+    print("original intrinsic:", intrinsic[0])
     print("scaled intrinsic:", intrinsic_sc[0])
     assert np.isclose((intrinsic[:, :2, :]/2), intrinsic_sc[:, :2, :]).all()
     assert np.isclose((intrinsic[:, -1, :]), intrinsic_sc[:, -1, :]).all()
@@ -148,15 +194,14 @@ def test_transform_to_source():
 
 def test_pixel_weighting():
     print("===== start test_pixel_weighting")
-    print("----- start test shift_and_clip_pixels")
     batch, num_src, height, width = (8, 4, 5, 5)
     # create random coordinates
-    pixel_coords = np.random.uniform(0.1, 4.9, (batch, num_src, 3, height*width))
-    chk_u, chk_v = 0.2, 0.7
+    pixel_coords = np.random.uniform(0.1, 3.9, (batch, num_src, 3, height*width))
     # to check 'out of image' pixels
     pixel_coords[:, :, :, 0] = -1.5
     pixel_coords[:, :, :, 1] = 7
     # to check weights
+    chk_u, chk_v = 0.2, 0.7
     pixel_coords[:, :, 0, 3] = 2 + chk_u
     pixel_coords[:, :, 1, 3] = 3 + chk_v
     # set z=1 in (u,v,z)
@@ -164,27 +209,23 @@ def test_pixel_weighting():
     pixel_coords = tf.constant(pixel_coords, dtype=tf.float32)
     print(f"pixel coords shape: {pixel_coords.get_shape()}")
     print(f"pixel coords original \n{pixel_coords[1, 1, :, :6]}")
-
-    # adjust pixel coordinates for padded image [batch, num_src, 2, height*width]
-    pixel_coords_pad = shift_and_clip_pixels(pixel_coords, height, width)
-    print(f"pixel coords shift and clip \n{pixel_coords_pad[1, 1, :, :6]}")
-    assert np.isclose(pixel_coords_pad[:, :, :2, 0], 0).all()
-    assert np.isclose(pixel_coords_pad[:, :, :2, 1], 6).all()
-    print("!!! test shift_and_clip_pixels passed")
     print("----- start test neighbor_int_pixels")
 
     # EXECUTE -> pixel_floorceil[batch, num_src, :, i] = [u_ceil, u_floor, v_ceil, v_floor]
-    pixel_floorceil = neighbor_int_pixels(pixel_coords_pad, height, width)
+    pixel_floorceil = neighbor_int_pixels(pixel_coords, height, width)
 
     print(f"pixel coords floorceil \n{pixel_floorceil[1, 1, :, :6]}")
     print(np.floor(pixel_coords[1, 1, :2, :6] + 1))
-    assert np.isclose(np.floor(pixel_coords[:, :, 0, 2:] + 1), pixel_floorceil[:, :, 0, 2:]).all()
-    assert np.isclose(np.ceil(pixel_coords[:, :, 1, 2:] + 1), pixel_floorceil[:, :, 3, 2:]).all()
+    assert np.isclose(np.floor(pixel_coords[:, :, 0, 2:]), pixel_floorceil[:, :, 0, 2:]).all()
+    assert np.isclose(np.ceil(pixel_coords[:, :, 1, 2:]), pixel_floorceil[:, :, 3, 2:]).all()
     print("!!! test neighbor_int_pixels passed")
     print("----- start test calc_neighbor_weights")
 
+    # EXECUTE
+    valid_mask = make_valid_mask(pixel_floorceil)
+
     # EXECUTE -> weights[batch, num_src, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
-    weights = calc_neighbor_weights([pixel_coords_pad, pixel_floorceil])
+    weights = calc_neighbor_weights([pixel_coords, pixel_floorceil, valid_mask])
 
     print(f"pixel weights \n{weights[1, 1, :, :6]}")
     assert np.isclose(weights[:, :, 0, 3], (1 - chk_u) * (1 - chk_v)).all()  # ufvf
@@ -197,22 +238,10 @@ def test_pixel_weighting():
     assert (np.isclose(weight_sum, 0) | np.isclose(weight_sum, 1)).all()
     print("!!! test calc_neighbor_weights passed")
 
-    print("----- start test zero_pad_image")
-    image = np.tile(np.arange(1, height*width+1).reshape((1, 1, height, width, 1)), (batch, num_src, 1, 1, 3))
-    image = tf.constant(image, dtype=tf.float32)
-
-    # EXECUTE
-    padded_image = zero_pad_image(image)
-
-    print(f"padded image shape={padded_image.get_shape()}")
-    assert (padded_image.get_shape().as_list()[2:4] == [height + 2, width + 2])
-    assert np.isclose(padded_image[:, :, 0, :, :], 0).all()
-    assert np.isclose(padded_image[:, :, :, -1, :], 0).all()
-    print("!!! test zero_pad_image passed")
-
 
 def test_reconstruct_bilinear_interp():
-    print("===== start test reconstruct_bilinear_interp")
+    print("===== start test_reconstruct_bilinear_interp")
+    print("----- start test neighbor_int_pixels and make_valid_mask")
     batch, num_src, height, width = (8, 4, 5, 5)
 
     pixel_coords = np.meshgrid(np.arange(0, height), np.arange(0, width))
@@ -224,6 +253,19 @@ def test_reconstruct_bilinear_interp():
     pixel_coords = np.reshape(pixel_coords, (batch, num_src, 2, height*width))
     pixel_coords = tf.constant(pixel_coords)
 
+    # EXECUTE
+    pixel_floorceil = neighbor_int_pixels(pixel_coords, height, width)
+    # EXECUTE
+    mask = make_valid_mask(pixel_floorceil)
+
+    print("valid mask\n", mask[0, 0, 0].numpy().reshape((height, width)))
+    expected_mask = np.zeros((batch, num_src, height, width), dtype=np.float)
+    expected_mask[:, :, :4, :3] = 1
+    expected_mask = expected_mask.reshape((batch, num_src, 1, height*width))
+    assert np.isclose(expected_mask, mask).all()
+    print("!!! test neighbor_int_pixels and make_valid_mask passed")
+
+    print("----- start test reconstruct_bilinear_interp")
     image = np.meshgrid(np.arange(0, height), np.arange(0, width))[0].reshape((1, 1, height, width, 1))
     image = np.tile(image, (batch, num_src, 1, 1, 3)).astype(np.float32)
     image = tf.constant(image)
@@ -235,19 +277,24 @@ def test_reconstruct_bilinear_interp():
     # EXECUTE
     recon_image = reconstruct_bilinear_interp(pixel_coords, image, depth)
 
-    print("input image\n", image[0, 0, :, :, 0])
-    print("reconstructed image\n", recon_image[0, 0, :, :, 0])
+    expected_image = (image + u_add) * expected_mask.reshape((batch, num_src, height, width, 1))
+    print("input image", image[0, 0, :, :, 0])
+    print(f"expected image shifted by {u_add} along u-axis", expected_image[0, 0, :, :, 0])
+    print("reconstructed image", recon_image[0, 0, :, :, 0])
+    assert np.isclose(recon_image, expected_image).all()
+    print("!!! test reconstruct_bilinear_interp passed")
 
 
 def test_all():
     np.set_printoptions(precision=4, suppress=True, linewidth=100)
     # test_synthesize_batch_multi_scale()
-    # test_reshape_source_images()
+    test_synthesize_batch_view()
+    test_reshape_source_images()
     # test_scale_intrinsic()
     # test_pixel2cam()
     # test_transform_to_source()
     # test_pixel_weighting()
-    test_reconstruct_bilinear_interp()
+    # test_reconstruct_bilinear_interp()
 
 
 if __name__ == "__main__":

@@ -76,4 +76,5 @@ def to_float_image(im_tensor):
 
 
 def to_uint8_image(im_tensor):
+    im_tensor = tf.clip_by_value(im_tensor, -1, 1)
     return tf.image.convert_image_dtype((im_tensor + 1.) / 2., dtype=tf.uint8)
