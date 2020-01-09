@@ -78,3 +78,19 @@ def to_float_image(im_tensor):
 def to_uint8_image(im_tensor):
     im_tensor = tf.clip_by_value(im_tensor, -1, 1)
     return tf.image.convert_image_dtype((im_tensor + 1.) / 2., dtype=tf.uint8)
+
+
+def multi_scale_depths(depth, scales):
+    """ shape checked!
+    :param depth: [batch, height, width, 1]
+    :param scales: list of scales
+    :return: list of depths [batch, height/scale, width/scale, 1]
+    """
+    batch, height, width, _ = depth.get_shape().as_list()
+    depth_ms = []
+    for sc in scales:
+        scaled_size = (int(height // sc), int(width // sc))
+        scdepth = tf.image.resize(depth, size=scaled_size, method="bilinear")
+        depth_ms.append(scdepth)
+        # print("[multi_scale_depths] scaled depth shape:", scdepth.get_shape().as_list())
+    return depth_ms

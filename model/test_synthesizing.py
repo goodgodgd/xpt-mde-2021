@@ -20,11 +20,11 @@ def test_synthesize_batch_multi_scale():
         depth_gt = features['depth_gt']
         pose_gt = features['pose_gt']
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
-        pred_depth_ms = multi_scale_depths(depth_gt, [1, 2, 4, 8])
+        depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pred_pose = cp.pose_matr2rvec_batch(pose_gt)
 
         # EXECUTE
-        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
+        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms, pred_pose)
 
         # compare target image and reconstructed images
         # recon_img0[0, 0]: reconstructed from the first image
@@ -55,11 +55,11 @@ def test_synthesize_batch_view():
         depth_gt = features['depth_gt']
         pose_gt = features['pose_gt']
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
-        pred_depth_ms = multi_scale_depths(depth_gt, [1, 2, 4, 8])
+        depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         batch, height, width, _ = target_image.get_shape().as_list()
 
         # check only 1 scale
-        depth_scaled = pred_depth_ms[scale_idx]
+        depth_scaled = depth_gt_ms[scale_idx]
         width_ori = source_image.get_shape().as_list()[2]
         batch, height_sc, width_sc, _ = depth_scaled.get_shape().as_list()
         scale = int(width_ori // width_sc)
@@ -116,22 +116,6 @@ def test_reshape_source_images():
     cv2.waitKey()
     print("!!! test_reshape_source_images passed")
     cv2.destroyAllWindows()
-
-
-def multi_scale_depths(depth, scales):
-    """ shape checked!
-    :param depth: [batch, height, width, 1]
-    :param scales: list of scales
-    :return: list of depths [batch, height/scale, width/scale, 1]
-    """
-    batch, height, width, _ = depth.get_shape().as_list()
-    depth_ms = []
-    for sc in scales:
-        scaled_size = (int(height // sc), int(width // sc))
-        scdepth = tf.image.resize(depth, size=scaled_size, method="bilinear")
-        depth_ms.append(scdepth)
-        print("[multi_scale_depths] scaled depth shape:", scdepth.get_shape().as_list())
-    return depth_ms
 
 
 def test_scale_intrinsic():

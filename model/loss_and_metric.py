@@ -6,6 +6,7 @@ import settings
 import utils.convert_pose as cp
 import utils.util_funcs as uf
 import evaluate.eval_funcs as ef
+from utils.decorators import ShapeCheck
 
 
 # TODO: 모델 대충 학습시켜서 loss따로 계산하는 테스트 함수 만들기
@@ -84,11 +85,12 @@ def photometric_loss_multi_scale(synthesized_target_ms, original_target_ms):
         loss = layers.Lambda(lambda inputs: photometric_loss(inputs[0], inputs[1]),
                              name=f"photo_loss_{i}")([synt_target, orig_target])
         losses.append(loss)
-    photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=1), axis=1),
+    photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=0), axis=0),
                                name="photo_loss_sum")(losses)
     return photo_loss
 
 
+@ShapeCheck
 def photometric_loss(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
@@ -184,7 +186,124 @@ def depth_error_metric(depth_pred, depth_true):
 
 
 # ==================== tests ====================
+import os.path as op
 import numpy as np
+import cv2
+from config import opts
+from tfrecords.tfrecord_reader import TfrecordGenerator
+
+
+def test_photometric_loss_quality():
+    print("===== start test_photometric_loss_quality")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+
+    for i, features in enumerate(dataset):
+        print("\n--- fetch a batch data")
+        stacked_image = features['image']
+        intrinsic = features['intrinsic']
+        depth_gt = features['depth_gt']
+        pose_gt = features['pose_gt']
+        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
+        pose_gt = cp.pose_matr2rvec_batch(pose_gt)
+        target_ms = multi_scale_like(target_image, depth_gt_ms)
+        batch, height, width, _ = target_image.get_shape().as_list()
+
+        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms, pose_gt)
+
+        srcimgs = uf.to_uint8_image(source_image).numpy()[0]
+        srcimg0 = srcimgs[0:height]
+        srcimg3 = srcimgs[height*3:height*4]
+
+        losses = []
+        for scale, synt_target, orig_target in zip([1, 2, 4, 8], synth_target_ms, target_ms):
+            # EXECUTE
+            loss = photometric_loss(synt_target, orig_target)
+            losses.append(loss)
+
+            recon_target = uf.to_uint8_image(synt_target).numpy()
+            recon0 = cv2.resize(recon_target[0, 0], (width, height), interpolation=cv2.INTER_NEAREST)
+            recon3 = cv2.resize(recon_target[0, 3], (width, height), interpolation=cv2.INTER_NEAREST)
+            target = uf.to_uint8_image(orig_target).numpy()[0]
+            target = cv2.resize(target, (width, height), interpolation=cv2.INTER_NEAREST)
+            view = np.concatenate([target, srcimg0, recon0, srcimg3, recon3], axis=0)
+            print(f"1/{scale} scale, photo loss:", loss)
+            cv2.imshow("photo loss", view)
+            cv2.waitKey()
+
+        losses = tf.stack(losses, axis=0)
+        photo_loss = tf.reduce_sum(losses, axis=0)
+        print("all photometric loss:", losses)
+        print("batch mean photometric loss:", photo_loss)
+        print("scale mean photometric loss:", tf.reduce_sum(losses, axis=1))
+        if i > 3:
+            break
+
+    print("!!! test_photometric_loss_quality passed")
+
+
+def test_photometric_loss_quantity():
+    print("===== start test_photometric_loss_quantity")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+
+    for i, features in enumerate(dataset):
+        print("\n--- fetch a batch data")
+        stacked_image = features['image']
+        intrinsic = features['intrinsic']
+        depth_gt = features['depth_gt']
+        pose_gt = features['pose_gt']
+        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
+        pose_gt = cp.pose_matr2rvec_batch(pose_gt)
+        target_ms = multi_scale_like(target_image, depth_gt_ms)
+
+        batch_loss_right, scale_loss_right, recon_image_right = \
+            test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms)
+
+        # corrupt pose x+=1
+        pose_gt = pose_gt.numpy()
+        pose_gt = pose_gt + np.random.uniform(-0.2, 0.2, pose_gt.shape)
+        pose_gt = tf.constant(pose_gt, dtype=tf.float32)
+
+        print("\ncorrupt poses")
+        batch_loss_wrong, scale_loss_wrong, recon_image_wrong = \
+            test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms)
+
+        print("loss diff: wrong - right =", batch_loss_wrong - batch_loss_right)
+        assert (np.sum(batch_loss_right.numpy() < batch_loss_wrong.numpy()) > opts.BATCH_SIZE//2 + 1)
+        assert (np.sum(scale_loss_right.numpy() < scale_loss_wrong.numpy()) > 2)
+
+        target = uf.to_uint8_image(target_image).numpy()[0]
+        view = np.concatenate([target, recon_image_right, recon_image_wrong], axis=0)
+        cv2.imshow("pose corruption", view)
+        cv2.waitKey()
+
+        if i > 3:
+            break
+
+    print("!!! test_photometric_loss_quantity passed")
+
+
+def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
+    synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms, pose_gt)
+
+    losses = []
+    for scale, synt_target, orig_target in zip([1, 2, 4, 8], synth_target_ms, target_ms):
+        # EXECUTE
+        loss = photometric_loss(synt_target, orig_target)
+        losses.append(loss)
+
+        if scale == 1:
+            recon_target = uf.to_uint8_image(synt_target).numpy()
+            recon_image = cv2.resize(recon_target[0, 0], (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_NEAREST)
+
+    losses = tf.stack(losses, axis=0)
+    batch_loss = tf.reduce_sum(losses, axis=0)
+    scale_loss = tf.reduce_sum(losses, axis=1)
+    print("all photometric loss:", losses)
+    print("batch mean photometric loss:", batch_loss)
+    print("scale mean photometric loss:", scale_loss)
+    return batch_loss, scale_loss, recon_image
 
 
 def test_depth_error_metric():
@@ -202,7 +321,8 @@ def test_depth_error_metric():
 
 
 def test():
-    test_depth_error_metric()
+    # test_photometric_loss_quality()
+    test_photometric_loss_quantity()
 
 
 if __name__ == "__main__":

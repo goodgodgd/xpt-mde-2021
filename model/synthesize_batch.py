@@ -7,7 +7,6 @@ from tensorflow.keras import layers
 import settings
 import utils.convert_pose as cp
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
 from utils.decorators import ShapeCheck
 
 
@@ -18,7 +17,7 @@ def synthesize_batch_multi_scale(src_img_stacked, intrinsic, pred_depth_ms, pred
     :param intrinsic: [batch, 3, 3]
     :param pred_depth_ms: predicted depth in multi scale, list of [batch, height/scale, width/scale, 1]}
     :param pred_pose: predicted source pose in twist form [batch, num_src, 6]
-    :return: reconstructed target view in multi scale, list of [batch, height/scale, width/scale, 3]}
+    :return: reconstructed target view in multi scale, list of [batch, num_src, height/scale, width/scale, 3]}
     """
     width_ori = src_img_stacked.get_shape().as_list()[2]
     # convert pose vector to transformation matrix
@@ -34,8 +33,7 @@ def synthesize_batch_multi_scale(src_img_stacked, intrinsic, pred_depth_ms, pred
         # reorganize source images: [batch, 4, height, width, 3]
         source_images_sc = layers.Lambda(lambda image: reshape_source_images(image, scale),
                                          name=f"reorder_source_sc{scale}")(src_img_stacked)
-        # print(f"[synthesize_batch_multi_scale] {scale}, source_images_sc {source_images_sc.get_shape()}, "
-        #       f"depth_sc {depth_sc.get_shape()}, poses_matr {poses_matr.get_shape()}, ")
+        # reconstruct target view from source images
         recon_image_sc = synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
                                                intrinsic_sc, suffix=f"sc{scale}")
         recon_images.append(recon_image_sc)
@@ -268,9 +266,9 @@ def calc_neighbor_weights(inputs):
 
 @ShapeCheck
 def sample_neighbor_images(inputs):
-    padded_image, pixel_floorceil = inputs
+    source_image, pixel_floorceil = inputs
     """
-    padded_image: [batch, num_src, height+2, width+2, 3]
+    source_image: [batch, num_src, height, width, 3]
     pixel_floorceil: (u_floor, u_ceil, v_floor, v_ceil) [batch, num_src, 4, height*width]
     return: flattened sampled image [(batch, num_src, 4, height*width, 3)]
     """
@@ -288,30 +286,11 @@ def sample_neighbor_images(inputs):
     It seems to be a bug.
     Suprisingly, `tf.gather` works nicely with 'Tensor'
     """
-    # eager_tensor = False
-    # if eager_tensor:
-    #     # flatten image: [batch, num_src, height_pad*width_path, 3]
-    #     batch, num_src, height_pad, width_pad, _ = padded_image.get_shape().as_list()
-    #     padded_image_flat = tf.reshape(padded_image, shape=(batch, num_src, height_pad*width_pad, 3))
-    #     print(f"padded_image_flat {padded_image_flat.get_shape()}")
-    #     ufvf = vf * width_pad + uf
-    #     ufvc = vc * width_pad + uf
-    #     ucvf = vf * width_pad + uc
-    #     ucvc = vc * width_pad + uc
-    #
-    #     # imflat_ufvf: (batch, num_src, height*width, 3)
-    #     imflat_ufvf = tf.gather(padded_image_flat, ufvf, axis=2, batch_dims=2)
-    #     imflat_ufvc = tf.gather(padded_image_flat, ufvc, axis=2, batch_dims=2)
-    #     imflat_ucvf = tf.gather(padded_image_flat, ucvf, axis=2, batch_dims=2)
-    #     imflat_ucvc = tf.gather(padded_image_flat, ucvc, axis=2, batch_dims=2)
-    #
-    # else:
-
     # tf.stack([uf, vf]): [batch, num_src, height*width, 2(u,v)]
-    imflat_ufvf = tf.gather_nd(padded_image, tf.stack([vf, uf], axis=-1), batch_dims=2)
-    imflat_ufvc = tf.gather_nd(padded_image, tf.stack([vc, uf], axis=-1), batch_dims=2)
-    imflat_ucvf = tf.gather_nd(padded_image, tf.stack([vf, uc], axis=-1), batch_dims=2)
-    imflat_ucvc = tf.gather_nd(padded_image, tf.stack([vc, uc], axis=-1), batch_dims=2)
+    imflat_ufvf = tf.gather_nd(source_image, tf.stack([vf, uf], axis=-1), batch_dims=2)
+    imflat_ufvc = tf.gather_nd(source_image, tf.stack([vc, uf], axis=-1), batch_dims=2)
+    imflat_ucvf = tf.gather_nd(source_image, tf.stack([vf, uc], axis=-1), batch_dims=2)
+    imflat_ucvc = tf.gather_nd(source_image, tf.stack([vc, uc], axis=-1), batch_dims=2)
 
     # sampled_images: (batch, num_src, 4, height*width, 3)
     sampled_images = tf.stack([imflat_ufvf, imflat_ufvc, imflat_ucvf, imflat_ucvc], axis=2,
