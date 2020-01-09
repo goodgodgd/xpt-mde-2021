@@ -8,10 +8,10 @@ import settings
 import utils.convert_pose as cp
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
-from utils.decorators import InOutShape
+from utils.decorators import ShapeCheck
 
 
-@InOutShape
+@ShapeCheck
 def synthesize_batch_multi_scale(src_img_stacked, intrinsic, pred_depth_ms, pred_pose):
     """
     :param src_img_stacked: [batch, height*num_src, width, 3]
@@ -52,27 +52,23 @@ def scale_intrinsic(intrinsic, scale):
     return scaled_intrinsic
 
 
-@InOutShape
+@ShapeCheck
 def reshape_source_images(src_img_stacked, scale):
     """
     :param src_img_stacked: [batch, height*num_src, width, 3]
     :param scale: scale to reduce image size
     :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
     """
-    # resize image
-    batch, stheight, stwidth, _ = src_img_stacked.get_shape().as_list()
-    scaled_size = (int(stheight // scale), int(stwidth // scale))
-    scaled_image = tf.image.resize(src_img_stacked, size=scaled_size, method="bilinear")
-    # slice only source images
-    batch, scheight, scwidth, _ = scaled_image.get_shape().as_list()
     num_src = (opts.SNIPPET_LEN - 1)
-    scheight = int(scheight // num_src)
+    # resize image
+    scheight, scwidth = (int(opts.IM_HEIGHT // scale), int(opts.IM_WIDTH // scale))
+    scaled_image = tf.image.resize(src_img_stacked, size=(scheight*num_src, scwidth), method="bilinear")
     # reorganize scaled images: (4*height/scale,) -> (4, height/scale)
-    source_images = tf.reshape(scaled_image, shape=(batch, num_src, scheight, scwidth, 3))
+    source_images = tf.reshape(scaled_image, shape=(opts.BATCH_SIZE, num_src, scheight, scwidth, 3))
     return source_images
 
 
-@InOutShape
+@ShapeCheck
 def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic, suffix):
     """
     src_image, tgt_depth and intrinsic are scaled
@@ -141,7 +137,7 @@ def pixel2cam(pixel_coords, depth, intrinsic):
     return cam_coords
 
 
-@InOutShape
+@ShapeCheck
 def transform_to_source(tgt_coords, t2s_pose):
     """
     :param tgt_coords: target frame coordinates like (x,y,z,1) [batch, 4, height*width]
@@ -177,7 +173,7 @@ def cam2pixel(cam_coords, intrinsic):
     return pixel_coords
 
 
-@InOutShape
+@ShapeCheck
 def reconstruct_bilinear_interp(pixel_coords, image, depth):
     """
     :param pixel_coords: floating-point pixel coordinates (u,v,1) [batch, num_src, 3, height*width]
@@ -192,7 +188,7 @@ def reconstruct_bilinear_interp(pixel_coords, image, depth):
     pixel_coords_pad = shift_and_clip_pixels(pixel_coords, height, width)
 
     # pixel_floorceil[batch, num_src, :, i] = (u_ceil, u_floor, v_ceil, v_floor)
-    pixel_floorceil = floor_ceil_pixels(pixel_coords_pad, height, width)
+    pixel_floorceil = neighbor_int_pixels(pixel_coords_pad, height, width)
 
     # weights[batch, num_src, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
     weights = calc_neighbor_weights([pixel_coords_pad, pixel_floorceil])
@@ -212,6 +208,7 @@ def reconstruct_bilinear_interp(pixel_coords, image, depth):
     return recon_image
 
 
+@ShapeCheck
 def zero_pad_image(image):
     """
     :param image: [batch, num_src, height, width, 3]
@@ -227,8 +224,10 @@ def zero_pad_image(image):
     return padded_image
 
 
+@ShapeCheck
 def shift_and_clip_pixels(pixel_coords, height, width):
     """
+    transform pixel coordinates into the 1-pixel padded image
     :param pixel_coords: (u, v, 1) [batch, num_src, 3, height*width]
     :param height: image height
     :param width: image width
@@ -236,13 +235,13 @@ def shift_and_clip_pixels(pixel_coords, height, width):
     """
     u = tf.slice(pixel_coords, (0, 0, 0, 0), (-1, -1, 1, -1))
     u = tf.clip_by_value(u + 1, 0, width + 1)
-    v = tf.slice(pixel_coords, (0, 0, 1, 0), (-1, -1, 2, -1))
+    v = tf.slice(pixel_coords, (0, 0, 1, 0), (-1, -1, 1, -1))
     v = tf.clip_by_value(v + 1, 0, height + 1)
     adjusted_pixels = tf.concat([u, v], axis=2)
     return adjusted_pixels
 
 
-def floor_ceil_pixels(pixel_coords, height, width):
+def neighbor_int_pixels(pixel_coords, height, width):
     """
     :param pixel_coords: (u, v) [batch, num_src, 2, height*width]
     :param height: image height
@@ -262,8 +261,8 @@ def floor_ceil_pixels(pixel_coords, height, width):
 def calc_neighbor_weights(inputs):
     pixel_coords, pixel_floorceil = inputs
     """
-    pixel_coords: (u, v) [batch, num_src, 2, height*width]
-    pixel_floorceil: (u_floor, u_ceil, v_floor, v_ceil) [batch, num_src, 4, height*width]
+    pixel_coords: (u, v) (float) [batch, num_src, 2, height*width]
+    pixel_floorceil: (u_floor, u_ceil, v_floor, v_ceil) (int) [batch, num_src, 4, height*width]
     return: 4 neighbor pixel weights (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc) 
             [batch, num_src, 4, height*width]
     """
@@ -281,6 +280,7 @@ def calc_neighbor_weights(inputs):
     return weights
 
 
+@ShapeCheck
 def sample_neighbor_images(inputs):
     padded_image, pixel_floorceil = inputs
     """
@@ -302,29 +302,30 @@ def sample_neighbor_images(inputs):
     It seems to be a bug.
     Suprisingly, `tf.gather` works nicely with 'Tensor'
     """
-    eager_tensor = False
-    if eager_tensor:
-        # flatten image: [batch, num_src, height_pad*width_path, 3]
-        batch, num_src, height_pad, width_pad, _ = padded_image.get_shape().as_list()
-        padded_image_flat = tf.reshape(padded_image, shape=(batch, num_src, height_pad*width_pad, 3))
-        print(f"padded_image_flat {padded_image_flat.get_shape()}")
-        ufvf = vf * width_pad + uf
-        ufvc = vc * width_pad + uf
-        ucvf = vf * width_pad + uc
-        ucvc = vc * width_pad + uc
+    # eager_tensor = False
+    # if eager_tensor:
+    #     # flatten image: [batch, num_src, height_pad*width_path, 3]
+    #     batch, num_src, height_pad, width_pad, _ = padded_image.get_shape().as_list()
+    #     padded_image_flat = tf.reshape(padded_image, shape=(batch, num_src, height_pad*width_pad, 3))
+    #     print(f"padded_image_flat {padded_image_flat.get_shape()}")
+    #     ufvf = vf * width_pad + uf
+    #     ufvc = vc * width_pad + uf
+    #     ucvf = vf * width_pad + uc
+    #     ucvc = vc * width_pad + uc
+    #
+    #     # imflat_ufvf: (batch, num_src, height*width, 3)
+    #     imflat_ufvf = tf.gather(padded_image_flat, ufvf, axis=2, batch_dims=2)
+    #     imflat_ufvc = tf.gather(padded_image_flat, ufvc, axis=2, batch_dims=2)
+    #     imflat_ucvf = tf.gather(padded_image_flat, ucvf, axis=2, batch_dims=2)
+    #     imflat_ucvc = tf.gather(padded_image_flat, ucvc, axis=2, batch_dims=2)
+    #
+    # else:
 
-        # imflat_ufvf: (batch, num_src, height*width, 3)
-        imflat_ufvf = tf.gather(padded_image_flat, ufvf, axis=2, batch_dims=2)
-        imflat_ufvc = tf.gather(padded_image_flat, ufvc, axis=2, batch_dims=2)
-        imflat_ucvf = tf.gather(padded_image_flat, ucvf, axis=2, batch_dims=2)
-        imflat_ucvc = tf.gather(padded_image_flat, ucvc, axis=2, batch_dims=2)
-
-    else:
-        # tf.stack([uf, vf]): [batch, num_src, height*width, 2(u,v)]
-        imflat_ufvf = tf.gather_nd(padded_image, tf.stack([vf, uf], axis=-1), batch_dims=2)
-        imflat_ufvc = tf.gather_nd(padded_image, tf.stack([vc, uf], axis=-1), batch_dims=2)
-        imflat_ucvf = tf.gather_nd(padded_image, tf.stack([vf, uc], axis=-1), batch_dims=2)
-        imflat_ucvc = tf.gather_nd(padded_image, tf.stack([vc, uc], axis=-1), batch_dims=2)
+    # tf.stack([uf, vf]): [batch, num_src, height*width, 2(u,v)]
+    imflat_ufvf = tf.gather_nd(padded_image, tf.stack([vf, uf], axis=-1), batch_dims=2)
+    imflat_ufvc = tf.gather_nd(padded_image, tf.stack([vc, uf], axis=-1), batch_dims=2)
+    imflat_ucvf = tf.gather_nd(padded_image, tf.stack([vf, uc], axis=-1), batch_dims=2)
+    imflat_ucvc = tf.gather_nd(padded_image, tf.stack([vc, uc], axis=-1), batch_dims=2)
 
     # sampled_images: (batch, num_src, 4, height*width, 3)
     sampled_images = tf.stack([imflat_ufvf, imflat_ufvc, imflat_ucvf, imflat_ucvc], axis=2,
@@ -347,6 +348,7 @@ def merge_images(inputs):
     return merged_flat_image
 
 
+@ShapeCheck
 def erase_invalid_pixels(inputs):
     flat_image, depth = inputs
     """
@@ -367,106 +369,6 @@ def erase_invalid_pixels(inputs):
 # --------------------------------------------------------------------------------
 # TESTS
 
-def test_reshape_source_images():
-    print("===== start test_reshape_source_images")
-    image = cv2.imread("samples/000024.png")
-    batch_image = np.expand_dims(image, 0)
-    batch_image = np.tile(batch_image, (8, 1, 1, 1))
-    print("batch image shape", batch_image.shape)
-    batch_image_tensor = tf.constant(batch_image, dtype=tf.float32)
-
-    sources = reshape_source_images(batch_image_tensor, 2)
-
-    sources = tf.cast(sources, tf.uint8)
-    sources = sources.numpy()
-    print("reordered source image shape", sources.shape)
-    cv2.imshow("original image", image)
-    cv2.imshow("reordered image1", sources[0, 1])
-    cv2.imshow("reordered image2", sources[0, 2])
-    cv2.waitKey()
-    assert (image[opts.IM_HEIGHT:opts.IM_HEIGHT*2] == sources[0, 1]).all()
-    print("!!! test_reshape_source_images passed")
-
-
-def test_scale_intrinsic():
-    intrinsic = np.array([8, 0, 4, 0, 8, 4, 0, 0, 1], dtype=np.float32).reshape((1, 3, 3))
-    intrinsic = tf.constant(np.tile(intrinsic, (8, 1, 1)))
-    scale = 2
-
-    intrinsic_sc = scale_intrinsic(intrinsic, scale)
-
-    print("scaled intrinsic:", intrinsic_sc[0])
-    assert np.isclose((intrinsic[:, :2, :]/2), intrinsic_sc[:, :2, :]).all()
-    assert np.isclose((intrinsic[:, -1, :]), intrinsic_sc[:, -1, :]).all()
-    print("!!! test_scale_intrinsic passed")
-
-
-def test_pixel2cam():
-    batch, height, width = (8, 4, 4)
-    tgt_pixel_coords = pixel_meshgrid(height, width)
-    tgt_pixel_coords = tf.cast(tgt_pixel_coords, dtype=tf.float32)
-    intrinsic = np.array([4, 0, height/2, 0, 4, width/2, 0, 0, 1], dtype=np.float32).reshape((1, 3, 3))
-    intrinsic = tf.constant(np.tile(intrinsic, (batch, 1, 1)), dtype=tf.float32)
-    depth = tf.ones((batch, height, width), dtype=tf.float32) * 2
-
-    tgt_cam_coords = pixel2cam(tgt_pixel_coords, depth, intrinsic)
-
-    print(tgt_cam_coords[0])
-    assert (tgt_cam_coords.get_shape() == (batch, 4, height*width))
-    print("!!! test_pixel2cam passed")
-
-
-def test_transform_to_source():
-    batch, num_pts, num_src = (8, 6, 3)
-    coords = np.arange(1, 4*num_pts+1).reshape((num_pts, 4)).T
-    coords[3, :] = 1
-    coords = np.tile(coords, (batch, 1, 1))
-    print(f"coordinates: {coords.shape}\n{coords[2]}")
-
-    poses = np.identity(4)*2
-    poses[3, 3] = 1
-    poses = np.tile(poses, (batch, num_src, 1, 1))
-    print(f"poses: {poses.shape}\n{poses[2, 1]}")
-
-    coords = tf.constant(coords, dtype=tf.float32)
-    poses = tf.constant(poses, dtype=tf.float32)
-    src_coords = transform_to_source(coords, poses)
-    print(f"src coordinates: {src_coords.get_shape()}\n{src_coords[2, 1]}")
-
-    assert np.isclose(coords[2, :3]*2, src_coords[2, 1, :3]).all()
-    print("!!! test_transform_to_source passed")
-
-
-def test_pixel_weighting():
-    batch, num_src, height, width = (8, 4, 5, 5)
-    pixel_coords = np.random.uniform(-1, 6, (batch, num_src, 3, height*width))
-    pixel_coords[:, :, 2, :] = 0
-    pixel_coords = tf.constant(pixel_coords, dtype=tf.float32)
-    print(f"pixel coords shape: {pixel_coords.get_shape()}")
-
-    # adjust pixel coordinates for padded image
-    pixel_coords = shift_and_clip_pixels(pixel_coords, height, width)
-    print(f"pixel coords original \n{pixel_coords[1, 1, :, :6]}")
-
-    # pixel_floorceil[batch, num_src, :, i] = [u_ceil, u_floor, v_ceil, v_floor]
-    pixel_floorceil = floor_ceil_pixels(pixel_coords, height, width)
-    print(f"pixel coords floorceil \n{pixel_floorceil[1, 1, :, :6]}")
-
-    # weights[batch, num_src, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
-    weights = calc_neighbor_weights([pixel_coords, pixel_floorceil])
-    print(f"pixel weights \n{weights[1, 1, :, :6]}")
-    weight_sum = tf.reduce_sum(weights, axis=2)
-    weight_sum = weight_sum.numpy()
-    print(f"weight sum \n{weight_sum[1, 1, :6]}")
-    assert (np.isclose(weight_sum, 0) | np.isclose(weight_sum, 1)).all()
-    print("!!! test_pixel_weighting passed")
-
-    image = np.tile(np.arange(1, height*width+1).reshape((1, 1, height, width, 1)), (batch, num_src, 1, 1, 3))
-    image = tf.constant(image, dtype=tf.float32)
-    padded_image = zero_pad_image(image)
-    print(f"padded image shape={padded_image.get_shape()}")
-    sampled_images = sample_neighbor_images([padded_image, pixel_floorceil])
-    print(f"sampled image shape={sampled_images.get_shape()}")
 
 
 def test_synthesize_batch_view():
@@ -577,7 +479,6 @@ def test_gather():
 
 def test():
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    test_reshape_source_images()
     test_scale_intrinsic()
     test_pixel2cam()
     test_transform_to_source()

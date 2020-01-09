@@ -3,8 +3,8 @@ from tensorflow.keras import layers
 from model.synthesize_batch import synthesize_batch_multi_scale
 
 import settings
-from config import opts
 import utils.convert_pose as cp
+import utils.util_funcs as uf
 import evaluate.eval_funcs as ef
 
 
@@ -21,7 +21,7 @@ def compute_loss_vode(predictions, features):
     """
     stacked_image = features['image']
     intrinsic = features['intrinsic']
-    target_image = extract_target(stacked_image)
+    source_image, target_image = uf.split_into_source_and_target(stacked_image)
 
     pred_disp_ms = predictions['disp_ms']
     pred_pose = predictions['pose']
@@ -29,7 +29,7 @@ def compute_loss_vode(predictions, features):
 
     target_ms = multi_scale_like(target_image, pred_disp_ms)
 
-    synth_target_ms = synthesize_batch_multi_scale(stacked_image, intrinsic, pred_depth_ms, pred_pose)
+    synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
     photo_loss = photometric_loss_multi_scale(synth_target_ms, target_ms)
     height_orig = target_image.get_shape().as_list()[2]
     smooth_loss = smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)

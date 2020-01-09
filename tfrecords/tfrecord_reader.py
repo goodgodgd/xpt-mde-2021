@@ -5,6 +5,7 @@ import cv2
 
 import settings
 from config import opts
+import utils.util_funcs as uf
 
 
 class TfrecordGenerator:
@@ -89,7 +90,7 @@ class TfrecordGenerator:
                 decoded[key] = tf.reshape(decoded[key], shape=feat_conf["shape"])
 
         # raw uint8 type may saturate during bilinear interpolation
-        decoded["image"] = tf.image.convert_image_dtype(decoded["image"], dtype=tf.float32) * 2 - 1
+        decoded["image"] = uf.to_float_image(decoded["image"])
         features = {"image": decoded["image"], "pose_gt": decoded["pose"],
                     "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
         return features

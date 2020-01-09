@@ -69,3 +69,11 @@ def split_into_source_and_target(stacked_image):
     target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
                             (-1, imheight, -1, -1))
     return source_image, target_image
+
+
+def to_float_image(im_tensor):
+    return tf.image.convert_image_dtype(im_tensor, dtype=tf.float32) * 2 - 1
+
+
+def to_uint8_image(im_tensor):
+    return tf.image.convert_image_dtype((im_tensor + 1.) / 2., dtype=tf.uint8)
