@@ -1,4 +1,5 @@
 from tensorflow.keras import layers
+import cv2
 
 from config import opts
 from model.synthesize_batch import *
@@ -8,9 +9,6 @@ import utils.util_funcs as uf
 
 
 # TODO: loss, metric 계산해서 작게 나오는지 확인
-#   sample_neighbor_images, merge_images 이런건 어떻게 테스트하지?
-#   synthesize_batch_view 테스트
-
 def test_synthesize_batch_multi_scale():
     print("===== start test_synthesize_batch_multi_scale")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
@@ -30,14 +28,14 @@ def test_synthesize_batch_multi_scale():
 
         # compare target image and reconstructed images
         # recon_img0[0, 0]: reconstructed from the first image
-        target_image = uf.to_uint8_image(target_image).numpy()
-        source_image = uf.to_uint8_image(source_image).numpy()
-        recon_img0 = uf.to_uint8_image(synth_target_ms[0]).numpy()
-        recon_img1 = uf.to_uint8_image(synth_target_ms[1]).numpy()
-        view = np.concatenate([source_image[0, 0:opts.IM_HEIGHT], target_image[0], recon_img0[0, 0]], axis=0)
+        target_image = uf.to_uint8_image(target_image).numpy()[0]
+        source_image = uf.to_uint8_image(source_image).numpy()[0, 0:opts.IM_HEIGHT]
+        recon_img0 = uf.to_uint8_image(synth_target_ms[0]).numpy()[0, 0]
+        recon_img1 = uf.to_uint8_image(synth_target_ms[2]).numpy()[0, 0]
+        recon_img1 = cv2.resize(recon_img1, (opts.IM_WIDTH, opts.IM_HEIGHT), cv2.INTER_NEAREST)
+        view = np.concatenate([source_image, target_image, recon_img0, recon_img1], axis=0)
         print("Check if all the images are the same")
         cv2.imshow("source, target, and reconstructed", view)
-        cv2.imshow("scaled reconstruction", recon_img1[0, 0])
         cv2.waitKey()
         if i >= 3:
             break
@@ -58,6 +56,7 @@ def test_synthesize_batch_view():
         pose_gt = features['pose_gt']
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         pred_depth_ms = multi_scale_depths(depth_gt, [1, 2, 4, 8])
+        batch, height, width, _ = target_image.get_shape().as_list()
 
         # check only 1 scale
         depth_scaled = pred_depth_ms[scale_idx]
@@ -71,16 +70,17 @@ def test_synthesize_batch_view():
         srcimg_scaled = layers.Lambda(lambda image: reshape_source_images(image, scale),
                                       name=f"reorder_source_sc{scale}")(source_image)
 
+        # EXECUTE
         recon_image_sc = synthesize_batch_view(srcimg_scaled, depth_scaled, pose_gt,
                                                intrinsic_sc, suffix=f"sc{scale}")
 
-        print("reconstructed image", recon_image_sc.get_shape())
+        print("reconstructed image shape:", recon_image_sc.get_shape())
         # convert single target image in batch
-        target_image = tf.image.resize(target_image[0], size=recon_image_sc.get_shape().as_list()[2:4], method="bilinear")
-        target_image = uf.to_uint8_image(target_image).numpy()
-        recon_image_sc = uf.to_uint8_image(recon_image_sc[0]).numpy()
-        recon_image_sc = recon_image_sc.reshape((4*height_sc, width_sc, 3))
-        view = np.concatenate([target_image, recon_image_sc], axis=0)
+        target_image = uf.to_uint8_image(target_image[0]).numpy()
+        recon_image = uf.to_uint8_image(recon_image_sc[0]).numpy()
+        recon_image = recon_image.reshape((4*height_sc, width_sc, 3))
+        recon_image = cv2.resize(recon_image, (width, height*4), interpolation=cv2.INTER_NEAREST)
+        view = np.concatenate([target_image, recon_image], axis=0)
         cv2.imshow("synthesize_batch", view)
         cv2.waitKey()
         if i >= 3:
@@ -287,7 +287,7 @@ def test_reconstruct_bilinear_interp():
 
 def test_all():
     np.set_printoptions(precision=4, suppress=True, linewidth=100)
-    # test_synthesize_batch_multi_scale()
+    test_synthesize_batch_multi_scale()
     test_synthesize_batch_view()
     test_reshape_source_images()
     # test_scale_intrinsic()

@@ -83,15 +83,6 @@ def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic, suffix):
     src_pixel_coords = layers.Lambda(lambda inputs: warp_pixel_coords(inputs, height, width),
                                      name="warp_pixel_"+suffix)\
                                     ([tgt_depth, pose, intrinsic])
-    # src_pixel_coords: [batch, num_src, 3, height*width]
-    src_coords = src_pixel_coords.numpy()
-    x = src_coords[0, 3, 0].reshape((height, width))
-    y = src_coords[0, 3, 1].reshape((height, width))
-    d = tgt_depth.numpy()[0].reshape((height, width))
-    print(f"x, y in src_pixel_coords "
-          f"\n10~20   \nx: {x[40, 10:20]} \ny: {y[40, 10:20]} \nd: {d[40, 10:20]}"
-          f"\n100~110 \nx: {x[40, 100:110]} \ny: {y[40, 100:110]} \nd: {d[40, 100:110]}"
-          f"\n190~200 \nx: {x[40, 190:200]} \ny: {y[40, 190:200]} \nd: {d[40, 190:200]}")
 
     tgt_image_synthesized = layers.Lambda(lambda inputs:
                                           reconstruct_bilinear_interp(inputs[0], inputs[1], inputs[2]),
@@ -201,18 +192,6 @@ def reconstruct_bilinear_interp(pixel_coords, image, depth):
 
     # weights[batch, num_src, :, height*width] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
     weights = calc_neighbor_weights([pixel_coords, pixel_floorceil, valid_mask])
-
-    # src_pixel_coords: [batch, num_src, 3, height*width]
-    pixels = pixel_floorceil.numpy()
-    mask = valid_mask.numpy()
-    weights_np = weights.numpy()
-    x = pixels[0, 3, 0].reshape((height, width))
-    m = mask[0, 3, 0].reshape((height, width))
-    w = weights_np[0, 3, 0].reshape((height, width))
-    print(f"x, y in src_pixel_coords "
-          f"\n10~20   \nx: {x[40, 10:20]} \nm: {m[40, 10:20]} \nw: {w[40, 10:20]}"
-          f"\n100~110 \nx: {x[40, 100:110]} \nm: {m[40, 100:110]} \nw: {w[40, 100:110]}"
-          f"\n190~200 \nx: {x[40, 190:200]} \nm: {m[40, 190:200]} \nw: {w[40, 190:200]}")
 
     # sampled_image[batch, num_src, :, height, width, 3] =
     # (im_uf_vf, im_uf_vc, im_uc_vf, im_uc_vc)
@@ -371,129 +350,3 @@ def erase_invalid_pixels(inputs):
     depth_invalid_mask = tf.math.equal(depth_vec, 0)
     flat_image = tf.where(depth_invalid_mask, tf.constant(0, dtype=tf.float32), flat_image)
     return flat_image
-
-
-# --------------------------------------------------------------------------------
-# TESTS
-
-
-
-def test_synthesize_batch_view():
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"))
-    dataset = tfrgen.get_generator()
-    scale = 1
-    for x, y in dataset:
-        for key, value in x.items():
-            print(f"x shape and type: {key}={x[key].shape}, {x[key].dtype}")
-
-        target_view = x['image'][:, opts.IM_HEIGHT*4:opts.IM_HEIGHT*5, :, :]
-        target_view = target_view.numpy().astype(np.uint8)
-
-        source_image_sc = reshape_source_images(x['image'], scale)
-        print("source shape", source_image_sc.get_shape())
-        source_view = source_image_sc.numpy().astype(np.uint8)
-
-        batch, num_src, height, width, _ = source_image_sc.get_shape().as_list()
-        depth_sc = tf.image.resize(x['depth_gt'], size=(height, width), method="nearest")
-        print("depth shape", x['depth_gt'].get_shape(), depth_sc.get_shape())
-        depth_view = depth_sc.numpy()
-        cv2.imshow("depth", depth_view[1])
-
-        intrinsic_sc = scale_intrinsic(x['intrinsic'], scale)
-        print(f"original intrinsic \n{x['intrinsic'][1]} \nscaled intrinsic \n{intrinsic_sc[1]}")
-
-        pose = x['pose_gt']
-        pose_view = pose.numpy()
-        print(f"pose shape and data: {pose_view.shape} \n{pose_view[1, 0]}")
-
-        recon_images = synthesize_batch_view(source_image_sc, depth_sc, x['pose_gt'],
-                                             intrinsic_sc, "recon")
-
-        print("reconstructed image shape:", recon_images.get_shape(), recon_images.dtype)
-        recon_view = recon_images.numpy().astype(np.uint8)
-
-        result = np.concatenate([target_view[1], source_view[1, 0], recon_view[1, 0]], axis=0)
-        cv2.imshow("target_source_recon", result)
-        cv2.waitKey()
-
-
-def load_data_batch():
-    srcinds = [1430, 1430, 1450, 1450]
-    tgtind = 1440
-    batch = 8
-    src_images = []
-    for si in srcinds:
-        image = cv2.imread(f"samples/color/{si:05d}.jpg")
-        src_images.append(image)
-    src_images = np.stack(src_images, axis=0)
-    src_images = np.expand_dims(src_images, 0)
-    src_images = np.tile(src_images, (batch, 1, 1, 1, 1))
-    print("src_images", src_images.shape)
-    cv2.imshow("src_image", src_images[0, 0])
-    src_images = tf.constant(src_images, tf.float32)
-
-    tgt_image = cv2.imread(f"samples/color/{tgtind:05d}.jpg")
-    cv2.imshow("tgt_image", tgt_image)
-
-    tgt_pose = np.loadtxt(f"samples/pose/pose_{tgtind:05d}.txt")
-    src_poses = []
-    for si in srcinds:
-        src_pose = np.loadtxt(f"samples/pose/pose_{si:05d}.txt")
-        t2s_pose = np.matmul(np.linalg.inv(src_pose), tgt_pose)
-        src_poses.append(t2s_pose)
-    src_poses = np.stack(src_poses, axis=0)
-    src_poses = np.expand_dims(src_poses, 0)
-    src_poses = np.tile(src_poses, (batch, 1, 1, 1))
-    print("src_poses", src_poses.shape)
-    src_poses = tf.constant(src_poses, tf.float32)
-
-    tgt_depth = cv2.imread(f"samples/depth/{tgtind:05d}.png", cv2.IMREAD_ANYDEPTH)
-    tgt_depth = tgt_depth/1000.
-    height, width = tgt_depth.shape
-    tgt_depth = tgt_depth.reshape((1, height, width, 1))
-    tgt_depth = np.tile(tgt_depth, (batch, 1, 1, 1))
-    print("target depth", tgt_depth.shape)
-    tgt_depth = tf.constant(tgt_depth, tf.float32)
-
-    intrinsic = np.loadtxt("samples/intrinsic.txt")
-    intrinsic = np.expand_dims(intrinsic, 0)
-    intrinsic = np.tile(intrinsic, (batch, 1, 1))
-    intrinsic = tf.constant(intrinsic, tf.float32)
-
-    return src_images, src_poses, tgt_depth, intrinsic
-
-
-def test_synthesize_batch_view_aug_icl():
-    src_images, src_poses, tgt_depth, intrinsic = load_data_batch()
-    recon_images = synthesize_batch_view(src_images, tgt_depth, src_poses, intrinsic)
-    recon_view = recon_images.numpy()
-    recon_img = recon_view[1, 1]
-    cv2.imshow("reconstructed", recon_img.astype(np.uint8))
-    cv2.waitKey()
-
-
-def test_gather():
-    # params = tf.keras.layers.Input(shape=(4, 5), batch_size=3)
-    # params = tf.Variable(initial_value=np.ones((3, 4, 5)), shape=(3, 4, 5))
-    params = tf.constant(np.arange(1, 13).reshape((2, 3, 2)))
-    print("params", type(params), params.get_shape())
-    print(params)
-    indices = tf.constant([[0, 1], [1, 2]], dtype=tf.int64)
-    values = tf.gather(params, indices, axis=1, batch_dims=1)
-    print("values", values.get_shape())
-    print(values)
-
-
-def test():
-    np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    test_scale_intrinsic()
-    test_pixel2cam()
-    test_transform_to_source()
-    test_pixel_weighting()
-    test_gather()
-    test_synthesize_batch_view()
-    # test_synthesize_batch_view_aug_icl()
-
-
-if __name__ == "__main__":
-    test()
