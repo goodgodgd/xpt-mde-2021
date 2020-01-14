@@ -3,14 +3,13 @@ from tensorflow.keras import layers
 from model.synthesize_batch import synthesize_batch_multi_scale
 
 import settings
+from config import opts
 import utils.convert_pose as cp
 import utils.util_funcs as uf
 import evaluate.eval_funcs as ef
 from utils.decorators import ShapeCheck
 
 
-# TODO: 모델 대충 학습시켜서 loss따로 계산하는 테스트 함수 만들기
-#   gt 값 넣었을 때 임의의 값 넣었을 때보다 적게 나오는지 확인
 def compute_loss_vode(predictions, features):
     """
     :param predictions: {"disp_ms": .., "pose": ..}
@@ -34,8 +33,8 @@ def compute_loss_vode(predictions, features):
     photo_loss = photometric_loss_multi_scale(synth_target_ms, target_ms)
     height_orig = target_image.get_shape().as_list()[2]
     smooth_loss = smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
-    loss = layers.Lambda(lambda losses: tf.add(losses[0], losses[1]), name="train_loss")\
-                        ([photo_loss, smooth_loss])
+    loss = layers.Lambda(lambda losses: tf.add(losses[0], opts.SMOOTH_WEIGHT * losses[1]),
+                         name="train_loss")([photo_loss, smooth_loss])
     return loss
 
 
@@ -132,7 +131,7 @@ def smootheness_loss(disp, image):
     """
     :param disp: scaled disparity map, list of [batch, height/scale, width/scale, 1]
     :param image: scaled original target image [batch, height/scale, width/scale, 3]
-    :return: smootheness loss (scalar)
+    :return: smootheness loss [batch]
     """
     def gradient_x(img):
         gx = img[:, :, :-1, :] - img[:, :, 1:, :]
@@ -189,7 +188,6 @@ def depth_error_metric(depth_pred, depth_true):
 import os.path as op
 import numpy as np
 import cv2
-from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 
 
@@ -239,6 +237,7 @@ def test_photometric_loss_quality():
         if i > 3:
             break
 
+    cv2.destroyAllWindows()
     print("!!! test_photometric_loss_quality passed")
 
 
@@ -257,30 +256,33 @@ def test_photometric_loss_quantity():
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
         target_ms = multi_scale_like(target_image, depth_gt_ms)
 
+        # EXECUTE
         batch_loss_right, scale_loss_right, recon_image_right = \
             test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms)
 
-        # corrupt pose x+=1
+        print("\ncorrupt poses")
         pose_gt = pose_gt.numpy()
         pose_gt = pose_gt + np.random.uniform(-0.2, 0.2, pose_gt.shape)
         pose_gt = tf.constant(pose_gt, dtype=tf.float32)
 
-        print("\ncorrupt poses")
+        # EXECUTE
         batch_loss_wrong, scale_loss_wrong, recon_image_wrong = \
             test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms)
 
+        # TEST
         print("loss diff: wrong - right =", batch_loss_wrong - batch_loss_right)
-        assert (np.sum(batch_loss_right.numpy() < batch_loss_wrong.numpy()) > opts.BATCH_SIZE//2 + 1)
-        assert (np.sum(scale_loss_right.numpy() < scale_loss_wrong.numpy()) > 2)
+        # Due to randomness, allow minority of frames to fail to the test
+        assert (np.sum(batch_loss_right.numpy() < batch_loss_wrong.numpy()) > opts.BATCH_SIZE//4)
+        assert (np.sum(scale_loss_right.numpy() < scale_loss_wrong.numpy()) > opts.BATCH_SIZE//4)
 
         target = uf.to_uint8_image(target_image).numpy()[0]
         view = np.concatenate([target, recon_image_right, recon_image_wrong], axis=0)
         cv2.imshow("pose corruption", view)
         cv2.waitKey()
-
         if i > 3:
             break
 
+    cv2.destroyAllWindows()
     print("!!! test_photometric_loss_quantity passed")
 
 
@@ -306,23 +308,88 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
     return batch_loss, scale_loss, recon_image
 
 
-def test_depth_error_metric():
-    depth_true = np.zeros((8, 10, 10, 1))
-    depth_true[:, :3] = 1.6
-    depth_true[:, 3:6] = 2.4
-    print("depth true\n", depth_true[0, :, :, 0])
-    depth_true = tf.constant(depth_true, dtype=tf.float32)
-    depth_pred = tf.constant(np.ones((8, 10, 10, 1)), dtype=tf.float32)
+def test_smootheness_loss_quantity():
+    print("===== start test_smootheness_loss_quantity")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
-    error = depth_error_metric(depth_pred, depth_true)
-    assert np.isclose(error, 0.2).all()
+    for i, features in enumerate(dataset):
+        print("\n--- fetch a batch data")
+        stacked_image = features['image']
+        depth_gt = features['depth_gt']
+        # interpolate depth
+        depth_gt = tf.image.resize(depth_gt, size=(int(opts.IM_HEIGHT/2), int(opts.IM_WIDTH/2)), method="bilinear")
+        depth_gt = tf.image.resize(depth_gt, size=(opts.IM_HEIGHT, opts.IM_WIDTH), method="bilinear")
+        # make multi-scale data
+        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
+        disp_gt_ms = test_depth_to_disp(depth_gt_ms)
+        target_ms = multi_scale_like(target_image, depth_gt_ms)
 
-    print("!!! test_depth_error_metric passed")
+        # EXECUTE
+        batch_loss_right, scale_loss_right = test_smooth_loss(disp_gt_ms, target_ms)
+
+        print("\ncorrupt depth to increase gradient of depth")
+        depth_gt = depth_gt.numpy()
+        depth_gt_right = np.copy(depth_gt)
+        depth_gt_wrong = np.copy(depth_gt)
+        depth_gt_wrong[:, 10:200:20] = 0
+        depth_gt_wrong[:, 11:200:20] = 0
+        depth_gt_wrong[:, 12:200:20] = 0
+        depth_gt = tf.constant(depth_gt_wrong, dtype=tf.float32)
+        depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
+        disp_gt_ms = test_depth_to_disp(depth_gt_ms)
+
+        # EXECUTE
+        batch_loss_wrong, scale_loss_wrong = test_smooth_loss(disp_gt_ms, target_ms)
+
+        # TEST
+        print("loss diff: wrong - right =", batch_loss_wrong - batch_loss_right)
+        assert np.sum(batch_loss_right.numpy() <= batch_loss_wrong.numpy()).all()
+        assert np.sum(scale_loss_right.numpy() <= scale_loss_wrong.numpy()).all()
+
+        view = np.concatenate([depth_gt_right[0], depth_gt_wrong[0]], axis=0)
+        cv2.imshow("target image corruption", view)
+        cv2.waitKey()
+        if i > 3:
+            break
+
+    cv2.destroyAllWindows()
+    print("!!! test_smootheness_loss_quantity passed")
+
+
+def test_depth_to_disp(depth_ms):
+    disp_ms = []
+    for i, depth in enumerate(depth_ms):
+        disp = layers.Lambda(lambda dep: tf.where(dep > 0.1, 1./dep, 0), name=f"todisp_{i}")(depth)
+        disp_ms.append(disp)
+    return disp_ms
+
+
+def test_smooth_loss(disp_ms, target_ms):
+    """
+    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :param target_ms: list of [batch, height/scale, width/scale, 3]
+    :return:
+    """
+    losses = []
+    for scale, disp, image in zip([1, 2, 4, 8], disp_ms, target_ms):
+        # EXECUTE
+        loss = smootheness_loss(disp, image)
+        losses.append(loss)
+
+    losses = tf.stack(losses, axis=0)
+    batch_loss = tf.reduce_sum(losses, axis=0)
+    scale_loss = tf.reduce_sum(losses, axis=1)
+    print("all photometric loss:", losses)
+    print("batch mean photometric loss:", batch_loss)
+    print("scale mean photometric loss:", scale_loss)
+    return batch_loss, scale_loss
 
 
 def test():
     # test_photometric_loss_quality()
-    test_photometric_loss_quantity()
+    # test_photometric_loss_quantity()
+    test_smootheness_loss_quantity()
 
 
 if __name__ == "__main__":
