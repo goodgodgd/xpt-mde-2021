@@ -8,8 +8,11 @@ import utils.convert_pose as cp
 import utils.util_funcs as uf
 
 
-# TODO: loss, metric 계산해서 작게 나오는지 확인
 def test_synthesize_batch_multi_scale():
+    """
+    gt depth와 gt pose를 입력했을 때 스케일 별로 복원되는 이미지를 정성적으로 확인
+    실제 target image와 복원된 "multi" scale target image를 눈으로 비교
+    """
     print("===== start test_synthesize_batch_multi_scale")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
@@ -45,6 +48,10 @@ def test_synthesize_batch_multi_scale():
 
 
 def test_synthesize_batch_view():
+    """
+    gt depth와 gt pose를 입력했을 때 스케일 별로 복원되는 이미지를 정성적으로 확인
+    실제 target image와 복원된 "single" scale target image를 눈으로 비교
+    """
     print("===== start test_synthesize_batch_view")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
     scale_idx = 1
@@ -90,6 +97,9 @@ def test_synthesize_batch_view():
 
 
 def test_reshape_source_images():
+    """
+    위 아래로 쌓인 원본 이미지를 batch 아래 한 차원을 더 만들어서 reshape이 잘 됐는지 확인(assert)
+    """
     print("===== start test_reshape_source_images")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
     dataset = iter(dataset)

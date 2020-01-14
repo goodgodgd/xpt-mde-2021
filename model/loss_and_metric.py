@@ -192,6 +192,11 @@ from tfrecords.tfrecord_reader import TfrecordGenerator
 
 
 def test_photometric_loss_quality():
+    """
+    gt depth와 gt pose를 입력했을 때 스케일 별로 복원되는 이미지를 정성적으로 확인하고
+    복원된 이미지로부터 계산되는 photometric loss를 확인
+    assert 없음
+    """
     print("===== start test_photometric_loss_quality")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
@@ -242,6 +247,11 @@ def test_photometric_loss_quality():
 
 
 def test_photometric_loss_quantity():
+    """
+    gt depth와 gt pose를 입력했을 때 나오는 photometric loss와
+    gt pose에 노이즈를 추가하여 나오는 photometric loss를 비교
+    두 가지 pose로 복원된 영상을 눈으로 확인하고 gt 데이터의 loss가 더 낮음을 확인 (assert)
+    """
     print("===== start test_photometric_loss_quantity")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
@@ -309,6 +319,11 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
 
 
 def test_smootheness_loss_quantity():
+    """
+    gt depth로부터 계산되는 smootheness loss 비교
+    gt depth에 일부를 0으로 처리하여 전체적인 gradient를 높인 depth의 smootheness loss 비교
+    두 가지 depth를 눈으로 확인하고 gt 데이터의 loss가 더 낮음을 확인 (assert)
+    """
     print("===== start test_smootheness_loss_quantity")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
@@ -387,8 +402,8 @@ def test_smooth_loss(disp_ms, target_ms):
 
 
 def test():
-    # test_photometric_loss_quality()
-    # test_photometric_loss_quantity()
+    test_photometric_loss_quality()
+    test_photometric_loss_quantity()
     test_smootheness_loss_quantity()
 
 
