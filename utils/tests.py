@@ -59,6 +59,23 @@ def test_casting():
         print(str(e))
 
 
+def test_rotation_conversion():
+    print("\n[test_rotation_conversion]")
+    angle = np.pi/3
+    # fixed axis
+    axis = np.array([0, 0, 1.])
+    rvec = axis * angle
+    # rotation matrix for the pose rotated by 'angle' along z-axis
+    rotm = np.array([[np.cos(angle), np.sin(angle), 0], [-np.sin(angle), np.cos(angle), 0], [0, 0, 1]])
+    print(rotm)
+    # NEGATIVE skew symmetric matrix for cross product with 'axis'(=normalized rvec)
+    # TODO: NOTE! pose를 표현할 때는 skew symmetric matrix의 부호를 반대로 해야 한다.
+    what = np.array([[0, axis[2], -axis[1]], [-axis[2], 0, axis[0]], [axis[1], -axis[0], 0]])
+    rotm_conv = np.eye(3) + what * np.sin(angle) + np.dot(what, what) * (1 - np.cos(angle))
+    print(rotm_conv)
+    assert np.isclose(rotm, rotm_conv).all()
+
+
 def test():
     np.set_printoptions(precision=3, suppress=True)
     test_linspace()
@@ -67,6 +84,7 @@ def test():
     test_rotation_vector()
     test_time()
     test_casting()
+    test_rotation_conversion()
 
 
 if __name__ == "__main__":

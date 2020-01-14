@@ -6,13 +6,15 @@ from tensorflow.keras import layers
 
 import settings
 from config import opts
+import utils.util_funcs as uf
 
 
 def create_model():
     # input tensor
     image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
     stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
-    target_image = layers.Lambda(lambda image: extract_target_image(image), name="extract_target_image")(stacked_image)
+    source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
+                                               name="split_stacked_image")(stacked_image)
     # build a network that outputs depth and pose
     pred_disps_ms = build_depth_estim_layers(target_image)
     pred_poses = build_visual_odom_layers(stacked_image)
@@ -21,18 +23,6 @@ def create_model():
     predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
     model = tf.keras.Model(model_input, predictions)
     return model
-
-
-def extract_target_image(stacked_image):
-    """
-    :param stacked_image: [batch, snippet_len*height, width, 3]
-    :return: target_image, [batch, height, width, 3]
-    """
-    batch, imheight, imwidth, _ = stacked_image.get_shape().as_list()
-    imheight = int(imheight // opts.SNIPPET_LEN)
-    target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
-                            (-1, imheight, -1, -1))
-    return target_image
 
 
 # ==================== build DepthNet layers ====================
