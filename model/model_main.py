@@ -18,7 +18,6 @@ def train_by_user_interaction():
     options = {"train_dir_name": "kitti_raw_train",
                "val_dir_name": "kitti_raw_test",
                "model_name": "vode_model",
-               "src_weights_name": "latest.h5",
                "learning_rate": 0.0002,
                "final_epoch": opts.EPOCHS}
 
@@ -47,8 +46,6 @@ def train_by_user_interaction():
 
         print("Type model_name: dir name under opts.DATAPATH_CKP to save or load model")
         options["model_name"] = input()
-        print("Type src_weights_name: load weights from [model_name/src_weights_name]")
-        options["src_weights_name"] = input()
 
         message = "Type learning_rate: learning rate"
         options["learning_rate"] = input_float(message, 0, 10000)
@@ -59,15 +56,19 @@ def train_by_user_interaction():
     train(**options)
 
 
-def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_rate, final_epoch):
+def train(train_dir_name, val_dir_name, model_name, learning_rate, final_epoch):
+    initial_epoch = read_previous_epoch(model_name)
+    if final_epoch <= initial_epoch:
+        print("!! final_epoch <= initial_epoch, no need to train")
+        return
+
     set_configs(model_name)
     model = create_model()
-    model = try_load_weights(model, model_name, src_weights_name)
+    model = try_load_weights(model, model_name)
     optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
     dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), shuffle=True).get_generator()
     dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), shuffle=False).get_generator()
     steps_per_epoch = count_steps(train_dir_name)
-    initial_epoch = read_previous_epoch(model_name)
 
     print(f"\n\n========== START TRAINING ON {model_name} ==========")
     for epoch in range(initial_epoch, final_epoch):
@@ -103,9 +104,9 @@ def set_configs(model_name):
             print(e)
 
 
-def try_load_weights(model, model_name, weights_name):
-    if model_name and weights_name:
-        model_file_path = op.join(opts.DATAPATH_CKP, model_name, weights_name)
+def try_load_weights(model, model_name):
+    if model_name:
+        model_file_path = op.join(opts.DATAPATH_CKP, model_name, "latest.h5")
         if op.isfile(model_file_path):
             print("===== load model weights", model_file_path)
             model.load_weights(model_file_path)
@@ -182,6 +183,8 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
 @tf.function
 def train_a_batch(model, features, optimizer):
     with tf.GradientTape() as tape:
+        # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
+        #       preds = [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
         preds = model(features['image'])
         loss = lm.compute_loss_vode(preds, features)
 
@@ -252,7 +255,7 @@ def save_log(epoch, results_train, results_val, model_name):
     if op.isfile(filename):
         existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
         results = pd.concat([existing, results], axis=0, ignore_index=True)
-        results = results.drop_duplicates(subset='epoch', keep='first')
+        results = results.drop_duplicates(subset='epoch', keep='last')
         results = results.sort_values(by=['epoch'])
     results.to_csv(filename, encoding='utf-8', index=False, float_format='%.4f')
 
@@ -265,7 +268,7 @@ def save_model(model, model_name, val_loss):
     """
     # save the latest model
     save_model_weights(model, model_name, 'latest.h5')
-    # save the best model
+    # save the best model (function static variable)
     save_model.best = getattr(save_model, 'best', 10000)
     if val_loss < save_model.best:
         save_model_weights(model, model_name, 'best.h5')
@@ -323,20 +326,25 @@ def predict(test_dir_name, model_name, weights_name):
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
+    # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
+    #       preds = [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     predictions = model.predict(dataset)
     for pred in predictions:
         print(f"prediction shape={pred.shape}")
 
-    pred_depth = predictions[0]
-    pred_pose = predictions[-1]
-    save_predictions(model_name, pred_depth, pred_pose)
+    pred_disps_ms = predictions[0]
+    pred_pose = predictions[1]
+    print("predicted dispartiy shape:", pred_disps_ms[0].get_shape().as_list())
+    print("predicted dispartiy shape:", pred_disps_ms[2].get_shape().as_list())
+    print("predicted pose shape:", pred_pose.get_shape().as_list())
+    # save_predictions(model_name, pred_disps_ms, pred_pose)
 
 
-def save_predictions(model_name, pred_depth, pred_pose):
+def save_predictions(model_name, pred_disps_ms, pred_pose):
     pred_dir_path = op.join(opts.DATAPATH_PRD, model_name)
     os.makedirs(pred_dir_path, exist_ok=True)
-    print(f"save depth in {pred_dir_path}, shape={pred_depth.shape}")
-    np.save(op.join(pred_dir_path, "depth.npy"), pred_depth)
+    print(f"save depth in {pred_dir_path}, shape={pred_disps_ms[0].shape}")
+    np.save(op.join(pred_dir_path, "depth.npy"), pred_disps_ms)
     print(f"save pose in {pred_dir_path}, shape={pred_pose.shape}")
     np.save(op.join(pred_dir_path, "pose.npy"), pred_pose)
 
@@ -349,15 +357,57 @@ def test_count_steps():
 
 def run_train_default():
     train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
-          model_name="vode1", src_weights_name="latest.h5",
-          learning_rate=0.0002, final_epoch=10)
+          model_name="vode1", learning_rate=0.0002, final_epoch=10)
 
 
 def run_pred_default():
     predict(test_dir_name="kitti_raw_test", model_name="vode1", weights_name="latest.h5")
 
 
+def test_model_output():
+    """
+    check model output formats according to prediction methods
+    1) preds = model(image_tensor) -> dict('disp_ms': disp_ms, 'pose': pose)
+        disp_ms: list of [batch, height/scale, width/scale, 1]
+        pose: [batch, num_src, 6]
+    2) preds = model(image_tensor) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
+    2) preds = model({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
+    :return:
+    """
+    model_name = "vode1"
+    test_dir_name = "kitti_raw_test"
+    set_configs(model_name)
+    model = create_model()
+    model = try_load_weights(model, model_name)
+    model.compile(optimizer="sgd", loss="mean_absolute_error")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
+    print("===== check model output shape from 'preds = model(image)'")
+    for i, features in enumerate(dataset):
+        preds = model(features['image'])
+        disp_ms = preds['disp_ms']
+        pose = preds['pose']
+        for disp in disp_ms:
+            print("disparity shape:", disp.get_shape().as_list())
+        print("pose shape:", pose.get_shape().as_list())
+        break
+
+    print("===== check model output shape from 'preds = model.predict(image)'")
+    for i, features in enumerate(dataset):
+        preds = model.predict(features['image'])
+        for pred in preds:
+            print("predict output shape:", pred.shape)
+        break
+
+    print("===== check model output shape from 'preds = model.predict({'image': ...)'")
+    for i, features in enumerate(dataset):
+        preds = model.predict(features)
+        for pred in preds:
+            print("predict output shape:", pred.shape)
+        break
+
+
 if __name__ == "__main__":
+    test_model_output()
     # test_count_steps()
-    run_train_default()
+    # run_train_default()
     # run_pred_default()
