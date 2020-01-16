@@ -16,11 +16,11 @@ def create_model():
     source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
                                                name="split_stacked_image")(stacked_image)
     # build a network that outputs depth and pose
-    pred_disps_ms, conv = build_depth_estim_layers(target_image)
+    pred_disps_ms = build_depth_estim_layers(target_image)
     pred_poses = build_visual_odom_layers(stacked_image)
     # create model
     model_input = {"image": stacked_image}
-    predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses, "zconv": conv}
+    predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
     model = tf.keras.Model(model_input, predictions)
     return model
 
@@ -59,7 +59,7 @@ def build_depth_estim_layers(target_image):
     upconv1 = upconv_with_skip_connection(upconv2, disp2_up, 16, "dp_up1")
     disp1, disp1_up = get_disp_vgg(upconv1, imheight, imwidth, "dp_disp1")
 
-    return [disp1, disp2, disp3, disp4], [conv4, conv7, upconv4, upconv2]
+    return [disp1, disp2, disp3, disp4]
 
 
 def convolution(x, filters, kernel_size, strides, name):
