@@ -5,12 +5,15 @@ import tensorflow as tf
 import numpy as np
 import pandas as pd
 import time
+import matplotlib.pyplot as plt
+import cv2
 
 import settings
 from config import opts
 from model.model_builder import create_model
 from tfrecords.tfrecord_reader import TfrecordGenerator
-from utils.util_funcs import input_integer, input_float, print_progress_status
+import utils.util_funcs as uf
+from utils.util_class import TrainException
 import model.loss_and_metric as lm
 
 
@@ -18,7 +21,6 @@ def train_by_user_interaction():
     options = {"train_dir_name": "kitti_raw_train",
                "val_dir_name": "kitti_raw_test",
                "model_name": "vode_model",
-               "src_weights_name": "latest.h5",
                "learning_rate": 0.0002,
                "final_epoch": opts.EPOCHS}
 
@@ -35,7 +37,7 @@ def train_by_user_interaction():
         print(f"You selected default options.")
     else:
         message = "Type 1 or 2 to specify dataset: 1) kitti_raw, 2) kitti_odom"
-        ds_id = input_integer(message, 1, 2)
+        ds_id = uf.input_integer(message, 1, 2)
         if ds_id == 1:
             options["train_dir_name"] = "kitti_raw_train"
             options["val_dir_name"] = "kitti_raw_test"
@@ -47,27 +49,28 @@ def train_by_user_interaction():
 
         print("Type model_name: dir name under opts.DATAPATH_CKP to save or load model")
         options["model_name"] = input()
-        print("Type src_weights_name: load weights from [model_name/src_weights_name]")
-        options["src_weights_name"] = input()
 
         message = "Type learning_rate: learning rate"
-        options["learning_rate"] = input_float(message, 0, 10000)
+        options["learning_rate"] = uf.input_float(message, 0, 10000)
         message = "Type final_epoch: number of epochs to train model upto"
-        options["final_epoch"] = input_integer(message, 0, 10000)
+        options["final_epoch"] = uf.input_integer(message, 0, 10000)
 
     print("Training options:", options)
     train(**options)
 
 
-def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_rate, final_epoch):
+def train(train_dir_name, val_dir_name, model_name, learning_rate, final_epoch):
+    initial_epoch = read_previous_epoch(model_name)
+    if final_epoch <= initial_epoch:
+        raise TrainException("!! final_epoch <= initial_epoch, no need to train")
+
     set_configs(model_name)
     model = create_model()
-    model = try_load_weights(model, model_name, src_weights_name)
+    model = try_load_weights(model, model_name)
     optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
     dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), shuffle=True).get_generator()
     dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), shuffle=False).get_generator()
     steps_per_epoch = count_steps(train_dir_name)
-    initial_epoch = read_previous_epoch(model_name)
 
     print(f"\n\n========== START TRAINING ON {model_name} ==========")
     for epoch in range(initial_epoch, final_epoch):
@@ -80,8 +83,10 @@ def train(train_dir_name, val_dir_name, model_name, src_weights_name, learning_r
         print(f"\n[Val Epoch MEAN],   loss={result_val[0]:1.4f}, "
               f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
 
-        save_log(epoch, result_train, result_val, model_name)
         save_model(model, model_name, result_val[1])
+        save_log(epoch, result_train, result_val, model_name)
+        if epoch % 10 == 0:
+            save_reconstruction_samples(model, dataset_val, model_name, epoch)
 
 
 def set_configs(model_name):
@@ -103,9 +108,9 @@ def set_configs(model_name):
             print(e)
 
 
-def try_load_weights(model, model_name, weights_name):
-    if model_name and weights_name:
-        model_file_path = op.join(opts.DATAPATH_CKP, model_name, weights_name)
+def try_load_weights(model, model_name):
+    if model_name:
+        model_file_path = op.join(opts.DATAPATH_CKP, model_name, "latest.h5")
         if op.isfile(model_file_path):
             print("===== load model weights", model_file_path)
             model.load_weights(model_file_path)
@@ -155,8 +160,8 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
         trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
         results.append((loss_num, trjerr.numpy(), roterr.numpy()))
-        print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
-                              f"metric={trjerr.numpy():1.4f}, {roterr.numpy():1.4f}, time={time.time() - start:1.4f} ...")
+        uf.print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+                                 f"metric={trjerr.numpy():1.4f}, {roterr.numpy():1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
     return mean_res
@@ -171,8 +176,8 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
         result = train_a_batch(model, features, optimizer)
         result = result.numpy()
         results.append(result)
-        print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
-                              f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
+        uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
+                                 f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
 
     results = np.stack(results, axis=0)
     mean_res = results.mean(axis=0)
@@ -182,6 +187,8 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
 @tf.function
 def train_a_batch(model, features, optimizer):
     with tf.GradientTape() as tape:
+        # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
+        #       preds = [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
         preds = model(features['image'])
         loss = lm.compute_loss_vode(preds, features)
 
@@ -203,8 +210,8 @@ def validate_an_epoch_eager(model, dataset, steps_per_epoch):
         trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
         results.append((loss_num, trjerr, roterr))
-        print_progress_status(f"\tValidating {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
-                              f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+        uf.print_progress_status(f"\tValidating {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
     return mean_res
@@ -217,8 +224,8 @@ def validate_an_epoch_graph(model, dataset, steps_per_epoch):
         result = validate_a_batch(model, features)
         result = result.numpy()
         results.append(result)
-        print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
-                              f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
+        uf.print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
+                                 f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
 
     results = np.stack(results, axis=0)
     mean_res = results.mean(axis=0)
@@ -237,8 +244,8 @@ def validate_a_batch(model, features):
 def save_log(epoch, results_train, results_val, model_name):
     """
     :param epoch: current epoch
-    :param results_train: list of (epoch, loss, metric) from train data
-    :param results_val: list of (epoch, loss, metric) from validation data
+    :param results_train: (loss, metric_trj, metric_rot) from train data
+    :param results_val: (loss, metric_trj, metric_rot) from validation data
     :param model_name: model directory name
     """
     results = np.concatenate([[epoch], results_train, results_val], axis=0)
@@ -252,9 +259,25 @@ def save_log(epoch, results_train, results_val, model_name):
     if op.isfile(filename):
         existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
         results = pd.concat([existing, results], axis=0, ignore_index=True)
-        results = results.drop_duplicates(subset='epoch', keep='first')
+        results = results.drop_duplicates(subset='epoch', keep='last')
         results = results.sort_values(by=['epoch'])
+    # write to a file
     results.to_csv(filename, encoding='utf-8', index=False, float_format='%.4f')
+
+    # plot graphs of loss and metrics
+    fig, axes = plt.subplots(3, 1)
+    fig.set_size_inches(7, 7)
+    for i, ax, colname, title in zip(range(3), axes, ['loss', 'metric_trj', 'metric_rot'], ['Loss', 'Trajectory Error', 'Rotation Error']):
+        ax.plot(results['epoch'], results['train_' + colname], label='train_' + colname)
+        ax.plot(results['epoch'], results['val_' + colname], label='val_' + colname)
+        ax.set_xlabel('epoch')
+        ax.set_ylabel(colname)
+        ax.set_title(title)
+        ax.legend()
+    fig.tight_layout()
+    # save graph as a file
+    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.png')
+    fig.savefig(filename, dpi=100)
 
 
 def save_model(model, model_name, val_loss):
@@ -265,7 +288,7 @@ def save_model(model, model_name, val_loss):
     """
     # save the latest model
     save_model_weights(model, model_name, 'latest.h5')
-    # save the best model
+    # save the best model (function static variable)
     save_model.best = getattr(save_model, 'best', 10000)
     if val_loss < save_model.best:
         save_model_weights(model, model_name, 'best.h5')
@@ -299,7 +322,7 @@ def predict_by_user_interaction():
         print(f"You selected default options.")
     else:
         message = "Type 1 or 2 to specify dataset: 1) kitti_raw, 2) kitti_odom"
-        ds_id = input_integer(message, 1, 2)
+        ds_id = uf.input_integer(message, 1, 2)
         if ds_id == 1:
             options["test_dir_name"] = "kitti_raw_test"
         elif ds_id == 2:
@@ -316,6 +339,16 @@ def predict_by_user_interaction():
     predict(**options)
 
 
+def save_reconstruction_samples(model, dataset, model_name, epoch):
+    views = uf.make_reconstructed_views(model, dataset)
+    savepath = op.join(opts.DATAPATH_CKP, model_name, 'reconimg')
+    if not op.isdir(savepath):
+        os.makedirs(savepath, exist_ok=True)
+    for i, view in enumerate(views):
+        filename = op.join(savepath, f"ep{epoch:03d}_{i:02d}.png")
+        cv2.imwrite(filename, view)
+
+
 def predict(test_dir_name, model_name, weights_name):
     set_configs(model_name)
     model = create_model()
@@ -323,20 +356,25 @@ def predict(test_dir_name, model_name, weights_name):
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
+    # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
+    #       preds = [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     predictions = model.predict(dataset)
     for pred in predictions:
         print(f"prediction shape={pred.shape}")
 
-    pred_depth = predictions[0]
-    pred_pose = predictions[-1]
-    save_predictions(model_name, pred_depth, pred_pose)
+    pred_disps_ms = predictions[0]
+    pred_pose = predictions[1]
+    print("predicted dispartiy shape:", pred_disps_ms[0].get_shape().as_list())
+    print("predicted dispartiy shape:", pred_disps_ms[2].get_shape().as_list())
+    print("predicted pose shape:", pred_pose.get_shape().as_list())
+    # save_predictions(model_name, pred_disps_ms, pred_pose)
 
 
-def save_predictions(model_name, pred_depth, pred_pose):
+def save_predictions(model_name, pred_disps_ms, pred_pose):
     pred_dir_path = op.join(opts.DATAPATH_PRD, model_name)
     os.makedirs(pred_dir_path, exist_ok=True)
-    print(f"save depth in {pred_dir_path}, shape={pred_depth.shape}")
-    np.save(op.join(pred_dir_path, "depth.npy"), pred_depth)
+    print(f"save depth in {pred_dir_path}, shape={pred_disps_ms[0].shape}")
+    np.save(op.join(pred_dir_path, "depth.npy"), pred_disps_ms)
     print(f"save pose in {pred_dir_path}, shape={pred_pose.shape}")
     np.save(op.join(pred_dir_path, "pose.npy"), pred_pose)
 
@@ -349,15 +387,113 @@ def test_count_steps():
 
 def run_train_default():
     train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
-          model_name="vode1", src_weights_name="latest.h5",
-          learning_rate=0.0002, final_epoch=10)
+          model_name="vode1", learning_rate=0.0002, final_epoch=40)
 
 
 def run_pred_default():
     predict(test_dir_name="kitti_raw_test", model_name="vode1", weights_name="latest.h5")
 
 
+def test_model_output():
+    """
+    check model output formats according to prediction methods
+    1) preds = model(image_tensor) -> dict('disp_ms': disp_ms, 'pose': pose)
+        disp_ms: list of [batch, height/scale, width/scale, 1]
+        pose: [batch, num_src, 6]
+    2) preds = model.predict(image_tensor) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
+    3) preds = model.predict({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
+    :return:
+    """
+    model_name = "vode1"
+    test_dir_name = "kitti_raw_test"
+    set_configs(model_name)
+    model = create_model()
+    model = try_load_weights(model, model_name)
+    model.compile(optimizer="sgd", loss="mean_absolute_error")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
+
+    print("===== check model output shape from 'preds = model(image)'")
+    for i, features in enumerate(dataset):
+        preds = model(features['image'])
+        print("output dict keys:", list(preds.keys()))
+        disp_ms = preds['disp_ms']
+        pose = preds['pose']
+        for disp in disp_ms:
+            print("disparity shape:", disp.get_shape().as_list())
+        print("pose shape:", pose.get_shape().as_list())
+        break
+
+    print("===== it does NOT work: 'preds = model({'image': ...})'")
+    # for i, features in enumerate(dataset):
+    #     preds = model(features)
+
+    print("===== check model output shape from 'preds = model.predict(image)'")
+    for i, features in enumerate(dataset):
+        preds = model.predict(features['image'])
+        for pred in preds:
+            print("predict output shape:", pred.shape)
+        break
+
+    print("===== check model output shape from 'preds = model.predict({'image': ...})'")
+    for i, features in enumerate(dataset):
+        preds = model.predict(features)
+        for pred in preds:
+            print("predict output shape:", pred.shape)
+        break
+
+
+def test_train_disparity():
+    """
+    DEPRECATED: this function can be executed only when getting model_builder.py back to the below commit
+    commit: 68612cb3600cfc934d8f26396b51aba0622ba357
+    """
+    model_name = "vode1"
+    check_epochs = [1] + [5]*5
+    dst_epoch = 0
+    for i, epochs in enumerate(check_epochs):
+        dst_epoch += epochs
+        # train a few epochs
+        train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
+              model_name=model_name, learning_rate=0.0002, final_epoch=dst_epoch)
+
+        check_disparity(model_name, "kitti_raw_test")
+
+
+def check_disparity(model_name, test_dir_name):
+    """
+    DEPRECATED: this function can be executed only when getting model_builder.py back to the below commit
+    commit: 68612cb3600cfc934d8f26396b51aba0622ba357
+    """
+    set_configs(model_name)
+    model = create_model()
+    model = try_load_weights(model, model_name)
+    model.compile(optimizer="sgd", loss="mean_absolute_error")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
+
+    for i, features in enumerate(dataset):
+        predictions = model.predict(features['image'])
+
+        pred_disp_s1 = predictions[0]
+        pred_disp_s4 = predictions[2]
+        pred_pose = predictions[4]
+
+        for k, conv in enumerate(predictions[5:]):
+            print(f"conv{k} stats", np.mean(conv), np.std(conv), np.quantile(conv, [0, 0.2, 0.5, 0.8, 1.0]))
+
+        batch, height, width, _ = pred_disp_s1.shape
+        view_y, view_x = int(height * 0.3), int(width * 0.3)
+        print("view pixel", view_y, view_x)
+        print(f"disp scale 1, {pred_disp_s1.shape}\n", pred_disp_s1[0, view_y:view_y+50:10, view_x:view_x+100:10, 0])
+        batch, height, width, _ = pred_disp_s4.shape
+        view_y, view_x = int(height * 0.5), int(width * 0.3)
+        print(f"disp scale 1/4, {pred_disp_s4.shape}\n", pred_disp_s4[0, view_y:view_y+50:10, view_x:view_x+100:10, 0])
+        print("pose\n", pred_pose[0, 0])
+        if i > 5:
+            break
+
+
 if __name__ == "__main__":
     # test_count_steps()
     run_train_default()
     # run_pred_default()
+    # test_model_output()

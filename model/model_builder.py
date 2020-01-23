@@ -65,6 +65,7 @@ def build_depth_estim_layers(target_image):
 def convolution(x, filters, kernel_size, strides, name):
     conv = tf.keras.layers.Conv2D(filters, kernel_size, strides=strides,
                                   padding="same", activation="relu",
+                                  kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.025),
                                   kernel_regularizer=tf.keras.regularizers.l2(0.001),
                                   name=name)(x)
     return conv
