@@ -46,11 +46,11 @@ def evaluate(data_dir_name, model_name):
     depth_errors = []
     trajectory_errors = []
     rotational_errors = []
-    uf.print_numeric_progress(None, is_total=True)
-    for i, (x, y) in enumerate(dataset):
+
+    for i, x in enumerate(dataset):
         if i >= total_pose_pred.shape[0]:
             break
-        uf.print_numeric_progress(i)
+        uf.print_numeric_progress(i, 0)
         depth_true = x["depth_gt"].numpy()[0]
         pose_true = x["pose_gt"].numpy()[0]
         depth_pred = total_depth_pred[i]
@@ -62,6 +62,7 @@ def evaluate(data_dir_name, model_name):
         trajectory_errors.append(trj_err)
         rotational_errors.append(rot_err)
 
+    print("")
     depth_errors = np.array(depth_errors)
     trajectory_errors = np.array(trajectory_errors)
     rotational_errors = np.array(rotational_errors)
@@ -126,4 +127,4 @@ def evaluate_pose(pose_pred, pose_true):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    evaluate_by_user_interaction()
+    evaluate('kitti_raw_test', 'vode1')

@@ -1,6 +1,9 @@
 import sys
 from config import opts
 import tensorflow as tf
+import os.path as op
+import json
+import pandas as pd
 
 
 def print_progress_status(status_msg):
@@ -94,8 +97,58 @@ def multi_scale_depths(depth, scales):
     return depth_ms
 
 
+def count_steps(dataset_dir):
+    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
+    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
+        config = json.load(fr)
+    frames = config['length']
+    steps = frames // opts.BATCH_SIZE
+    print(f"[count steps] frames={frames}, steps={steps}")
+    return steps
+
+
+def read_previous_epoch(model_name):
+    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    if op.isfile(filename):
+        history = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
+        if history.empty:
+            return 0
+        epochs = history['epoch'].tolist()
+        epochs.sort()
+        prev_epoch = epochs[-1]
+        print(f"[read_previous_epoch] start from epoch {prev_epoch + 1}")
+        return prev_epoch + 1
+    else:
+        return 0
+
+
+from tensorflow.keras import layers
+
+
+def disp_to_depth_tensor(disp_ms):
+    target_ms = []
+    for i, disp in enumerate(disp_ms):
+        target = layers.Lambda(lambda dis: 1./dis, name=f"todepth_{i}")(disp)
+        target_ms.append(target)
+    return target_ms
+
+
+def multi_scale_like(image, disp_ms):
+    """
+    :param image: [batch, height, width, 3]
+    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :return: image_ms: list of [batch, height/scale, width/scale, 3]
+    """
+    image_ms = []
+    for i, disp in enumerate(disp_ms):
+        batch, height_sc, width_sc, _ = disp.get_shape().as_list()
+        image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
+                                 name=f"target_resize_{i}")(image)
+        image_ms.append(image_sc)
+    return image_ms
+
+
 from model.synthesize_batch import synthesize_batch_multi_scale
-import model.loss_and_metric as lm
 import cv2
 import numpy as np
 
@@ -106,14 +159,14 @@ def make_reconstructed_views(model, dataset):
         predictions = model(features['image'])
         pred_disp_ms = predictions['disp_ms']
         pred_pose = predictions['pose']
-        pred_depth_ms = lm.disp_to_depth(pred_disp_ms)
+        pred_depth_ms = disp_to_depth_tensor(pred_disp_ms)
         print("predicted snippet poses:\n", pred_pose[0].numpy())
 
         # reconstruct target image
         stacked_image = features['image']
         intrinsic = features['intrinsic']
         source_image, target_image = split_into_source_and_target(stacked_image)
-        true_target_ms = lm.multi_scale_like(target_image, pred_disp_ms)
+        true_target_ms = multi_scale_like(target_image, pred_disp_ms)
         synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
 
         # make stacked image of [true target, reconstructed target, source image, predicted depth]
