@@ -77,13 +77,14 @@ def photometric_loss_multi_scale(synthesized_target_ms, original_target_ms):
     :param synthesized_target_ms: multi scale synthesized targets, list of
                                   [batch, num_src, height/scale, width/scale, 3]
     :param original_target_ms: multi scale target images, list of [batch, height, width, 3]
-    :return: photo_loss scalar
+    :return: photo_loss [batch]
     """
     losses = []
     for i, (synt_target, orig_target) in enumerate(zip(synthesized_target_ms, original_target_ms)):
         loss = layers.Lambda(lambda inputs: photometric_loss(inputs[0], inputs[1]),
                              name=f"photo_loss_{i}")([synt_target, orig_target])
         losses.append(loss)
+    # sum over scales
     photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=0), axis=0),
                                name="photo_loss_sum")(losses)
     return photo_loss
@@ -94,7 +95,7 @@ def photometric_loss(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :return: scalar loss
+    :return: photo_loss [batch]
     """
     orig_target = tf.expand_dims(orig_target, axis=1)
     # create mask to ignore black region
@@ -103,9 +104,10 @@ def photometric_loss(synt_target, orig_target):
 
     # orig_target [batch, 1, height/scale, width/scale, 3]
     # axis=1 broadcasted in subtraction
+    # photo_error: [batch, num_src, height/scale, width/scale, 3]
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
-    # photo_error: [batch, num_src, height/scale, width/scale, 3]
+    # sum over sources
     photo_loss = tf.reduce_sum(tf.reduce_mean(photo_error, axis=[2, 3, 4]), axis=1)
     return photo_loss
 
@@ -197,7 +199,7 @@ def test_photometric_loss_quality():
     복원된 이미지로부터 계산되는 photometric loss를 확인
     assert 없음
     """
-    print("===== start test_photometric_loss_quality")
+    print("\n===== start test_photometric_loss_quality")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
     for i, features in enumerate(dataset):
@@ -252,7 +254,7 @@ def test_photometric_loss_quantity():
     gt pose에 노이즈를 추가하여 나오는 photometric loss를 비교
     두 가지 pose로 복원된 영상을 눈으로 확인하고 gt 데이터의 loss가 더 낮음을 확인 (assert)
     """
-    print("===== start test_photometric_loss_quantity")
+    print("\n===== start test_photometric_loss_quantity")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
     for i, features in enumerate(dataset):
@@ -304,7 +306,6 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
         # EXECUTE
         loss = photometric_loss(synt_target, orig_target)
         losses.append(loss)
-
         if scale == 1:
             recon_target = uf.to_uint8_image(synt_target).numpy()
             recon_image = cv2.resize(recon_target[0, 0], (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_NEAREST)
@@ -324,7 +325,7 @@ def test_smootheness_loss_quantity():
     gt depth에 일부를 0으로 처리하여 전체적인 gradient를 높인 depth의 smootheness loss 비교
     두 가지 depth를 눈으로 확인하고 gt 데이터의 loss가 더 낮음을 확인 (assert)
     """
-    print("===== start test_smootheness_loss_quantity")
+    print("\n===== start test_smootheness_loss_quantity")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
     for i, features in enumerate(dataset):
@@ -388,8 +389,10 @@ def test_smooth_loss(disp_ms, target_ms):
     """
     losses = []
     for scale, disp, image in zip([1, 2, 4, 8], disp_ms, target_ms):
+
         # EXECUTE
         loss = smootheness_loss(disp, image)
+
         losses.append(loss)
 
     losses = tf.stack(losses, axis=0)

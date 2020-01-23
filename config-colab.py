@@ -1,7 +1,7 @@
 import os.path as op
 
 
-class PriorOptions:
+class BasicOptions:
     def __init__(self):
         self.KITTI_RAW_PATH = "/content/dataset_samples/kitti_raw_data"
         self.KITTI_ODOM_PATH = "/content/dataset_samples/kitti_odom_data"
@@ -23,7 +23,7 @@ class PriorOptions:
         self.MAX_DEPTH = 80
 
 
-class VodeOptions(PriorOptions):
+class VodeOptions(BasicOptions):
     def __init__(self):
         super().__init__()
         self.DATAPATH_SRC = op.join(self.DATAPATH, "srcdata")
