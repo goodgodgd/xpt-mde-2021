@@ -1,9 +1,13 @@
 import sys
-from config import opts
-import tensorflow as tf
-import os.path as op
 import json
+import cv2
+import os.path as op
 import pandas as pd
+import numpy as np
+import tensorflow as tf
+from tensorflow.keras import layers
+
+from config import opts
 
 
 def print_progress_status(status_msg):
@@ -122,9 +126,6 @@ def read_previous_epoch(model_name):
         return 0
 
 
-from tensorflow.keras import layers
-
-
 def disp_to_depth_tensor(disp_ms):
     target_ms = []
     for i, disp in enumerate(disp_ms):
@@ -148,39 +149,7 @@ def multi_scale_like(image, disp_ms):
     return image_ms
 
 
-from model.synthesize_batch import synthesize_batch_multi_scale
-import cv2
-import numpy as np
-
-
-def make_reconstructed_views(model, dataset):
-    recon_views = []
-    for i, features in enumerate(dataset):
-        predictions = model(features['image'])
-        pred_disp_ms = predictions['disp_ms']
-        pred_pose = predictions['pose']
-        pred_depth_ms = disp_to_depth_tensor(pred_disp_ms)
-        print("predicted snippet poses:\n", pred_pose[0].numpy())
-
-        # reconstruct target image
-        stacked_image = features['image']
-        intrinsic = features['intrinsic']
-        source_image, target_image = split_into_source_and_target(stacked_image)
-        true_target_ms = multi_scale_like(target_image, pred_disp_ms)
-        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
-
-        # make stacked image of [true target, reconstructed target, source image, predicted depth] in 1/1 scale
-        sclidx = 0
-        view1 = make_view(true_target_ms[sclidx], synth_target_ms[sclidx], pred_depth_ms[sclidx],
-                             source_image, batidx=0, srcidx=0)
-        recon_views.append(view1)
-        if i >= 10:
-            break
-
-    return recon_views
-
-
-def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcidx, verbose=True):
+def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcidx, verbose=True, synth_gt=None):
     dsize = (opts.IM_HEIGHT, opts.IM_WIDTH)
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -196,6 +165,12 @@ def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcid
     predim = to_uint8_image(predim).numpy()
     cv2.putText(predim, 'reconstructed target image', location, font, font_scale, color, thickness)
 
+    reconim = None
+    if synth_gt is not None:
+        reconim = tf.image.resize(synth_gt[batidx, srcidx], size=dsize, method="nearest")
+        reconim = to_uint8_image(reconim).numpy()
+        cv2.putText(reconim, 'reconstructed from gt', location, font, font_scale, color, thickness)
+
     sourim = to_uint8_image(source_image).numpy()
     sourim = sourim[batidx, opts.IM_HEIGHT * srcidx:opts.IM_HEIGHT * (srcidx + 1)]
     cv2.putText(sourim, 'source image', location, font, font_scale, color, thickness)
@@ -210,5 +185,6 @@ def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcid
     dpthim = cv2.cvtColor(dpthim, cv2.COLOR_GRAY2BGR)
     cv2.putText(dpthim, 'predicted target depth', location, font, font_scale, color, thickness)
 
-    view = np.concatenate([trueim, predim, sourim, dpthim], axis=0)
+    view = [trueim, predim, sourim, dpthim] if reconim is None else [trueim, reconim, predim, sourim, dpthim]
+    view = np.concatenate(view, axis=0)
     return view

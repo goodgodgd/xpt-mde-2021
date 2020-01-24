@@ -17,7 +17,7 @@ def compute_depth_metrics(gt, pred):
     rmse_log = (np.log(gt) - np.log(pred)) ** 2
     rmse_log = np.sqrt(rmse_log.mean())
 
-    abs_rel = np.mean((gt - pred) / gt)
+    abs_rel = np.mean(np.abs(gt - pred) / gt)
 
     sq_rel = np.mean(((gt - pred)**2) / gt)
 

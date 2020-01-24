@@ -10,6 +10,7 @@ import cv2
 import settings
 from config import opts
 from model.model_builder import create_model
+from model.synthesize_batch import synthesize_batch_multi_scale
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 from utils.util_class import TrainException
@@ -314,13 +315,40 @@ def predict_by_user_interaction():
 
 
 def save_reconstruction_samples(model, dataset, model_name, epoch):
-    views = uf.make_reconstructed_views(model, dataset)
+    views = make_reconstructed_views(model, dataset)
     savepath = op.join(opts.DATAPATH_CKP, model_name, 'reconimg')
     if not op.isdir(savepath):
         os.makedirs(savepath, exist_ok=True)
     for i, view in enumerate(views):
         filename = op.join(savepath, f"ep{epoch:03d}_{i:02d}.png")
         cv2.imwrite(filename, view)
+
+
+def make_reconstructed_views(model, dataset):
+    recon_views = []
+    for i, features in enumerate(dataset):
+        predictions = model(features['image'])
+        pred_disp_ms = predictions['disp_ms']
+        pred_pose = predictions['pose']
+        pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
+        print("predicted snippet poses:\n", pred_pose[0].numpy())
+
+        # reconstruct target image
+        stacked_image = features['image']
+        intrinsic = features['intrinsic']
+        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        true_target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
+        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
+
+        # make stacked image of [true target, reconstructed target, source image, predicted depth] in 1/1 scale
+        sclidx = 0
+        view1 = uf.make_view(true_target_ms[sclidx], synth_target_ms[sclidx], pred_depth_ms[sclidx],
+                             source_image, batidx=0, srcidx=0)
+        recon_views.append(view1)
+        if i >= 10:
+            break
+
+    return recon_views
 
 
 def predict(test_dir_name, model_name, weight_name):
