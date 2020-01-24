@@ -1,7 +1,7 @@
+import os.path as op
 from tensorflow.keras import layers
 import cv2
 
-from config import opts
 from model.synthesize_batch import *
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.convert_pose as cp

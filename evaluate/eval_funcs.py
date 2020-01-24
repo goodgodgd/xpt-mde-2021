@@ -2,6 +2,7 @@ import numpy as np
 import tensorflow as tf
 import settings
 import utils.convert_pose as cp
+from utils.decorators import ShapeCheck
 
 
 def compute_depth_metrics(gt, pred):
@@ -100,26 +101,28 @@ def calc_rotational_error(pose_pred_mat, pose_true_mat):
     return angle
 
 
+@ShapeCheck
 def calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat):
     """
-    :param pose_pred_mat: predicted snippet pose matrices, [batch, ?, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices, [batch, ?, 4, 4]
-    :return: trajectory error in meter [snippet_len]
+    :param pose_pred_mat: predicted snippet pose matrices, [batch, num_src, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices, [batch, num_src, 4, 4]
+    :return: trajectory error in meter [batch, num_src]
     """
     xyz_pred = pose_pred_mat[:, :, :3, 3]
     xyz_true = pose_true_mat[:, :, :3, 3]
-    # optimize the scaling factor
+    # adjust the trajectory scaling due to ignorance of abolute scale
     scale = tf.reduce_sum(xyz_true * xyz_pred, axis=2) / tf.reduce_sum(xyz_pred ** 2, axis=2)
     traj_error = xyz_true - xyz_pred * tf.expand_dims(scale, -1)
     traj_error = tf.sqrt(tf.reduce_sum(traj_error ** 2, axis=2))
     return traj_error
 
 
+@ShapeCheck
 def calc_rotational_error_tensor(pose_pred_mat, pose_true_mat):
     """
-    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [batch, ?, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [batch, ?, 4, 4]
-    :return: rotational error in rad [snippet_len]
+    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [batch, num_src, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [batch, num_src, 4, 4]
+    :return: rotational error in rad [batch, num_src]
     """
     rot_pred = pose_pred_mat[:, :, :3, :3]
     rot_true = pose_true_mat[:, :, :3, :3]

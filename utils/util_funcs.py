@@ -1,6 +1,13 @@
 import sys
-from config import opts
+import json
+import cv2
+import os.path as op
+import pandas as pd
+import numpy as np
 import tensorflow as tf
+from tensorflow.keras import layers
+
+from config import opts
 
 
 def print_progress_status(status_msg):
@@ -94,42 +101,55 @@ def multi_scale_depths(depth, scales):
     return depth_ms
 
 
-from model.synthesize_batch import synthesize_batch_multi_scale
-import model.loss_and_metric as lm
-import cv2
-import numpy as np
+def count_steps(dataset_dir, batch_size=opts.BATCH_SIZE):
+    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
+    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
+        config = json.load(fr)
+    frames = config['length']
+    steps = frames // batch_size
+    print(f"[count steps] frames={frames}, steps={steps}")
+    return steps
 
 
-def make_reconstructed_views(model, dataset):
-    recon_views = []
-    for i, features in enumerate(dataset):
-        predictions = model(features['image'])
-        pred_disp_ms = predictions['disp_ms']
-        pred_pose = predictions['pose']
-        pred_depth_ms = lm.disp_to_depth(pred_disp_ms)
-        print("predicted snippet poses:\n", pred_pose[0].numpy())
-
-        # reconstruct target image
-        stacked_image = features['image']
-        intrinsic = features['intrinsic']
-        source_image, target_image = split_into_source_and_target(stacked_image)
-        true_target_ms = lm.multi_scale_like(target_image, pred_disp_ms)
-        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
-
-        # make stacked image of [true target, reconstructed target, source image, predicted depth]
-        #   in 1/1 scale
-        view1 = extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, sclidx=0, batidx=0, srcidx=0)
-        #   in 1/4 scale
-        # view2 = extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, sclidx=2, batidx=0, srcidx=0)
-        # view = np.concatenate([view1, view2], axis=1)
-        recon_views.append(view1)
-        if i >= 10:
-            break
-
-    return recon_views
+def read_previous_epoch(model_name):
+    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    if op.isfile(filename):
+        history = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
+        if history.empty:
+            return 0
+        epochs = history['epoch'].tolist()
+        epochs.sort()
+        prev_epoch = epochs[-1]
+        print(f"[read_previous_epoch] start from epoch {prev_epoch + 1}")
+        return prev_epoch + 1
+    else:
+        return 0
 
 
-def extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, sclidx, batidx, srcidx):
+def disp_to_depth_tensor(disp_ms):
+    target_ms = []
+    for i, disp in enumerate(disp_ms):
+        target = layers.Lambda(lambda dis: 1./dis, name=f"todepth_{i}")(disp)
+        target_ms.append(target)
+    return target_ms
+
+
+def multi_scale_like(image, disp_ms):
+    """
+    :param image: [batch, height, width, 3]
+    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :return: image_ms: list of [batch, height/scale, width/scale, 3]
+    """
+    image_ms = []
+    for i, disp in enumerate(disp_ms):
+        batch, height_sc, width_sc, _ = disp.get_shape().as_list()
+        image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
+                                 name=f"target_resize_{i}")(image)
+        image_ms.append(image_sc)
+    return image_ms
+
+
+def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcidx, verbose=True, synth_gt=None):
     dsize = (opts.IM_HEIGHT, opts.IM_WIDTH)
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -137,26 +157,34 @@ def extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, s
     color = (0, 0, 255)
     thickness = 1
 
-    trueim = tf.image.resize(true_target_ms[sclidx][batidx], size=dsize, method="nearest")
+    trueim = tf.image.resize(true_target[batidx], size=dsize, method="nearest")
     trueim = to_uint8_image(trueim).numpy()
     cv2.putText(trueim, 'true target image', location, font, font_scale, color, thickness)
 
-    predim = tf.image.resize(synth_target_ms[sclidx][batidx, srcidx], size=dsize, method="nearest")
+    predim = tf.image.resize(synth_target[batidx, srcidx], size=dsize, method="nearest")
     predim = to_uint8_image(predim).numpy()
     cv2.putText(predim, 'reconstructed target image', location, font, font_scale, color, thickness)
+
+    reconim = None
+    if synth_gt is not None:
+        reconim = tf.image.resize(synth_gt[batidx, srcidx], size=dsize, method="nearest")
+        reconim = to_uint8_image(reconim).numpy()
+        cv2.putText(reconim, 'reconstructed from gt', location, font, font_scale, color, thickness)
 
     sourim = to_uint8_image(source_image).numpy()
     sourim = sourim[batidx, opts.IM_HEIGHT * srcidx:opts.IM_HEIGHT * (srcidx + 1)]
     cv2.putText(sourim, 'source image', location, font, font_scale, color, thickness)
 
-    dpthim = tf.image.resize(pred_depth_ms[sclidx][batidx], size=dsize, method="nearest")
+    dpthim = tf.image.resize(pred_depth[batidx], size=dsize, method="nearest")
     depth = dpthim.numpy()
     center = (int(dsize[0]/2), int(dsize[1]/2))
-    print("predicted depths\n", depth[center[0]:center[0]+50:10, center[0]-50:center[0]+50:20, 0])
+    if verbose:
+        print("predicted depths\n", depth[center[0]:center[0]+50:10, center[0]-50:center[0]+50:20, 0])
     dpthim = tf.clip_by_value(dpthim, 0., 10.) / 10.
     dpthim = tf.image.convert_image_dtype(dpthim, dtype=tf.uint8).numpy()
     dpthim = cv2.cvtColor(dpthim, cv2.COLOR_GRAY2BGR)
     cv2.putText(dpthim, 'predicted target depth', location, font, font_scale, color, thickness)
 
-    view = np.concatenate([trueim, predim, sourim, dpthim], axis=0)
+    view = [trueim, predim, sourim, dpthim] if reconim is None else [trueim, reconim, predim, sourim, dpthim]
+    view = np.concatenate(view, axis=0)
     return view

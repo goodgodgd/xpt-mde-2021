@@ -1,6 +1,5 @@
 import os
 import os.path as op
-import json
 import tensorflow as tf
 import numpy as np
 import pandas as pd
@@ -11,6 +10,7 @@ import cv2
 import settings
 from config import opts
 from model.model_builder import create_model
+from model.synthesize_batch import synthesize_batch_multi_scale
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 from utils.util_class import TrainException
@@ -60,7 +60,7 @@ def train_by_user_interaction():
 
 
 def train(train_dir_name, val_dir_name, model_name, learning_rate, final_epoch):
-    initial_epoch = read_previous_epoch(model_name)
+    initial_epoch = uf.read_previous_epoch(model_name)
     if final_epoch <= initial_epoch:
         raise TrainException("!! final_epoch <= initial_epoch, no need to train")
 
@@ -70,7 +70,7 @@ def train(train_dir_name, val_dir_name, model_name, learning_rate, final_epoch):
     optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
     dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), shuffle=True).get_generator()
     dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), shuffle=False).get_generator()
-    steps_per_epoch = count_steps(train_dir_name)
+    steps_per_epoch = uf.count_steps(train_dir_name)
 
     print(f"\n\n========== START TRAINING ON {model_name} ==========")
     for epoch in range(initial_epoch, final_epoch):
@@ -108,40 +108,15 @@ def set_configs(model_name):
             print(e)
 
 
-def try_load_weights(model, model_name):
+def try_load_weights(model, model_name, weight_name='latest.h5'):
     if model_name:
-        model_file_path = op.join(opts.DATAPATH_CKP, model_name, "latest.h5")
+        model_file_path = op.join(opts.DATAPATH_CKP, model_name, weight_name)
         if op.isfile(model_file_path):
             print("===== load model weights", model_file_path)
             model.load_weights(model_file_path)
         else:
             print("===== train from scratch", model_file_path)
     return model
-
-
-def count_steps(dataset_dir):
-    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
-    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
-        config = json.load(fr)
-    frames = config['length']
-    steps = frames // opts.BATCH_SIZE
-    print(f"[count steps] frames={frames}, steps={steps}")
-    return steps
-
-
-def read_previous_epoch(model_name):
-    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
-    if op.isfile(filename):
-        history = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
-        if history.empty:
-            return 0
-        epochs = history['epoch'].tolist()
-        epochs.sort()
-        prev_epoch = epochs[-1]
-        print(f"[read_previous_epoch] start from epoch {prev_epoch + 1}")
-        return prev_epoch + 1
-    else:
-        return 0
 
 
 # Eager training is slow ...
@@ -340,7 +315,7 @@ def predict_by_user_interaction():
 
 
 def save_reconstruction_samples(model, dataset, model_name, epoch):
-    views = uf.make_reconstructed_views(model, dataset)
+    views = make_reconstructed_views(model, dataset)
     savepath = op.join(opts.DATAPATH_CKP, model_name, 'reconimg')
     if not op.isdir(savepath):
         os.makedirs(savepath, exist_ok=True)
@@ -349,41 +324,60 @@ def save_reconstruction_samples(model, dataset, model_name, epoch):
         cv2.imwrite(filename, view)
 
 
-def predict(test_dir_name, model_name, weights_name):
+def make_reconstructed_views(model, dataset):
+    recon_views = []
+    for i, features in enumerate(dataset):
+        predictions = model(features['image'])
+        pred_disp_ms = predictions['disp_ms']
+        pred_pose = predictions['pose']
+        pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
+        print("predicted snippet poses:\n", pred_pose[0].numpy())
+
+        # reconstruct target image
+        stacked_image = features['image']
+        intrinsic = features['intrinsic']
+        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        true_target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
+        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
+
+        # make stacked image of [true target, reconstructed target, source image, predicted depth] in 1/1 scale
+        sclidx = 0
+        view1 = uf.make_view(true_target_ms[sclidx], synth_target_ms[sclidx], pred_depth_ms[sclidx],
+                             source_image, batidx=0, srcidx=0)
+        recon_views.append(view1)
+        if i >= 10:
+            break
+
+    return recon_views
+
+
+def predict(test_dir_name, model_name, weight_name):
     set_configs(model_name)
     model = create_model()
-    model = try_load_weights(model, model_name, weights_name)
+    model = try_load_weights(model, model_name, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
-    # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
-    #       preds = [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
+    # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     predictions = model.predict(dataset)
     for pred in predictions:
         print(f"prediction shape={pred.shape}")
 
-    pred_disps_ms = predictions[0]
-    pred_pose = predictions[1]
-    print("predicted dispartiy shape:", pred_disps_ms[0].get_shape().as_list())
-    print("predicted dispartiy shape:", pred_disps_ms[2].get_shape().as_list())
-    print("predicted pose shape:", pred_pose.get_shape().as_list())
-    # save_predictions(model_name, pred_disps_ms, pred_pose)
+    pred_disp = predictions[0]
+    pred_pose = predictions[4]
+    save_predictions(model_name, pred_disp, pred_pose)
 
 
-def save_predictions(model_name, pred_disps_ms, pred_pose):
+def save_predictions(model_name, pred_disp, pred_pose):
     pred_dir_path = op.join(opts.DATAPATH_PRD, model_name)
     os.makedirs(pred_dir_path, exist_ok=True)
-    print(f"save depth in {pred_dir_path}, shape={pred_disps_ms[0].shape}")
-    np.save(op.join(pred_dir_path, "depth.npy"), pred_disps_ms)
+    print(f"save depth in {pred_dir_path}, shape={pred_disp[0].shape}")
+    np.save(op.join(pred_dir_path, "depth.npy"), pred_disp)
     print(f"save pose in {pred_dir_path}, shape={pred_pose.shape}")
     np.save(op.join(pred_dir_path, "pose.npy"), pred_pose)
 
 
 # ==================== tests ====================
-
-def test_count_steps():
-    steps = count_steps('kitti_raw_train')
-
 
 def run_train_default():
     train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
@@ -391,7 +385,7 @@ def run_train_default():
 
 
 def run_pred_default():
-    predict(test_dir_name="kitti_raw_test", model_name="vode1", weights_name="latest.h5")
+    predict(test_dir_name="kitti_raw_test", model_name="vode1", weight_name="best.h5")
 
 
 def test_model_output():
@@ -495,5 +489,5 @@ def check_disparity(model_name, test_dir_name):
 if __name__ == "__main__":
     # test_count_steps()
     run_train_default()
-    # run_pred_default()
+    run_pred_default()
     # test_model_output()
