@@ -61,8 +61,8 @@ def photometric_loss_multi_scale(synthesized_target_ms, original_target_ms):
         loss = layers.Lambda(lambda inputs: photometric_loss(inputs[0], inputs[1]),
                              name=f"photo_loss_{i}")([synt_target, orig_target])
         losses.append(loss)
-    # sum over scales
-    photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=0), axis=0),
+    # sum over sources x scales, after stack over scales: [batch, num_src, num_scales]
+    photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
                                name="photo_loss_sum")(losses)
     return photo_loss
 
@@ -72,7 +72,7 @@ def photometric_loss(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :return: photo_loss [batch]
+    :return: photo_loss [batch, num_src]
     """
     orig_target = tf.expand_dims(orig_target, axis=1)
     # create mask to ignore black region
@@ -84,8 +84,7 @@ def photometric_loss(synt_target, orig_target):
     # photo_error: [batch, num_src, height/scale, width/scale, 3]
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
-    # sum over sources
-    photo_loss = tf.reduce_sum(tf.reduce_mean(photo_error, axis=[2, 3, 4]), axis=1)
+    photo_loss = tf.reduce_mean(photo_error, axis=[2, 3, 4])
     return photo_loss
 
 
@@ -93,7 +92,7 @@ def smootheness_loss_multi_scale(disp_ms, image_ms, height_orig):
     """
     :param disp_ms: multi scale disparity map, list of [batch, height/scale, width/scale, 1]
     :param image_ms: multi scale image, list of [batch, height/scale, width/scale, 3]
-    :return: photometric loss (scalar)
+    :return: photometric loss [batch]
     """
     losses = []
     for i, (disp, image) in enumerate(zip(disp_ms, image_ms)):
@@ -209,15 +208,14 @@ def test_photometric_loss_quality():
             target = uf.to_uint8_image(orig_target).numpy()[0]
             target = cv2.resize(target, (width, height), interpolation=cv2.INTER_NEAREST)
             view = np.concatenate([target, srcimg0, recon0, srcimg3, recon3], axis=0)
-            print(f"1/{scale} scale, photo loss:", loss)
+            print(f"1/{scale} scale, photo loss:", tf.reduce_sum(loss, axis=1))
             cv2.imshow("photo loss", view)
             cv2.waitKey()
 
-        losses = tf.stack(losses, axis=0)
-        photo_loss = tf.reduce_sum(losses, axis=0)
-        print("all photometric loss:", losses)
-        print("batch mean photometric loss:", photo_loss)
-        print("scale mean photometric loss:", tf.reduce_sum(losses, axis=1))
+        losses = tf.stack(losses, axis=2)       # [batch, num_src, num_scales]
+        print("all photometric loss:", tf.reduce_sum(losses, axis=1))
+        print("batch mean photometric loss:", tf.reduce_sum(losses, axis=[1, 2]))
+        print("scale mean photometric loss:", tf.reduce_sum(losses, axis=[0, 1]))
         if i > 3:
             break
 
@@ -279,6 +277,7 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
     synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms, pose_gt)
 
     losses = []
+    recon_image = 0
     for scale, synt_target, orig_target in zip([1, 2, 4, 8], synth_target_ms, target_ms):
         # EXECUTE
         loss = photometric_loss(synt_target, orig_target)
@@ -287,9 +286,9 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
             recon_target = uf.to_uint8_image(synt_target).numpy()
             recon_image = cv2.resize(recon_target[0, 0], (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_NEAREST)
 
-    losses = tf.stack(losses, axis=0)
-    batch_loss = tf.reduce_sum(losses, axis=0)
-    scale_loss = tf.reduce_sum(losses, axis=1)
+    losses = tf.stack(losses, axis=2)   # [batch, num_src, num_scales]
+    batch_loss = tf.reduce_sum(losses, axis=[1, 2])
+    scale_loss = tf.reduce_sum(losses, axis=[0, 1])
     print("all photometric loss:", losses)
     print("batch mean photometric loss:", batch_loss)
     print("scale mean photometric loss:", scale_loss)
@@ -353,7 +352,7 @@ def test_smootheness_loss_quantity():
 def test_depth_to_disp(depth_ms):
     disp_ms = []
     for i, depth in enumerate(depth_ms):
-        disp = layers.Lambda(lambda dep: tf.where(dep > 0.1, 1./dep, 0), name=f"todisp_{i}")(depth)
+        disp = layers.Lambda(lambda dep: tf.where(dep > 0.001, 1./dep, 0), name=f"todisp_{i}")(depth)
         disp_ms.append(disp)
     return disp_ms
 

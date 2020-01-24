@@ -107,7 +107,7 @@ def set_configs(model_name):
             print(e)
 
 
-def try_load_weights(model, model_name, weight_name='lastes.h5'):
+def try_load_weights(model, model_name, weight_name='latest.h5'):
     if model_name:
         model_file_path = op.join(opts.DATAPATH_CKP, model_name, weight_name)
         if op.isfile(model_file_path):
@@ -350,10 +350,6 @@ def save_predictions(model_name, pred_disp, pred_pose):
 
 
 # ==================== tests ====================
-
-def test_count_steps():
-    steps = count_steps('kitti_raw_train')
-
 
 def run_train_default():
     train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",

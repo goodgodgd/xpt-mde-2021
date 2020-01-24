@@ -97,12 +97,12 @@ def multi_scale_depths(depth, scales):
     return depth_ms
 
 
-def count_steps(dataset_dir):
+def count_steps(dataset_dir, batch_size=opts.BATCH_SIZE):
     tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
     with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
         config = json.load(fr)
     frames = config['length']
-    steps = frames // opts.BATCH_SIZE
+    steps = frames // batch_size
     print(f"[count steps] frames={frames}, steps={steps}")
     return steps
 
@@ -169,12 +169,10 @@ def make_reconstructed_views(model, dataset):
         true_target_ms = multi_scale_like(target_image, pred_disp_ms)
         synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
 
-        # make stacked image of [true target, reconstructed target, source image, predicted depth]
-        #   in 1/1 scale
-        view1 = extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, sclidx=0, batidx=0, srcidx=0)
-        #   in 1/4 scale
-        # view2 = extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, sclidx=2, batidx=0, srcidx=0)
-        # view = np.concatenate([view1, view2], axis=1)
+        # make stacked image of [true target, reconstructed target, source image, predicted depth] in 1/1 scale
+        sclidx = 0
+        view1 = make_view(true_target_ms[sclidx], synth_target_ms[sclidx], pred_depth_ms[sclidx],
+                             source_image, batidx=0, srcidx=0)
         recon_views.append(view1)
         if i >= 10:
             break
@@ -182,7 +180,7 @@ def make_reconstructed_views(model, dataset):
     return recon_views
 
 
-def extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, sclidx, batidx, srcidx):
+def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcidx, verbose=True):
     dsize = (opts.IM_HEIGHT, opts.IM_WIDTH)
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -190,11 +188,11 @@ def extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, s
     color = (0, 0, 255)
     thickness = 1
 
-    trueim = tf.image.resize(true_target_ms[sclidx][batidx], size=dsize, method="nearest")
+    trueim = tf.image.resize(true_target[batidx], size=dsize, method="nearest")
     trueim = to_uint8_image(trueim).numpy()
     cv2.putText(trueim, 'true target image', location, font, font_scale, color, thickness)
 
-    predim = tf.image.resize(synth_target_ms[sclidx][batidx, srcidx], size=dsize, method="nearest")
+    predim = tf.image.resize(synth_target[batidx, srcidx], size=dsize, method="nearest")
     predim = to_uint8_image(predim).numpy()
     cv2.putText(predim, 'reconstructed target image', location, font, font_scale, color, thickness)
 
@@ -202,10 +200,11 @@ def extract_view(true_target_ms, synth_target_ms, pred_depth_ms, source_image, s
     sourim = sourim[batidx, opts.IM_HEIGHT * srcidx:opts.IM_HEIGHT * (srcidx + 1)]
     cv2.putText(sourim, 'source image', location, font, font_scale, color, thickness)
 
-    dpthim = tf.image.resize(pred_depth_ms[sclidx][batidx], size=dsize, method="nearest")
+    dpthim = tf.image.resize(pred_depth[batidx], size=dsize, method="nearest")
     depth = dpthim.numpy()
     center = (int(dsize[0]/2), int(dsize[1]/2))
-    print("predicted depths\n", depth[center[0]:center[0]+50:10, center[0]-50:center[0]+50:20, 0])
+    if verbose:
+        print("predicted depths\n", depth[center[0]:center[0]+50:10, center[0]-50:center[0]+50:20, 0])
     dpthim = tf.clip_by_value(dpthim, 0., 10.) / 10.
     dpthim = tf.image.convert_image_dtype(dpthim, dtype=tf.uint8).numpy()
     dpthim = cv2.cvtColor(dpthim, cv2.COLOR_GRAY2BGR)

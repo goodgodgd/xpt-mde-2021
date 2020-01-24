@@ -57,12 +57,13 @@ def reshape_source_images(src_img_stacked, scale):
     :param scale: scale to reduce image size
     :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
     """
+    batch, height, width, _ = src_img_stacked.get_shape().as_list()
     num_src = (opts.SNIPPET_LEN - 1)
     # resize image
-    scheight, scwidth = (int(opts.IM_HEIGHT // scale), int(opts.IM_WIDTH // scale))
+    scheight, scwidth = (int(height / num_src / scale), int(width / scale))
     scaled_image = tf.image.resize(src_img_stacked, size=(scheight*num_src, scwidth), method="bilinear")
     # reorganize scaled images: (4*height/scale,) -> (4, height/scale)
-    source_images = tf.reshape(scaled_image, shape=(opts.BATCH_SIZE, num_src, scheight, scwidth, 3))
+    source_images = tf.reshape(scaled_image, shape=(batch, num_src, scheight, scwidth, 3))
     return source_images
 
 
