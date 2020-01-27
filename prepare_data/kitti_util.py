@@ -5,11 +5,15 @@ import pykitti
 
 import prepare_data.kitti_depth_generator as kdg
 import utils.convert_pose as cp
+from utils.util_class import NoDataException
 
 
 class KittiUtil:
     def __init__(self):
         self.static_frames = self.read_static_frames()
+        self.drive_loader = None
+        self.pose_avail = True
+        self.depth_avail = True
 
     def read_static_frames(self):
         filename = self.get_static_frame_file()
@@ -26,6 +30,13 @@ class KittiUtil:
         print(f"[remove_static_frames] {len(frames)} -> {len(valid_frames)}")
         return valid_frames
 
+    def get_image(self, index):
+        return self.drive_loader.get_rgb(index)
+
+    def get_intrinsic(self):
+        intrinsic = self.drive_loader.calib.P_rect_20[:, :3]
+        return intrinsic
+
     def list_drives(self, split, base_path):
         raise NotImplementedError()
 
@@ -38,7 +49,7 @@ class KittiUtil:
     def frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def get_quat_pose(self, drive_loader, index):
+    def get_quat_pose(self, index):
         raise NotImplementedError()
 
     def load_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape, target_shape):
@@ -64,8 +75,11 @@ class KittiRawUtil(KittiUtil):
             return existing_drives
 
     def create_drive_loader(self, base_path, drive):
+        self.pose_avail = True
+        self.depth_avail = True
+        print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         date, drive_id = drive
-        return pykitti.raw(base_path, date, drive_id)
+        self.drive_loader = pykitti.raw(base_path, date, drive_id)
 
     def get_drive_path(self, base_path, drive):
         drive_path = op.join(base_path, drive[0], f"{drive[0]}_drive_{drive[1]}_sync")
@@ -74,10 +88,10 @@ class KittiRawUtil(KittiUtil):
     def frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def get_quat_pose(self, drive_loader, index):
-        T_cam2_imu = drive_loader.calib.T_cam2_imu
+    def get_quat_pose(self, index):
+        T_cam2_imu = self.drive_loader.calib.T_cam2_imu
         T_imu_cam2 = np.linalg.inv(T_cam2_imu)
-        T_w_imu = drive_loader.oxts[index].T_w_imu
+        T_w_imu = self.drive_loader.oxts[index].T_w_imu
         T_W_cam2 = np.matmul(T_w_imu, T_imu_cam2)
         return cp.pose_matr2quat(T_W_cam2)
 
@@ -178,12 +192,11 @@ class KittiOdomUtil(KittiUtil):
         frame_inds = np.array(frame_inds, dtype=int)
         return frame_inds
 
-    def get_quat_pose(self, drive_loader, index):
-        tmat = self.poses[index].reshape((3, 4))
-        return cp.pose_matr2quat(tmat)
+    def get_quat_pose(self, index):
+        raise NotImplementedError()
 
     def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
-        # no depth available for kitti_odom
+        # no depth available for kitti_odometry dataset
         return None
 
 
@@ -198,12 +211,14 @@ class KittiOdomTrainUtil(KittiOdomUtil):
         return existing_drives
 
     def create_drive_loader(self, base_path, drive):
-        loader = pykitti.odometry(base_path, drive)
-        nframes = len(loader)
-        one_pose = np.concatenate([np.identity(3), np.zeros((3,1))], axis=1).reshape(-1)
-        self.poses = np.tile(one_pose, (nframes, 1))
-        print("zeros pose:", self.poses.shape)
-        return loader
+        self.poses = None
+        self.pose_avail = False
+        self.depth_avail = False
+        print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
+        self.drive_loader = pykitti.odometry(base_path, drive)
+
+    def get_quat_pose(self, index):
+        raise NoDataException("KittiOdomTrainUtil dataset does NOT provide gt poses")
 
 
 class KittiOdomTestUtil(KittiOdomUtil):
@@ -220,4 +235,12 @@ class KittiOdomTestUtil(KittiOdomUtil):
         pose_file = op.join(base_path, "poses", drive+".txt")
         self.poses = np.loadtxt(pose_file)
         print("read pose file:", pose_file)
-        return pykitti.odometry(base_path, drive)
+        self.pose_avail = True
+        self.depth_avail = False
+        print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
+        self.drive_loader = pykitti.odometry(base_path, drive)
+
+    def get_quat_pose(self, index):
+        tmat = self.poses[index].reshape((3, 4))
+        return cp.pose_matr2quat(tmat)
+

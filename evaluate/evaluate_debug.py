@@ -17,6 +17,23 @@ from model.model_main import set_configs, create_model, try_load_weights
 
 
 def evaluate_for_debug(data_dir_name, model_name):
+    """
+    function to check if learning process is going right
+    to evaluate current model, save losses and error metrics to csv files and save debugging images
+    - debug_depth.csv: 타겟 프레임별로 predicted depth의 error와 smootheness loss 저장
+    - debug_pose.csv: 소스 프레임별로 photometric loss, trajectory error, rotation error 저장
+    - trajectory.csv: 소스 프레임별로 gt trajectory, pred trajectory 저장
+    - debug_imgs(directory): loss와 metric 별로 가장 성능이 안좋은 프레임들을 모아서 inspection view 이미지로 저장
+        1) target image
+        2) reconstructed target from gt
+        3) reconstructed target from pred
+        4) source image
+        5) predicted target depth
+    """
+    if not uf.check_tfrecord_including(op.join(opts.DATAPATH_TFR, data_dir_name), ["pose_gt", "depth_gt"]):
+        print("Evaluation is NOT possible without pose_gt and depth_gt")
+        return
+
     set_configs(model_name)
     model = create_model()
     model = try_load_weights(model, model_name)
@@ -148,6 +165,7 @@ def compute_depth_error(depth_pred, depth_true):
     metrics = ef.compute_depth_metrics(depth_true[mask], depth_pred[mask])
     # return only abs rel
     return metrics[0], scaler
+
 
 def save_depth_result_and_get_df(depth_result, model_name):
     depth_result = np.array(depth_result)

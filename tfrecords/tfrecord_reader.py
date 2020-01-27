@@ -81,19 +81,13 @@ class TfrecordGenerator:
             if not isinstance(feat_conf, dict):
                 continue
 
-            if feat_conf["decode_type"] is None:
-                decoded[key] = parsed[key]
-            else:
-                decoded[key] = tf.io.decode_raw(parsed[key], feat_conf["decode_type"])
-
+            decoded[key] = tf.io.decode_raw(parsed[key], feat_conf["decode_type"])
             if feat_conf["shape"] is not None:
                 decoded[key] = tf.reshape(decoded[key], shape=feat_conf["shape"])
 
-        # raw uint8 type may saturate during bilinear interpolation
+        # raw uint8 type may saturate during bilinear interpolation -> float (-1 ~ 1)
         decoded["image"] = uf.to_float_image(decoded["image"])
-        features = {"image": decoded["image"], "pose_gt": decoded["pose"],
-                    "depth_gt": decoded["depth"], "intrinsic": decoded["intrinsic"]}
-        return features
+        return decoded
 
     def dataset_process(self, dataset):
         if self.shuffle:

@@ -168,6 +168,8 @@ import numpy as np
 import cv2
 from tfrecords.tfrecord_reader import TfrecordGenerator
 
+WAIT_KEY = 200
+
 
 def test_photometric_loss_quality():
     """
@@ -210,7 +212,7 @@ def test_photometric_loss_quality():
             view = np.concatenate([target, srcimg0, recon0, srcimg3, recon3], axis=0)
             print(f"1/{scale} scale, photo loss:", tf.reduce_sum(loss, axis=1))
             cv2.imshow("photo loss", view)
-            cv2.waitKey()
+            cv2.waitKey(WAIT_KEY)
 
         losses = tf.stack(losses, axis=2)       # [batch, num_src, num_scales]
         print("all photometric loss:", tf.reduce_sum(losses, axis=1))
@@ -265,7 +267,7 @@ def test_photometric_loss_quantity():
         target = uf.to_uint8_image(target_image).numpy()[0]
         view = np.concatenate([target, recon_image_right, recon_image_wrong], axis=0)
         cv2.imshow("pose corruption", view)
-        cv2.waitKey()
+        cv2.waitKey(WAIT_KEY)
         if i > 3:
             break
 
@@ -341,7 +343,7 @@ def test_smootheness_loss_quantity():
 
         view = np.concatenate([depth_gt_right[0], depth_gt_wrong[0]], axis=0)
         cv2.imshow("target image corruption", view)
-        cv2.waitKey()
+        cv2.waitKey(WAIT_KEY)
         if i > 3:
             break
 
