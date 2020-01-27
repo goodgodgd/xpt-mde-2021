@@ -141,7 +141,7 @@ def image_reader(filename):
 def pose_reader(filename):
     """
     quaternion based pose to transformation matrix omitting target pose (identity)
-    order: [src0 src1 tgt src2 src3] -> [src1 src2 src3 src4]
+    order: [src0 src1 tgt src2 src3] -> [src0 src1 src2 src3]
     shape: [5, 7] -> [4, 4, 4]
     """
     poses = np.loadtxt(filename)

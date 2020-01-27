@@ -5,18 +5,18 @@ import settings
 from config import opts
 import prepare_data.kitti_util as ku
 import utils.convert_pose as cp
+from utils.util_class import NoDataException
 
 
 class KittiDataLoader:
     def __init__(self, base_path, dataset, split):
         self.base_path = base_path
-        self.kitti_util = self.kitti_util_factory(dataset, split)
-        self.drive_list = self.kitti_util.list_drives(split, base_path)
-        self.drive_loader = None
+        self.kitti_reader = self.kitti_reader_factory(dataset, split)
+        self.drive_list = self.kitti_reader.list_drives(split, base_path)
         self.drive_path = ""
         self.frame_inds = []
 
-    def kitti_util_factory(self, dataset, split):
+    def kitti_reader_factory(self, dataset, split):
         if dataset == "kitti_raw" and split == "train":
             return ku.KittiRawTrainUtil()
         elif dataset == "kitti_raw" and split == "test":
@@ -29,9 +29,9 @@ class KittiDataLoader:
             raise ValueError()
 
     def load_drive(self, drive, snippet_len):
-        self.drive_loader = self.kitti_util.create_drive_loader(self.base_path, drive)
-        self.drive_path = self.kitti_util.get_drive_path(self.base_path, drive)
-        self.frame_inds = self.kitti_util.frame_indices(self.drive_path, snippet_len)
+        self.kitti_reader.create_drive_loader(self.base_path, drive)
+        self.drive_path = self.kitti_reader.get_drive_path(self.base_path, drive)
+        self.frame_inds = self.kitti_reader.frame_indices(self.drive_path, snippet_len)
         if self.frame_inds.size > 1:
             print(f"frame_indices: {self.frame_inds[0]} ~ {self.frame_inds[-1]}")
         return self.frame_inds
@@ -40,9 +40,11 @@ class KittiDataLoader:
         example = dict()
         example["index"] = index
         example["frames"], raw_img_shape = self.load_snippet_frames(index, snippet_len)
-        example["gt_poses"] = self.load_snippet_poses(index, snippet_len)
-        example["gt_depth"] = self.load_frame_depth(index, self.drive_path, raw_img_shape)
         example["intrinsic"] = self.load_intrinsic(raw_img_shape)
+        if self.kitti_reader.pose_avail:
+            example["gt_poses"] = self.load_snippet_poses(index, snippet_len)
+        if self.kitti_reader.depth_avail:
+            example["gt_depth"] = self.load_frame_depth(index, self.drive_path, raw_img_shape)
         return example
 
     def load_snippet_frames(self, frame_idx, snippet_len):
@@ -50,7 +52,7 @@ class KittiDataLoader:
         frames = []
         raw_img_shape = ()
         for ind in range(frame_idx-halflen, frame_idx+halflen+1):
-            frame = self.drive_loader.get_rgb(ind)
+            frame = self.kitti_reader.get_image(ind)
             frame = np.array(frame[0])
             raw_img_shape = frame.shape[:2]
             frame = cv2.resize(frame, dsize=(opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
@@ -64,7 +66,7 @@ class KittiDataLoader:
         halflen = snippet_len//2
         poses = []
         for ind in range(frame_idx-halflen, frame_idx+halflen+1):
-            pose = self.kitti_util.get_quat_pose(self.drive_loader, ind)
+            pose = self.kitti_reader.get_quat_pose(ind)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
@@ -87,12 +89,12 @@ class KittiDataLoader:
 
     def load_frame_depth(self, frame_idx, drive_path, raw_img_shape):
         dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
-        depth_map = self.kitti_util.load_depth_map(self.drive_loader, frame_idx,
-                                                   drive_path, raw_img_shape, dst_shape)
+        #########
+        depth_map = self.kitti_reader.load_depth_map(frame_idx, drive_path, raw_img_shape, dst_shape)
         return depth_map
 
     def load_intrinsic(self, raw_img_shape):
-        intrinsic = self.drive_loader.calib.P_rect_20[:, :3]
+        intrinsic = self.kitti_reader.get_intrinsic()
         sx = opts.IM_WIDTH / raw_img_shape[1]
         sy = opts.IM_HEIGHT / raw_img_shape[0]
         out = intrinsic.copy()

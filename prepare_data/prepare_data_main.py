@@ -5,7 +5,7 @@ import numpy as np
 
 import settings
 from config import opts
-from kitti_loader import KittiDataLoader
+from prepare_data.kitti_loader import KittiDataLoader
 from utils.util_funcs import print_progress_status
 
 
@@ -14,6 +14,7 @@ def prepare_input_data():
         for split in ["train", "test"]:
             loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
             prepare_and_save_snippets(loader, dataset, split)
+    # TODO: validatation set 따로 만들기: 일부 복사하거나 링크만 걸거나
 
 
 def prepare_and_save_snippets(loader, dataset, split):
@@ -34,8 +35,10 @@ def prepare_and_save_snippets(loader, dataset, split):
             continue
 
         os.makedirs(snippet_path, exist_ok=True)
-        os.makedirs(pose_path, exist_ok=True)
-        os.makedirs(depth_path, exist_ok=True)
+        if loader.kitti_reader.pose_avail:
+            os.makedirs(pose_path, exist_ok=True)
+        if loader.kitti_reader.depth_avail:
+            os.makedirs(depth_path, exist_ok=True)
 
         num_frames = len(frame_indices)
         for k, index in enumerate(frame_indices):
@@ -43,16 +46,16 @@ def prepare_and_save_snippets(loader, dataset, split):
             index = snippet["index"]
             frames = snippet["frames"]
             filename = op.join(snippet_path, f"{index:06d}.png")
-            cv2.imwrite(filename, frames,)
+            cv2.imwrite(filename, frames)
 
-            poses = snippet["gt_poses"]
-            if poses is not None:
+            if "gt_poses" in snippet:
+                poses = snippet["gt_poses"]
                 filename = op.join(pose_path, f"{index:06d}.txt")
                 np.savetxt(filename, poses, fmt="%3.5f")
 
-            depth = snippet["gt_depth"]
             mean_depth = 0
-            if depth is not None:
+            if "gt_depth" in snippet:
+                depth = snippet["gt_depth"]
                 filename = op.join(depth_path, f"{index:06d}.txt")
                 np.savetxt(filename, depth, fmt="%3.5f")
                 mean_depth = np.mean(depth)
@@ -83,6 +86,14 @@ def get_destination_paths(dstpath, dataset, drive):
     return drive_path, pose_path, depth_path
 
 
+def prepare_single_dataset():
+    dataset = "kitti_odom"
+    split = "train"
+    loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
+    prepare_and_save_snippets(loader, dataset, split)
+
+
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_input_data()
+    # prepare_input_data()
+    prepare_single_dataset()
