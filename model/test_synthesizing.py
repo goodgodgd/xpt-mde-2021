@@ -7,6 +7,8 @@ from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.convert_pose as cp
 import utils.util_funcs as uf
 
+WAIT_KEY = 200
+
 
 def test_synthesize_batch_multi_scale():
     """
@@ -39,7 +41,7 @@ def test_synthesize_batch_multi_scale():
         view = np.concatenate([source_image, target_image, recon_img0, recon_img1], axis=0)
         print("Check if all the images are the same")
         cv2.imshow("source, target, and reconstructed", view)
-        cv2.waitKey()
+        cv2.waitKey(WAIT_KEY)
         if i >= 3:
             break
 
@@ -52,8 +54,9 @@ def test_synthesize_batch_view():
     gt depth와 gt pose를 입력했을 때 스케일 별로 복원되는 이미지를 정성적으로 확인
     실제 target image와 복원된 "single" scale target image를 눈으로 비교
     """
-    print("===== start test_synthesize_batch_view")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+
+    print("\n===== start test_synthesize_batch_view")
     scale_idx = 1
 
     for i, features in enumerate(dataset):
@@ -89,7 +92,7 @@ def test_synthesize_batch_view():
         recon_image = cv2.resize(recon_image, (width, height*4), interpolation=cv2.INTER_NEAREST)
         view = np.concatenate([target_image, recon_image], axis=0)
         cv2.imshow("synthesize_batch", view)
-        cv2.waitKey()
+        cv2.waitKey(WAIT_KEY)
         if i >= 3:
             break
 
@@ -123,7 +126,7 @@ def test_reshape_source_images():
 
     view = np.concatenate([scaled_image, reshaped_image[0, 1]], axis=0)
     cv2.imshow("original and reshaped", view)
-    cv2.waitKey()
+    cv2.waitKey(WAIT_KEY)
     print("!!! test_reshape_source_images passed")
     cv2.destroyAllWindows()
 
@@ -284,11 +287,11 @@ def test_all():
     test_synthesize_batch_multi_scale()
     test_synthesize_batch_view()
     test_reshape_source_images()
-    # test_scale_intrinsic()
-    # test_pixel2cam()
-    # test_transform_to_source()
-    # test_pixel_weighting()
-    # test_reconstruct_bilinear_interp()
+    test_scale_intrinsic()
+    test_pixel2cam()
+    test_transform_to_source()
+    test_pixel_weighting()
+    test_reconstruct_bilinear_interp()
 
 
 if __name__ == "__main__":

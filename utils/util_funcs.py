@@ -111,6 +111,17 @@ def count_steps(dataset_dir, batch_size=opts.BATCH_SIZE):
     return steps
 
 
+def check_tfrecord_including(dataset_dir, key_list):
+    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
+    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
+        config = json.load(fr)
+
+    for key in key_list:
+        if key not in config:
+            return False
+    return True
+
+
 def read_previous_epoch(model_name):
     filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
     if op.isfile(filename):

@@ -17,6 +17,8 @@ from utils.util_class import TrainException
 import model.loss_and_metric as lm
 
 
+# TODO: 클래스로 바꾸고 model_name, pose_valid 같은 멤버 변수 공통 사용
+
 def train_by_user_interaction():
     options = {"train_dir_name": "kitti_raw_train",
                "val_dir_name": "kitti_raw_test",
@@ -132,11 +134,11 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
 
-        trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
         loss_num = loss.numpy().mean()
-        results.append((loss_num, trjerr.numpy(), roterr.numpy()))
+        trjerr, roterr = get_metric_pose(preds, features)
+        results.append((loss_num, trjerr, roterr))
         uf.print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
-                                 f"metric={trjerr.numpy():1.4f}, {roterr.numpy():1.4f}, time={time.time() - start:1.4f} ...")
+                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
     return mean_res
@@ -148,11 +150,12 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
     # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     for step, features in enumerate(dataset):
         start = time.time()
-        result = train_a_batch(model, features, optimizer)
-        result = result.numpy()
-        results.append(result)
-        uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
-                                 f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
+        preds, loss = train_a_batch(model, features, optimizer)
+
+        trjerr, roterr = get_metric_pose(preds, features)
+        results.append((loss.numpy(), trjerr, roterr))
+        uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={loss.numpy():1.4f}, "
+                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     results = np.stack(results, axis=0)
     mean_res = results.mean(axis=0)
@@ -163,16 +166,13 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
 def train_a_batch(model, features, optimizer):
     with tf.GradientTape() as tape:
         # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
-        #       preds = [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
         preds = model(features['image'])
         loss = lm.compute_loss_vode(preds, features)
 
     grads = tape.gradient(loss, model.trainable_weights)
     optimizer.apply_gradients(zip(grads, model.trainable_weights))
-
-    trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
     loss_mean = tf.reduce_mean(loss)
-    return tf.stack([loss_mean, trjerr, roterr], 0)
+    return preds, loss_mean
 
 
 def validate_an_epoch_eager(model, dataset, steps_per_epoch):
@@ -182,10 +182,11 @@ def validate_an_epoch_eager(model, dataset, steps_per_epoch):
         start = time.time()
         preds = model(features['image'])
         loss = lm.compute_loss_vode(preds, features)
-        trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
+
         loss_num = loss.numpy().mean()
+        trjerr, roterr = get_metric_pose(preds, features)
         results.append((loss_num, trjerr, roterr))
-        uf.print_progress_status(f"\tValidating {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+        uf.print_progress_status(f"\tValidating (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
                                  f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
@@ -196,11 +197,12 @@ def validate_an_epoch_graph(model, dataset, steps_per_epoch):
     results = []
     for step, features in enumerate(dataset):
         start = time.time()
-        result = validate_a_batch(model, features)
-        result = result.numpy()
-        results.append(result)
-        uf.print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={result[0]:1.4f}, "
-                                 f"metric={result[1]:1.4f}, {result[2]:1.4f}, time={time.time() - start:1.4f} ...")
+        preds, loss = validate_a_batch(model, features)
+
+        trjerr, roterr = get_metric_pose(preds, features)
+        results.append((loss.numpy(), trjerr, roterr))
+        uf.print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={loss.numpy():1.4f}, "
+                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     results = np.stack(results, axis=0)
     mean_res = results.mean(axis=0)
@@ -211,9 +213,16 @@ def validate_an_epoch_graph(model, dataset, steps_per_epoch):
 def validate_a_batch(model, features):
     preds = model(features['image'])
     loss = lm.compute_loss_vode(preds, features)
-    trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
     loss_mean = tf.reduce_mean(loss)
-    return tf.stack([loss_mean, trjerr, roterr], 0)
+    return preds, loss_mean
+
+
+def get_metric_pose(preds, features):
+    if "pose_gt" in features:
+        trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
+        return trjerr.numpy(), roterr.numpy()
+    else:
+        return 0, 0
 
 
 def save_log(epoch, results_train, results_val, model_name):

@@ -55,9 +55,9 @@ class TfrecordMaker:
                    "intrinsic": df.NpyFeeder(intrin_files, txt_reader),
                    }
         if self.depth_avail:
-            feeders["depth"] = df.NpyFeeder(depth_files, depth_reader)
+            feeders["depth_gt"] = df.NpyFeeder(depth_files, depth_reader)
         if self.pose_avail:
-            feeders["pose"] = df.NpyFeeder(pose_files, pose_reader)
+            feeders["pose_gt"] = df.NpyFeeder(pose_files, pose_reader)
 
         return feeders
 

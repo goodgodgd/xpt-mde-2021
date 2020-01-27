@@ -43,6 +43,11 @@ def evaluate_by_user_interaction():
 def evaluate(data_dir_name, model_name):
     total_depth_pred, total_pose_pred = load_predictions(model_name)
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_generator()
+    depth_valid = uf.check_tfrecord_including(op.join(opts.DATAPATH_TFR, data_dir_name), ["depth_gt"])
+    if not uf.check_tfrecord_including(op.join(opts.DATAPATH_TFR, data_dir_name), ["pose_gt"]):
+        print("Evaluation is NOT possible without pose_gt")
+        return
+
     depth_errors = []
     trajectory_errors = []
     rotational_errors = []
@@ -51,32 +56,31 @@ def evaluate(data_dir_name, model_name):
         if i >= total_pose_pred.shape[0]:
             break
         uf.print_numeric_progress(i, 0)
-        depth_true = x["depth_gt"].numpy()[0]
         pose_true = x["pose_gt"].numpy()[0]
-        depth_pred = total_depth_pred[i]
         pose_pred = total_pose_pred[i]
-
-        depth_err = evaluate_depth(depth_pred, depth_true)
         trj_err, rot_err = evaluate_pose(pose_pred, pose_true)
-        depth_errors.append(depth_err)
         trajectory_errors.append(trj_err)
         rotational_errors.append(rot_err)
 
+        if depth_valid:
+            depth_true = x["depth_gt"].numpy()[0]
+            depth_pred = total_depth_pred[i]
+            depth_err = evaluate_depth(depth_pred, depth_true)
+            depth_errors.append(depth_err)
+
     print("")
-    depth_errors = np.array(depth_errors)
     trajectory_errors = np.array(trajectory_errors)
     rotational_errors = np.array(rotational_errors)
-    print("depth error shape:", depth_errors.shape)
-    print(depth_errors[:5])
-    print("trajectory error shape:", trajectory_errors.shape)
-    print(trajectory_errors[:5])
-    print("rotational error shape:", rotational_errors.shape)
-    print(rotational_errors[:5])
-
+    print(f"trajectory error shape: {trajectory_errors.shape}\n{trajectory_errors[:5]}")
+    print(f"rotational error shape: {rotational_errors.shape}\n{rotational_errors[:5]}")
     os.makedirs(op.join(opts.DATAPATH_EVL, model_name), exist_ok=True)
-    np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "depthe_error.txt"), depth_errors, fmt="%1.4f")
     np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "trajectory_error.txt"), trajectory_errors, fmt="%1.4f")
     np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "rotation_error.txt"), rotational_errors, fmt="%1.4f")
+
+    if depth_valid:
+        depth_errors = np.array(depth_errors)
+        print(f"depth error shape: {depth_errors.shape}\n{depth_errors[:5]}")
+        np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "depthe_error.txt"), depth_errors, fmt="%1.4f")
 
 
 def load_predictions(model_name):
