@@ -17,8 +17,10 @@ class TfrecordMaker:
         self.srcpath = srcpath
         self.dstpath = dstpath
         # check if there is depth data available
-        depths = glob(srcpath + "/*/depth/*.txt")
+        depths = glob(srcpath + "/*/depth")
+        poses = glob(srcpath + "/*/pose")
         self.depth_avail = True if depths else False
+        self.pose_avail = True if poses else False
 
     def make(self):
         try:
@@ -31,12 +33,12 @@ class TfrecordMaker:
         num_images = len(data_feeders["image"])
         num_shards = max(min(num_images // 2000, 10), 1)
         num_images_per_shard = num_images // num_shards
-        print(f"========== tfrecord maker started: srcpath={self.srcpath}, dstpath={self.dstpath}")
-        print(f"num images={num_images}, shards={num_shards}, images per shard={num_images_per_shard}")
+        print(f"========== tfrecord maker started\n\tsrcpath={self.srcpath}\n\tdstpath={self.dstpath}")
+        print(f"\tnum images={num_images}, shards={num_shards}, images per shard={num_images_per_shard}")
 
         for si in range(num_shards):
             outfile = f"{self.dstpath}/shard_{si:02d}.tfrecord"
-            print("\n===== start creating:", outfile)
+            print("\n===== start creating:", outfile.replace(opts.DATAPATH, ''))
             with tf.io.TFRecordWriter(outfile) as writer:
                 for fi in range(si*num_images_per_shard, (si+1)*num_images_per_shard):
                     uf.print_numeric_progress(fi, num_images)
@@ -44,27 +46,29 @@ class TfrecordMaker:
                     serialized = self.make_serialized_example(raw_example)
                     writer.write(serialized)
 
-        print(f"\ntfrecord maker finished: srcpath={self.srcpath}, dstpath={self.dstpath}")
+        print(f"\ntfrecord maker finished: srcpath={self.srcpath}, dstpath={self.dstpath}\n")
 
     def create_feeders(self):
-        image_files, depth_files, pose_files, intrin_files = self.list_sequence_files()
-        if depth_files:
-            depth_feeder = df.NpyFeeder(depth_files, depth_reader)
-        else:
-            zero_depth = np.zeros((opts.IM_HEIGHT, opts.IM_WIDTH, 1), dtype=np.float32)
-            depth_feeder = df.ConstArrayFeeder(zero_depth, len(image_files))
+        image_files, intrin_files, depth_files, pose_files = self.list_sequence_files()
 
         feeders = {"image": df.NpyFeeder(image_files, image_reader),
-                   "depth": depth_feeder,
-                   "pose": df.NpyFeeder(pose_files, pose_reader),
-                   "intrinsic": df.NpyFeeder(intrin_files, txt_reader)
+                   "intrinsic": df.NpyFeeder(intrin_files, txt_reader),
                    }
+        if self.depth_avail:
+            feeders["depth"] = df.NpyFeeder(depth_files, depth_reader)
+        if self.pose_avail:
+            feeders["pose"] = df.NpyFeeder(pose_files, pose_reader)
+
         return feeders
 
     def list_sequence_files(self):
         image_files = glob(op.join(self.srcpath, "*/*.png"))
         if not image_files:
             raise ValueError(f"[list_sequence_files] no image file in {self.srcpath}")
+
+        intrin_files = [op.join(op.dirname(file_path), "intrinsic.txt")
+                        for file_path in image_files]
+
         if self.depth_avail:
             depth_files = [op.join(op.dirname(file_path), "depth",
                                    op.basename(file_path).replace(".png", ".txt"))
@@ -72,23 +76,24 @@ class TfrecordMaker:
         else:
             depth_files = []
 
-        pose_files = [op.join(op.dirname(file_path), "pose",
-                              op.basename(file_path).replace(".png", ".txt"))
-                      for file_path in image_files]
-        intrin_files = [op.join(op.dirname(file_path), "intrinsic.txt")
-                        for file_path in image_files]
+        if self.pose_avail:
+            pose_files = [op.join(op.dirname(file_path), "pose",
+                                  op.basename(file_path).replace(".png", ".txt"))
+                          for file_path in image_files]
+        else:
+            pose_files = []
 
-        print("=== list sequence files")
-        print(f"frame: {image_files[0:1000:200]}")
-        print(f"depth: {depth_files[0:1000:200]}")
-        print(f"pose: {pose_files[0:1000:200]}")
-        print(f"intrin: {intrin_files[0:1000:200]}")
-        
-        for files in [image_files, depth_files, pose_files, intrin_files]:
+        print("## list sequence files")
+        print(f"frame: {[file.replace(opts.DATAPATH, '') for file in  image_files[0:1000:200]]}")
+        print(f"intrin: {[file.replace(opts.DATAPATH, '') for file in  intrin_files[0:1000:200]]}")
+        print(f"depth: {[file.replace(opts.DATAPATH, '') for file in  depth_files[0:1000:200]]}")
+        print(f"pose: {[file.replace(opts.DATAPATH, '') for file in  pose_files[0:1000:200]]}")
+
+        for files in [image_files, intrin_files, depth_files, pose_files]:
             for file in files:
                 assert op.isfile(file), f"{file} NOT exist"
 
-        return image_files, depth_files, pose_files, intrin_files
+        return image_files, intrin_files, depth_files, pose_files
 
     def write_tfrecord_config(self, feeders):
         config = dict()
@@ -97,7 +102,7 @@ class TfrecordMaker:
             config[key] = single_config
 
         config["length"] = len(feeders['image'])
-        print("=== config", config)
+        print("## config", config)
         with open(op.join(self.dstpath, "tfr_config.txt"), "w") as fr:
             json.dump(config, fr)
 
@@ -128,7 +133,8 @@ def image_reader(filename):
     image = cv2.imread(filename)
     height = int(image.shape[0] // opts.SNIPPET_LEN)
     half_len = int(opts.SNIPPET_LEN // 2)
-    # TODO) IMPORTANT! Target image is median image in the snippet sequence
+    # TODO (it's done, TODO is for highlighting in pycharm)
+    #   IMPORTANT! Target image is median image in the snippet sequence
     #   but target image is located at the bottom of the image for future convinience
     #   the images are split into sources and target in [split_into_source_and_target]
     src_up = image[:height*half_len]

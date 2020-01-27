@@ -2,6 +2,7 @@ import os
 import os.path as op
 import cv2
 import numpy as np
+import shutil
 
 import settings
 from config import opts
@@ -14,7 +15,7 @@ def prepare_input_data():
         for split in ["train", "test"]:
             loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
             prepare_and_save_snippets(loader, dataset, split)
-    # TODO: validatation set 따로 만들기: 일부 복사하거나 링크만 걸거나
+        create_validation_set(dataset)
 
 
 def prepare_and_save_snippets(loader, dataset, split):
@@ -86,6 +87,22 @@ def get_destination_paths(dstpath, dataset, drive):
     return drive_path, pose_path, depth_path
 
 
+def create_validation_set(dataset):
+    srcpath = op.join(opts.DATAPATH_SRC, f"{dataset}_test")
+    dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_val")
+
+    if dataset == "kitti_raw":
+        if os.path.exists(dstpath):
+            os.remove(dstpath)
+        os.symlink(srcpath, dstpath)
+    elif dataset == "kitti_odom":
+        os.makedirs(dstpath, exist_ok=True)
+        for drive in ["09", "10"]:
+            shutil.copytree(os.path.join(srcpath, drive), os.path.join(dstpath, drive))
+
+    print(f"\n### create validation split for {dataset}")
+
+
 def prepare_single_dataset():
     dataset = "kitti_odom"
     split = "train"
@@ -95,5 +112,5 @@ def prepare_single_dataset():
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    # prepare_input_data()
-    prepare_single_dataset()
+    prepare_input_data()
+    # prepare_single_dataset()

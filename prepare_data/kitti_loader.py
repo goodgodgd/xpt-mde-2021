@@ -5,7 +5,6 @@ import settings
 from config import opts
 import prepare_data.kitti_util as ku
 import utils.convert_pose as cp
-from utils.util_class import NoDataException
 
 
 class KittiDataLoader:

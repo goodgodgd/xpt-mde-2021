@@ -5,6 +5,7 @@ from utils.decorators import ShapeCheck
 
 
 def pose_quat2matr(pose):
+    assert pose.shape[0] == 7
     t = np.expand_dims(pose[:3], axis=1)
     q = pose[3:]
     norm = np.linalg.norm(q)
