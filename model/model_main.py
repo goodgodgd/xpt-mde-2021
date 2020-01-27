@@ -9,7 +9,7 @@ import cv2
 
 import settings
 from config import opts
-from model.model_builder import create_model
+from model.build_model.model_base import ModelBuilderBase
 from model.synthesize_batch import synthesize_batch_multi_scale
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
@@ -67,7 +67,8 @@ def train(train_dir_name, val_dir_name, model_name, learning_rate, final_epoch):
         raise TrainException("!! final_epoch <= initial_epoch, no need to train")
 
     set_configs(model_name)
-    model = create_model()
+    model_builder = ModelBuilderBase(need_resize=False)
+    model = model_builder.create_model()
     model = try_load_weights(model, model_name)
     optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
     dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), shuffle=True).get_generator()
@@ -390,7 +391,7 @@ def save_predictions(model_name, pred_disp, pred_pose):
 
 def run_train_default():
     train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
-          model_name="vode1", learning_rate=0.0002, final_epoch=40)
+          model_name="vode2", learning_rate=0.0002, final_epoch=40)
 
 
 def run_pred_default():

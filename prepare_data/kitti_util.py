@@ -5,7 +5,6 @@ import pykitti
 
 import prepare_data.kitti_depth_generator as kdg
 import utils.convert_pose as cp
-from utils.util_class import NoDataException
 
 
 class KittiUtil:
@@ -52,7 +51,7 @@ class KittiUtil:
     def get_quat_pose(self, index):
         raise NotImplementedError()
 
-    def load_depth_map(self, drive_loader, frame_idx, drive_path, raw_img_shape, target_shape):
+    def load_depth_map(self, frame_idx, drive_path, raw_img_shape, target_shape):
         raise NotImplementedError()
 
 
@@ -95,9 +94,9 @@ class KittiRawUtil(KittiUtil):
         T_W_cam2 = np.matmul(T_w_imu, T_imu_cam2)
         return cp.pose_matr2quat(T_W_cam2)
 
-    def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
+    def load_depth_map(self, frame_idx, drive_path, original_shape, target_shape):
         calib_dir = op.dirname(drive_path)
-        velo_data = drive_loader.get_velo(frame_idx)
+        velo_data = self.drive_loader.get_velo(frame_idx)
         depth_map = kdg.generate_depth_map(velo_data, calib_dir, original_shape, target_shape)
         # print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
         return depth_map
@@ -195,7 +194,7 @@ class KittiOdomUtil(KittiUtil):
     def get_quat_pose(self, index):
         raise NotImplementedError()
 
-    def load_depth_map(self, drive_loader, frame_idx, drive_path, original_shape, target_shape):
+    def load_depth_map(self, frame_idx, drive_path, original_shape, target_shape):
         # no depth available for kitti_odometry dataset
         return None
 
@@ -218,7 +217,8 @@ class KittiOdomTrainUtil(KittiOdomUtil):
         self.drive_loader = pykitti.odometry(base_path, drive)
 
     def get_quat_pose(self, index):
-        raise NoDataException("KittiOdomTrainUtil dataset does NOT provide gt poses")
+        # no depth available for kitti_odom_train dataset
+        return None
 
 
 class KittiOdomTestUtil(KittiOdomUtil):
