@@ -1,10 +1,5 @@
-import os.path as op
 import tensorflow as tf
 from tensorflow.keras import layers
-
-import settings
-from config import opts
-import utils.util_funcs as uf
 
 
 def convolution(x, filters, kernel_size, strides, name):

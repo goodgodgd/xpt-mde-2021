@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 import settings
-from config import opts
+from config import opts, get_raw_data_path
 import prepare_data.kitti_util as ku
 import utils.convert_pose as cp
 
@@ -107,7 +107,7 @@ class KittiDataLoader:
 def test():
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
     dataset = "kitti_odom"
-    loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, "train")
+    loader = KittiDataLoader(get_raw_data_path(dataset), dataset, "train")
 
     for drive in loader.drive_list:
         frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)

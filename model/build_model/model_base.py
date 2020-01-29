@@ -1,25 +1,41 @@
-# TODO: 여기에 파생 클래스를 다른 이름으로 import 해놓고
-#  다른데서는 model_base 만 import 하면 모든 파생 클래스 접근할 수 있게 해
-import os.path as op
 import tensorflow as tf
 from tensorflow.keras import layers
 
 import settings
-from config import opts
 import utils.util_funcs as uf
 import model.build_model.model_utils as mu
+
+
+class ModelBuilderBase:
+    def __init__(self, image_shape, batch_size, snippet_len):
+        self.image_shape = image_shape
+        self.batch_size = batch_size
+        self.snippet_len = snippet_len
+
+    def get_model(self):
+        raise NotImplementedError()
+
+    def build_depth_estim_layers(self, target_image):
+        raise NotImplementedError()
+
+    def build_visual_odom_layers(self, image_snippet):
+        raise NotImplementedError()
+
 
 DISP_SCALING_VGG = 10
 
 
-class ModelBuilderBase:
-    def __init__(self, need_resize):
-        self.need_resize = need_resize
+class BasicModel(ModelBuilderBase):
+    """
+    Basic VODE model used in sfmlearner and geonet
+    """
+    def __init__(self, image_shape, batch_size, snippet_len):
+        super().__init__(image_shape, batch_size, snippet_len)
 
-    def create_model(self):
+    def get_model(self):
+        input_img_shape = (self.image_shape[0]*self.snippet_len, self.image_shape[1], self.image_shape[2])
         # input tensor
-        image_shape = (opts.IM_HEIGHT * opts.SNIPPET_LEN, opts.IM_WIDTH, 3)
-        stacked_image = layers.Input(shape=image_shape, batch_size=opts.BATCH_SIZE, name="image")
+        stacked_image = layers.Input(shape=input_img_shape, batch_size=self.batch_size, name="image")
         source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
                                                    name="split_stacked_image")(stacked_image)
         # build a network that outputs depth and pose
@@ -32,7 +48,7 @@ class ModelBuilderBase:
         return model
 
     def build_depth_estim_layers(self, target_image):
-        batch, imheight, imwidth, imchannel = target_image.get_shape().as_list()
+        imheight, imwidth, imchannel = self.image_shape
 
         conv1 = mu.convolution(target_image, 32, 7, strides=1, name="dp_conv1a")
         conv1 = mu.convolution(conv1, 32, 7, strides=2, name="dp_conv1b")
@@ -66,8 +82,7 @@ class ModelBuilderBase:
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
         upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
         upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv1")
-        if self.need_resize:
-            upconv = mu.resize_like(upconv, skip_layer, scope)
+        upconv = mu.resize_like(upconv, skip_layer, scope)
         upconv = tf.cond(bef_pred is not None,
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer, bef_pred]),
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer])
@@ -81,11 +96,11 @@ class ModelBuilderBase:
         disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
         return disp, disp_up
 
-    def build_visual_odom_layers(self, stacked_image):
-        channel_stack_image = layers.Lambda(lambda image: mu.restack_on_channels(image, opts.SNIPPET_LEN),
-                                            name="channel_stack")(stacked_image)
+    def build_visual_odom_layers(self, image_snippet):
+        channel_stack_image = layers.Lambda(lambda image: mu.restack_on_channels(image, self.snippet_len),
+                                            name="channel_stack")(image_snippet)
         print("[build_visual_odom_layers] channel stacked image shape=", channel_stack_image.get_shape())
-        num_sources = opts.SNIPPET_LEN - 1
+        num_sources = self.snippet_len - 1
 
         conv1 = mu.convolution(channel_stack_image, 16, 7, 2, "vo_conv1")
         conv2 = mu.convolution(conv1, 32, 5, 2, "vo_conv2")
@@ -100,4 +115,23 @@ class ModelBuilderBase:
         poses = tf.keras.layers.GlobalAveragePooling2D("channels_last", name="vo_pred")(poses)
         poses = tf.keras.layers.Reshape((num_sources, 6), name="vo_reshape")(poses)
         return poses
+
+
+class NoResizingModel(BasicModel):
+    """
+    Modified BasicModel to remove resizing features in decoding layers
+    Width and height of input image must be integer multiple of 128
+    """
+    def __init__(self, image_shape, batch_size, snippet_len):
+        super().__init__(image_shape, batch_size, snippet_len)
+
+    def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
+        upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
+        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv1")
+        upconv = tf.cond(bef_pred is not None,
+                         lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer, bef_pred]),
+                         lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer])
+                         )
+        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
+        return upconv
 

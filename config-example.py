@@ -1,11 +1,13 @@
 import os.path as op
 
+# TODO: Edit
+
 
 class VodeOptions:
     def __init__(self):
-        self.DATASET = None
+        self.DATASET = "kitti_raw"
         self.SNIPPET_LEN = 5
-        self.IM_WIDTH = 416
+        self.IM_WIDTH = 384
         self.IM_HEIGHT = 128
         self.BATCH_SIZE = 8
         self.EPOCHS = 100
@@ -14,7 +16,7 @@ class VodeOptions:
         self.ENABLE_SHAPE_DECOR = False
         self.SMOOTH_WEIGHT = 0.5
 
-        self.DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data"
+        self.DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
         assert(op.isdir(self.DATAPATH))
         self.DATAPATH_SRC = op.join(self.DATAPATH, "srcdata")
         self.DATAPATH_TFR = op.join(self.DATAPATH, "tfrecords")
@@ -24,27 +26,23 @@ class VodeOptions:
         self.DATAPATH_EVL = op.join(self.DATAPATH, "evaluation")
 
 
-class KittiOptions(VodeOptions):
-    def __init__(self):
-        super().__init__()
-        self.DATASET = "kitti_raw"
-        self.KITTI_RAW_PATH = "/media/ian/IanPrivatePP/Datasets/kitti_raw_data"
-        self.KITTI_ODOM_PATH = "/media/ian/IanPrivatePP/Datasets/kitti_odometry"
-        if not op.isdir(self.KITTI_RAW_PATH):
-            print("===== WARNING: kitti raw data path does NOT exists")
-        if not op.isdir(self.KITTI_ODOM_PATH):
-            print("===== WARNING: kitti odom data path does NOT exists")
+opts = VodeOptions()
 
-    def get_dataset_path(self, dataset=None):
-        if dataset is None:
-            dataset = self.DATASET
-
-        if dataset == "kitti_raw":
-            return self.KITTI_RAW_PATH
-        elif dataset == "kitti_odom":
-            return self.KITTI_ODOM_PATH
-        else:
-            raise ValueError()
+RAW_DATA_PATHS = {
+    "kitti_raw": "/media/ian/IanPrivatePP/Datasets/kitti_raw_data",
+    "kitti_odom": "/media/ian/IanPrivatePP/Datasets/kitti_odometry",
+}
 
 
-opts = KittiOptions()
+class WrongDatasetException(Exception):
+    def __init__(self, msg):
+        super().__init__(msg)
+
+
+def get_raw_data_path(dataset_name):
+    if dataset_name in RAW_DATA_PATHS:
+        dataset_path = RAW_DATA_PATHS[dataset_name]
+        assert op.isdir(dataset_path)
+        return dataset_path
+    else:
+        raise WrongDatasetException(f"Unavailable dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}")

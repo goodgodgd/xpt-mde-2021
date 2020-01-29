@@ -5,15 +5,15 @@ import numpy as np
 import shutil
 
 import settings
-from config import opts
+from config import opts, get_raw_data_path
 from prepare_data.kitti_loader import KittiDataLoader
 from utils.util_funcs import print_progress_status
 
 
-def prepare_input_data():
+def prepare_kitti_data():
     for dataset in ["kitti_raw", "kitti_odom"]:
         for split in ["train", "test"]:
-            loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
+            loader = KittiDataLoader(get_raw_data_path(dataset), dataset, split)
             prepare_and_save_snippets(loader, dataset, split)
         create_validation_set(dataset)
 
@@ -93,7 +93,7 @@ def create_validation_set(dataset):
 
     if dataset == "kitti_raw":
         if os.path.exists(dstpath):
-            os.remove(dstpath)
+            os.unlink(dstpath)
         os.symlink(srcpath, dstpath)
     elif dataset == "kitti_odom":
         os.makedirs(dstpath, exist_ok=True)
@@ -106,11 +106,11 @@ def create_validation_set(dataset):
 def prepare_single_dataset():
     dataset = "kitti_odom"
     split = "train"
-    loader = KittiDataLoader(opts.get_dataset_path(dataset), dataset, split)
+    loader = KittiDataLoader(get_raw_data_path(dataset), dataset, split)
     prepare_and_save_snippets(loader, dataset, split)
 
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_input_data()
+    prepare_kitti_data()
     # prepare_single_dataset()

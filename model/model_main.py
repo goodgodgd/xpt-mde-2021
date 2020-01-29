@@ -9,93 +9,70 @@ import cv2
 
 import settings
 from config import opts
-from model.build_model.model_base import ModelBuilderBase
-from model.synthesize_batch import synthesize_batch_multi_scale
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 from utils.util_class import TrainException
 import model.loss_and_metric as lm
+from model.build_model.model_factory import model_factory
+from model.synthesize_batch import synthesize_batch_multi_scale
 
-
-# TODO: 클래스로 바꾸고 model_name, pose_valid 같은 멤버 변수 공통 사용
 
 def train_by_user_interaction():
-    options = {"train_dir_name": "kitti_raw_train",
-               "val_dir_name": "kitti_raw_test",
-               "model_name": "vode_model",
-               "learning_rate": 0.0002,
-               "final_epoch": opts.EPOCHS}
+    options = {"dataset_name": opts.DATASET,
+               "model_type": opts.MODEL_TYPE,
+               "ckpt_name": opts.CKPT_NAME,
+               "learning_rate": opts.LEARNING_RATE,
+               "final_epoch": opts.EPOCHS,
+               }
 
-    print("\n===== Select training options")
-
-    print(f"Default options:")
+    print(f"Check training options:")
     for key, value in options.items():
         print(f"\t{key} = {value}")
-    print("\nIf you are happy with default options, please press enter")
-    print("Otherwise, please press any other key")
+    print("\nIf you are happy with the options, please press enter")
+    print("Otherwise, press 'q', edit config.py and retry training")
     select = input()
+    if select == 'q':
+        return
 
-    if select == "":
-        print(f"You selected default options.")
-    else:
-        message = "Type 1 or 2 to specify dataset: 1) kitti_raw, 2) kitti_odom"
-        ds_id = uf.input_integer(message, 1, 2)
-        if ds_id == 1:
-            options["train_dir_name"] = "kitti_raw_train"
-            options["val_dir_name"] = "kitti_raw_test"
-        elif ds_id == 2:
-            options["train_dir_name"] = "kitti_odom_train"
-            options["val_dir_name"] = "kitti_odom_test"
-        else:
-            print("invalid option, dataset selection stay as default")
-
-        print("Type model_name: dir name under opts.DATAPATH_CKP to save or load model")
-        options["model_name"] = input()
-
-        message = "Type learning_rate: learning rate"
-        options["learning_rate"] = uf.input_float(message, 0, 10000)
-        message = "Type final_epoch: number of epochs to train model upto"
-        options["final_epoch"] = uf.input_integer(message, 0, 10000)
-
-    print("Training options:", options)
-    train(**options)
+    train()
 
 
-def train(train_dir_name, val_dir_name, model_name, learning_rate, final_epoch):
-    initial_epoch = uf.read_previous_epoch(model_name)
-    if final_epoch <= initial_epoch:
+def train():
+    initial_epoch = uf.read_previous_epoch(opts.CKPT_NAME)
+    if opts.EPOCHS <= initial_epoch:
         raise TrainException("!! final_epoch <= initial_epoch, no need to train")
 
-    set_configs(model_name)
-    model_builder = ModelBuilderBase(need_resize=False)
-    model = model_builder.create_model()
-    model = try_load_weights(model, model_name)
-    optimizer = tf.optimizers.Adam(learning_rate=learning_rate)
-    dataset_train = TfrecordGenerator(op.join(opts.DATAPATH_TFR, train_dir_name), shuffle=True).get_generator()
-    dataset_val = TfrecordGenerator(op.join(opts.DATAPATH_TFR, val_dir_name), shuffle=False).get_generator()
-    steps_per_epoch = uf.count_steps(train_dir_name)
+    set_configs(opts.CKPT_NAME)
+    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    model = model_factory(opts.MODEL_TYPE, image_shape, opts.BATCH_SIZE, opts.SNIPPET_LEN)
+    model = try_load_weights(model, opts.CKPT_NAME)
+    optimizer = tf.optimizers.Adam(learning_rate=opts.LEARNING_RATE)
 
-    print(f"\n\n========== START TRAINING ON {model_name} ==========")
-    for epoch in range(initial_epoch, final_epoch):
-        print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
-        result_train = train_an_epoch_graph(model, dataset_train, optimizer, steps_per_epoch)
+    # TODO WARNING! using "val" split for training dataset just for quick training
+    dataset_train, train_steps = get_dataset(opts.DATASET, "val")
+    dataset_val, val_steps = get_dataset(opts.DATASET, "val")
+
+    print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
+    for epoch in range(initial_epoch, opts.EPOCHS):
+        print(f"========== Start epoch: {epoch}/{opts.EPOCHS} ==========")
+        result_train = train_an_epoch_graph(model, dataset_train, optimizer, train_steps)
         print(f"\n[Train Epoch MEAN], loss={result_train[0]:1.4f}, "
               f"metric={result_train[1]:1.4f}, {result_train[2]:1.4f}")
 
-        result_val = validate_an_epoch_graph(model, dataset_val, steps_per_epoch)
+        result_val = validate_an_epoch_graph(model, dataset_val, val_steps)
         print(f"\n[Val Epoch MEAN],   loss={result_val[0]:1.4f}, "
               f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
 
-        save_model(model, model_name, result_val[1])
-        save_log(epoch, result_train, result_val, model_name)
+        save_model(model, opts.CKPT_NAME, result_val[1])
+        save_log(epoch, result_train, result_val, opts.CKPT_NAME)
         if epoch % 10 == 0:
-            save_reconstruction_samples(model, dataset_val, model_name, epoch)
+            save_reconstruction_samples(model, dataset_val, opts.CKPT_NAME, epoch)
 
 
-def set_configs(model_name):
+def set_configs(ckpt_name):
     np.set_printoptions(precision=3, suppress=True)
-    if not op.isdir(op.join(opts.DATAPATH_CKP, model_name)):
-        os.makedirs(op.join(opts.DATAPATH_CKP, model_name), exist_ok=True)
+    if not op.isdir(op.join(opts.DATAPATH_CKP, ckpt_name)):
+        os.makedirs(op.join(opts.DATAPATH_CKP, ckpt_name), exist_ok=True)
 
     # set gpu configs
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -111,15 +88,23 @@ def set_configs(model_name):
             print(e)
 
 
-def try_load_weights(model, model_name, weight_name='latest.h5'):
-    if model_name:
-        model_file_path = op.join(opts.DATAPATH_CKP, model_name, weight_name)
+def try_load_weights(model, ckpt_name, weight_name='latest.h5'):
+    if ckpt_name:
+        model_file_path = op.join(opts.DATAPATH_CKP, ckpt_name, weight_name)
         if op.isfile(model_file_path):
             print("===== load model weights", model_file_path)
             model.load_weights(model_file_path)
         else:
             print("===== train from scratch", model_file_path)
     return model
+
+
+def get_dataset(dataset_name, split, batch_size=opts.BATCH_SIZE):
+    tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
+    assert op.isdir(tfr_train_path)
+    dataset = TfrecordGenerator(tfr_train_path, shuffle=True, batch_size=batch_size).get_generator()
+    steps_per_epoch = uf.count_steps(tfr_train_path)
+    return dataset, steps_per_epoch
 
 
 # Eager training is slow ...
@@ -226,12 +211,12 @@ def get_metric_pose(preds, features):
         return 0, 0
 
 
-def save_log(epoch, results_train, results_val, model_name):
+def save_log(epoch, results_train, results_val, ckpt_name):
     """
     :param epoch: current epoch
     :param results_train: (loss, metric_trj, metric_rot) from train data
     :param results_val: (loss, metric_trj, metric_rot) from validation data
-    :param model_name: model directory name
+    :param ckpt_name: model directory name
     """
     results = np.concatenate([[epoch], results_train, results_val], axis=0)
     results = np.expand_dims(results, 0)
@@ -239,7 +224,7 @@ def save_log(epoch, results_train, results_val, model_name):
     results = pd.DataFrame(data=results, columns=columns)
     results['epoch'] = results['epoch'].astype(int)
 
-    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    filename = op.join(opts.DATAPATH_CKP, ckpt_name, 'history.txt')
     # if the file existed, append new data to it
     if op.isfile(filename):
         existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
@@ -261,72 +246,36 @@ def save_log(epoch, results_train, results_val, model_name):
         ax.legend()
     fig.tight_layout()
     # save graph as a file
-    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.png')
+    filename = op.join(opts.DATAPATH_CKP, ckpt_name, 'history.png')
     fig.savefig(filename, dpi=100)
 
 
-def save_model(model, model_name, val_loss):
+def save_model(model, ckpt_name, val_loss):
     """
     :param model: nn model object
-    :param model_name: model directory name
+    :param ckpt_name: model directory name
     :param val_loss: current validation loss
     """
     # save the latest model
-    save_model_weights(model, model_name, 'latest.h5')
+    save_model_weights(model, ckpt_name, 'latest.h5')
     # save the best model (function static variable)
     save_model.best = getattr(save_model, 'best', 10000)
     if val_loss < save_model.best:
-        save_model_weights(model, model_name, 'best.h5')
+        save_model_weights(model, ckpt_name, 'best.h5')
         save_model.best = val_loss
 
 
-def save_model_weights(model, model_name, weights_name):
-    model_dir_path = op.join(opts.DATAPATH_CKP, model_name)
+def save_model_weights(model, ckpt_name, weights_name):
+    model_dir_path = op.join(opts.DATAPATH_CKP, ckpt_name)
     if not op.isdir(model_dir_path):
         os.makedirs(model_dir_path, exist_ok=True)
-    model_file_path = op.join(opts.DATAPATH_CKP, model_name, weights_name)
+    model_file_path = op.join(opts.DATAPATH_CKP, ckpt_name, weights_name)
     model.save_weights(model_file_path)
 
 
-def predict_by_user_interaction():
-    options = {"test_dir_name": "kitti_raw_test",
-               "model_name": "vode_model",
-               "weights_name": "latest.h5"
-               }
-
-    print("\n===== Select prediction options")
-
-    print(f"Default options:")
-    for key, value in options.items():
-        print(f"\t{key} = {value}")
-    print("\nIf you are happy with default options, please press enter")
-    print("Otherwise, please press any other key")
-    select = input()
-
-    if select == "":
-        print(f"You selected default options.")
-    else:
-        message = "Type 1 or 2 to specify dataset: 1) kitti_raw, 2) kitti_odom"
-        ds_id = uf.input_integer(message, 1, 2)
-        if ds_id == 1:
-            options["test_dir_name"] = "kitti_raw_test"
-        elif ds_id == 2:
-            options["test_dir_name"] = "kitti_odom_test"
-        else:
-            raise ValueError("Wrong value for dataset")
-
-        print("Type model_name: dir name under opts.DATAPATH_CKP")
-        options["model_name"] = input()
-        print("Type weights_name: load weights from [model_name/weights_name]")
-        options["weights_name"] = input()
-
-    print("Prediction options:", options)
-    predict(**options)
-
-
-def save_reconstruction_samples(model, dataset, model_name, epoch):
+def save_reconstruction_samples(model, dataset, ckpt_name, epoch):
     views = make_reconstructed_views(model, dataset)
-    savepath = op.join(opts.DATAPATH_CKP, model_name, 'reconimg')
+    savepath = op.join(opts.DATAPATH_CKP, ckpt_name, 'reconimg')
     if not op.isdir(savepath):
         os.makedirs(savepath, exist_ok=True)
     for i, view in enumerate(views):
@@ -352,8 +301,9 @@ def make_reconstructed_views(model, dataset):
 
         # make stacked image of [true target, reconstructed target, source image, predicted depth] in 1/1 scale
         sclidx = 0
-        view1 = uf.make_view(true_target_ms[sclidx], synth_target_ms[sclidx], pred_depth_ms[sclidx],
-                             source_image, batidx=0, srcidx=0)
+        view1 = uf.make_view(true_target_ms[sclidx], synth_target_ms[sclidx],
+                             pred_depth_ms[sclidx], source_image,
+                             batidx=0, srcidx=0, verbose=False)
         recon_views.append(view1)
         if i >= 10:
             break
@@ -361,13 +311,41 @@ def make_reconstructed_views(model, dataset):
     return recon_views
 
 
-def predict(test_dir_name, model_name, weight_name):
-    set_configs(model_name)
-    model = create_model()
-    model = try_load_weights(model, model_name, weight_name)
+def predict_by_user_interaction():
+    options = {"dataset_name": opts.DATASET,
+               "model_type": opts.MODEL_TYPE,
+               "ckpt_name": opts.CKPT_NAME,
+               "weight_name": "latest.h5"
+               }
+
+    print(f"Check prediction options:")
+    for key, value in options.items():
+        print(f"\t{key} = {value}")
+    print("\nIf you are happy with the options, please press enter")
+    print("To change the first three options, press 'q', edit config.py and retry training")
+    print("To chnage 'weight_name' option, press any other key")
+    select = input()
+
+    if select == "":
+        print(f"You selected default options.")
+    elif select == "q":
+        return
+    else:
+        print("Type weights_name: best.h5 or latest.h5 for the best or latest model repectively")
+        options["weight_name"] = input()
+        print("Prediction options:", options)
+
+    predict(options["weight_name"])
+
+
+def predict(weight_name="latest.h5"):
+    set_configs(opts.CKPT_NAME)
+    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    model = model_factory(opts.MODEL_TYPE, image_shape, 1, opts.SNIPPET_LEN)
+    model = try_load_weights(model, opts.CKPT_NAME, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
+    dataset, steps = get_dataset(opts.DATASET, "test", 1)
     # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     predictions = model.predict(dataset)
     for pred in predictions:
@@ -375,11 +353,11 @@ def predict(test_dir_name, model_name, weight_name):
 
     pred_disp = predictions[0]
     pred_pose = predictions[4]
-    save_predictions(model_name, pred_disp, pred_pose)
+    save_predictions(opts.CKPT_NAME, pred_disp, pred_pose)
 
 
-def save_predictions(model_name, pred_disp, pred_pose):
-    pred_dir_path = op.join(opts.DATAPATH_PRD, model_name)
+def save_predictions(ckpt_name, pred_disp, pred_pose):
+    pred_dir_path = op.join(opts.DATAPATH_PRD, ckpt_name)
     os.makedirs(pred_dir_path, exist_ok=True)
     print(f"save depth in {pred_dir_path}, shape={pred_disp[0].shape}")
     np.save(op.join(pred_dir_path, "depth.npy"), pred_disp)
@@ -388,16 +366,6 @@ def save_predictions(model_name, pred_disp, pred_pose):
 
 
 # ==================== tests ====================
-
-def run_train_default():
-    train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
-          model_name="vode2", learning_rate=0.0002, final_epoch=40)
-
-
-def run_pred_default():
-    predict(test_dir_name="kitti_raw_test", model_name="vode1", weight_name="best.h5")
-
-
 def test_model_output():
     """
     check model output formats according to prediction methods
@@ -408,11 +376,12 @@ def test_model_output():
     3) preds = model.predict({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
     :return:
     """
-    model_name = "vode1"
+    ckpt_name = "vode1"
     test_dir_name = "kitti_raw_test"
-    set_configs(model_name)
-    model = create_model()
-    model = try_load_weights(model, model_name)
+    set_configs(ckpt_name)
+    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    model = model_factory(opts.MODEL_TYPE, image_shape, opts.BATCH_SIZE, opts.SNIPPET_LEN)
+    model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
 
@@ -451,26 +420,25 @@ def test_train_disparity():
     DEPRECATED: this function can be executed only when getting model_builder.py back to the below commit
     commit: 68612cb3600cfc934d8f26396b51aba0622ba357
     """
-    model_name = "vode1"
+    ckpt_name = "vode1"
     check_epochs = [1] + [5]*5
     dst_epoch = 0
     for i, epochs in enumerate(check_epochs):
         dst_epoch += epochs
         # train a few epochs
-        train(train_dir_name="kitti_raw_test", val_dir_name="kitti_raw_test",
-              model_name=model_name, learning_rate=0.0002, final_epoch=dst_epoch)
-
-        check_disparity(model_name, "kitti_raw_test")
+        train()
+        check_disparity(ckpt_name, "kitti_raw_test")
 
 
-def check_disparity(model_name, test_dir_name):
+def check_disparity(ckpt_name, test_dir_name):
     """
     DEPRECATED: this function can be executed only when getting model_builder.py back to the below commit
     commit: 68612cb3600cfc934d8f26396b51aba0622ba357
     """
-    set_configs(model_name)
-    model = create_model()
-    model = try_load_weights(model, model_name)
+    set_configs(ckpt_name)
+    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    model = model_factory(opts.MODEL_TYPE, image_shape, opts.BATCH_SIZE, opts.SNIPPET_LEN)
+    model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
 
@@ -497,7 +465,6 @@ def check_disparity(model_name, test_dir_name):
 
 
 if __name__ == "__main__":
-    # test_count_steps()
-    run_train_default()
-    run_pred_default()
+    train()
+    # predict()
     # test_model_output()
