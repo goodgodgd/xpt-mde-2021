@@ -5,10 +5,10 @@ from tensorflow.keras import layers
 import settings
 import utils.convert_pose as cp
 from config import opts
-from utils.decorators import ShapeCheck
+from utils.decorators import shape_check
 
 
-@ShapeCheck
+@shape_check
 def synthesize_batch_multi_scale(src_img_stacked, intrinsic, pred_depth_ms, pred_pose):
     """
     :param src_img_stacked: [batch, height*num_src, width, 3]
@@ -48,7 +48,7 @@ def scale_intrinsic(intrinsic, scale):
     return scaled_intrinsic
 
 
-@ShapeCheck
+@shape_check
 def reshape_source_images(src_img_stacked, scale):
     """
     :param src_img_stacked: [batch, height*num_src, width, 3]
@@ -65,7 +65,7 @@ def reshape_source_images(src_img_stacked, scale):
     return source_images
 
 
-@ShapeCheck
+@shape_check
 def synthesize_batch_view(src_image, tgt_depth, pose, intrinsic, suffix):
     """
     src_image, tgt_depth and intrinsic are scaled
@@ -135,7 +135,7 @@ def pixel2cam(pixel_coords, depth, intrinsic):
     return cam_coords
 
 
-@ShapeCheck
+@shape_check
 def transform_to_source(tgt_coords, t2s_pose):
     """
     :param tgt_coords: target frame coordinates like (x,y,z,1) [batch, 4, height*width]
@@ -171,7 +171,7 @@ def cam2pixel(cam_coords, intrinsic):
     return pixel_coords
 
 
-@ShapeCheck
+@shape_check
 def reconstruct_bilinear_interp(pixel_coords, image, depth):
     """
     :param pixel_coords: floating-point pixel coordinates (u,v,1) [batch, num_src, 3, height*width]
@@ -221,7 +221,7 @@ def neighbor_int_pixels(pixel_coords, height, width):
     return pixel_floorceil
 
 
-@ShapeCheck
+@shape_check
 def make_valid_mask(pixel_floorceil):
     """
     :param pixel_floorceil: (u_floor, u_ceil, v_floor, v_ceil) (int) [batch, num_src, 4, height*width]
@@ -238,7 +238,7 @@ def make_valid_mask(pixel_floorceil):
     return mask
 
 
-@ShapeCheck
+@shape_check
 def calc_neighbor_weights(inputs):
     pixel_coords, pixel_floorceil, valid_mask = inputs
     """
@@ -263,7 +263,7 @@ def calc_neighbor_weights(inputs):
     return weights
 
 
-@ShapeCheck
+@shape_check
 def sample_neighbor_images(inputs):
     source_image, pixel_floorceil = inputs
     """
@@ -312,7 +312,7 @@ def merge_images(inputs):
     return merged_flat_image
 
 
-@ShapeCheck
+@shape_check
 def erase_invalid_pixels(inputs):
     flat_image, depth = inputs
     """

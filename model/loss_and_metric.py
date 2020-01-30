@@ -7,7 +7,7 @@ from config import opts
 import utils.convert_pose as cp
 import utils.util_funcs as uf
 import evaluate.eval_funcs as ef
-from utils.decorators import ShapeCheck
+from utils.decorators import shape_check
 
 
 def compute_loss_vode(predictions, features):
@@ -67,7 +67,7 @@ def photometric_loss_multi_scale(synthesized_target_ms, original_target_ms):
     return photo_loss
 
 
-@ShapeCheck
+@shape_check
 def photometric_loss(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]

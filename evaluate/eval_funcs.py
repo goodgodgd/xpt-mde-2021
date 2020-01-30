@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 import settings
 import utils.convert_pose as cp
-from utils.decorators import ShapeCheck
+from utils.decorators import shape_check
 
 
 def compute_depth_metrics(gt, pred):
@@ -101,7 +101,7 @@ def calc_rotational_error(pose_pred_mat, pose_true_mat):
     return angle
 
 
-@ShapeCheck
+@shape_check
 def calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat):
     """
     :param pose_pred_mat: predicted snippet pose matrices, [batch, num_src, 4, 4]
@@ -117,7 +117,7 @@ def calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat):
     return traj_error
 
 
-@ShapeCheck
+@shape_check
 def calc_rotational_error_tensor(pose_pred_mat, pose_true_mat):
     """
     :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [batch, num_src, 4, 4]

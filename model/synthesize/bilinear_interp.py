@@ -1,5 +1,5 @@
 import tensorflow as tf
-from utils.decorators import ShapeCheck
+from utils.decorators import shape_check
 
 
 class BilinearInterpolation:
@@ -9,7 +9,7 @@ class BilinearInterpolation:
         self.width = 0
         self.num_src = 0
 
-    @ShapeCheck
+    @shape_check
     def __call__(self, pixel_coords, image, depth):
         """
         :param pixel_coords: floating-point pixel coordinates (u,v,1) [batch, num_src, 3, height*width]
@@ -57,7 +57,7 @@ class BilinearInterpolation:
         pixel_floorceil = tf.concat([u_floor, u_ceil, v_floor, v_ceil], axis=2)
         return pixel_floorceil
 
-    @ShapeCheck
+    @shape_check
     def make_valid_mask(self, pixel_floorceil):
         """
         :param pixel_floorceil: (u_floor, u_ceil, v_floor, v_ceil) (int) [batch, num_src, 4, height*width]
@@ -72,7 +72,7 @@ class BilinearInterpolation:
         mask = tf.cast(mask, tf.float32)
         return mask
 
-    @ShapeCheck
+    @shape_check
     def calc_neighbor_weights(self, inputs):
         pixel_coords, pixel_floorceil, valid_mask = inputs
         """
@@ -96,7 +96,7 @@ class BilinearInterpolation:
         weights = weights * valid_mask
         return weights
 
-    @ShapeCheck
+    @shape_check
     def sample_neighbor_images(self, inputs):
         source_image, pixel_floorceil = inputs
         """
@@ -143,7 +143,7 @@ class BilinearInterpolation:
         merged_flat_image = tf.reduce_sum(weighted_image, axis=2)
         return merged_flat_image
 
-    @ShapeCheck
+    @shape_check
     def erase_invalid_pixels(self, inputs):
         flat_image, depth = inputs
         """

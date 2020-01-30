@@ -1,12 +1,12 @@
 from tensorflow.keras import layers
 
 from utils.util_class import WrongInputException
-from utils.decorators import ShapeCheck
+from utils.decorators import shape_check
 from utils.convert_pose import pose_rvec2matr_batch
 from model.synthesize.synthesize_base import SynthesizeBatchBasic
 
 
-@ShapeCheck
+@shape_check
 def synthesize_batch_multi_scale(src_img_stacked, intrinsic, pred_depth_ms, pred_pose, synth_type):
     """
     :param src_img_stacked: [batch, height*num_src, width, 3]

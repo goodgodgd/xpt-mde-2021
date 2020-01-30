@@ -470,5 +470,5 @@ def check_disparity(ckpt_name, test_dir_name):
 
 if __name__ == "__main__":
     train()
-    # predict()
-    # test_model_output()
+    predict()
+    test_model_output()

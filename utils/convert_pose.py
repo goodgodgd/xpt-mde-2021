@@ -1,7 +1,7 @@
 import numpy as np
 import quaternion
 import tensorflow as tf
-from utils.decorators import ShapeCheck
+from utils.decorators import shape_check
 
 
 def pose_quat2matr(pose):

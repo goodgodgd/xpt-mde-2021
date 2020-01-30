@@ -2,7 +2,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
 
-from utils.decorators import ShapeCheck
+from utils.decorators import shape_check
 from model.synthesize.bilinear_interp import BilinearInterpolation
 
 
@@ -27,13 +27,14 @@ class SynthesizeBatchBasic:
         intrinsic_sc = layers.Lambda(lambda intrin: self.scale_intrinsic(intrin, self.scale),
                                      name=f"scale_intrin_sc{self.scale}")(intrinsic)
         # reorganize source images: [batch, 4, height, width, 3]
-        source_images_sc = layers.Lambda(lambda image: self.reshape_source_images(image, self.scale),
+        source_images_sc = layers.Lambda(lambda image: self.reshape_source_images(image),
                                          name=f"reorder_source_sc{self.scale}")(src_img_stacked)
         # reconstruct target view from source images
         recon_image_sc = self.synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
                                                     intrinsic_sc, suffix=f"sc{self.scale}")
         return recon_image_sc
 
+    @shape_check
     def read_shape(self, src_img_stacked, depth_sc):
         batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape().as_list()
         self.batch, self.height, self.width, _ = depth_sc.get_shape().as_list()
@@ -47,21 +48,19 @@ class SynthesizeBatchBasic:
         scaled_intrinsic = tf.concat([scaled_part, const_part], axis=1)
         return scaled_intrinsic
 
-    @ShapeCheck
-    def reshape_source_images(self, src_img_stacked, scale):
+    @shape_check
+    def reshape_source_images(self, src_img_stacked):
         """
         :param src_img_stacked: [batch, height*num_src, width, 3]
-        :param scale: scale to reduce image size
         :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
         """
         # resize image
-        scheight, scwidth = (int(self.height / self.num_src / scale), int(self.width / scale))
-        scaled_image = tf.image.resize(src_img_stacked, size=(scheight * self.num_src, scwidth), method="bilinear")
+        scaled_image = tf.image.resize(src_img_stacked, size=(self.height * self.num_src, self.width), method="bilinear")
         # reorganize scaled images: (4*height/scale,) -> (4, height/scale)
-        source_images = tf.reshape(scaled_image, shape=(self.batch, self.num_src, scheight, scwidth, 3))
+        source_images = tf.reshape(scaled_image, shape=(self.batch, self.num_src, self.height, self.width, 3))
         return source_images
 
-    @ShapeCheck
+    @shape_check
     def synthesize_batch_view(self, src_image, tgt_depth, pose, intrinsic, suffix):
         """
         src_image, tgt_depth and intrinsic are scaled
@@ -123,7 +122,7 @@ class SynthesizeBatchBasic:
         cam_coords = tf.concat([cam_coords, tf.ones((self.batch, 1, num_pts), tf.float32)], axis=1)
         return cam_coords
 
-    @ShapeCheck
+    @shape_check
     def transform_to_source(self, tgt_coords, t2s_pose):
         """
         :param tgt_coords: target frame coordinates like (x,y,z,1) [batch, 4, height*width]
