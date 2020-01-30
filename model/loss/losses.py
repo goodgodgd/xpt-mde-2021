@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow.keras import layers
 from model.synthesize.synthesize_factory import synthesizer_factory
 
-import settings
 import utils.util_funcs as uf
 from utils.decorators import shape_check
 
