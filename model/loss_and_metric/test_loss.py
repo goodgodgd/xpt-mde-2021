@@ -1,172 +1,16 @@
-import tensorflow as tf
-from tensorflow.keras import layers
-from model.synthesize_batch import synthesize_batch_multi_scale
-
-import settings
-from config import opts
-import utils.convert_pose as cp
-import utils.util_funcs as uf
-import evaluate.eval_funcs as ef
-from utils.decorators import ShapeCheck
-
-
-def compute_loss_vode(predictions, features):
-    """
-    :param predictions: {"disp_ms": .., "pose": ..}
-        disp_ms: multi scale disparity, list of [batch, height/scale, width/scale, 1]
-        pose: 6-DoF poses [batch, num_src, 6]
-    :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
-        image: stacked image [batch, height*snippet_len, width, 3]
-        intrinsic: camera projection matrix [batch, 3, 3]
-    """
-    stacked_image = features['image']
-    intrinsic = features['intrinsic']
-    source_image, target_image = uf.split_into_source_and_target(stacked_image)
-
-    pred_disp_ms = predictions['disp_ms']
-    pred_pose = predictions['pose']
-    pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
-
-    target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
-
-    synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
-    photo_loss = photometric_loss_multi_scale(synth_target_ms, target_ms)
-    height_orig = target_image.get_shape().as_list()[2]
-    smooth_loss = smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
-    loss = layers.Lambda(lambda losses: tf.add(losses[0], opts.SMOOTH_WEIGHT * losses[1]),
-                         name="train_loss")([photo_loss, smooth_loss])
-    return loss
-
-
-def compute_metric_pose(pose_pred, pose_true_mat):
-    """
-    :param pose_pred: 6-DoF poses [batch, num_src, 6]
-    :param pose_true_mat: 4x4 transformation matrix [batch, num_src, 4, 4]
-    """
-    pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
-    trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat)
-    rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
-    return tf.reduce_mean(trj_err), tf.reduce_mean(rot_err)
-
-
-def photometric_loss_multi_scale(synthesized_target_ms, original_target_ms):
-    """
-    :param synthesized_target_ms: multi scale synthesized targets, list of
-                                  [batch, num_src, height/scale, width/scale, 3]
-    :param original_target_ms: multi scale target images, list of [batch, height, width, 3]
-    :return: photo_loss [batch]
-    """
-    losses = []
-    for i, (synt_target, orig_target) in enumerate(zip(synthesized_target_ms, original_target_ms)):
-        loss = layers.Lambda(lambda inputs: photometric_loss(inputs[0], inputs[1]),
-                             name=f"photo_loss_{i}")([synt_target, orig_target])
-        losses.append(loss)
-    # sum over sources x scales, after stack over scales: [batch, num_src, num_scales]
-    photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
-                               name="photo_loss_sum")(losses)
-    return photo_loss
-
-
-@ShapeCheck
-def photometric_loss(synt_target, orig_target):
-    """
-    :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
-    :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :return: photo_loss [batch, num_src]
-    """
-    orig_target = tf.expand_dims(orig_target, axis=1)
-    # create mask to ignore black region
-    synt_target_gray = tf.reduce_mean(synt_target, axis=-1, keepdims=True)
-    error_mask = tf.equal(synt_target_gray, 0)
-
-    # orig_target [batch, 1, height/scale, width/scale, 3]
-    # axis=1 broadcasted in subtraction
-    # photo_error: [batch, num_src, height/scale, width/scale, 3]
-    photo_error = tf.abs(synt_target - orig_target)
-    photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
-    photo_loss = tf.reduce_mean(photo_error, axis=[2, 3, 4])
-    return photo_loss
-
-
-def smootheness_loss_multi_scale(disp_ms, image_ms, height_orig):
-    """
-    :param disp_ms: multi scale disparity map, list of [batch, height/scale, width/scale, 1]
-    :param image_ms: multi scale image, list of [batch, height/scale, width/scale, 3]
-    :return: photometric loss [batch]
-    """
-    losses = []
-    for i, (disp, image) in enumerate(zip(disp_ms, image_ms)):
-        scale = height_orig // image.get_shape().as_list()[1]
-        loss = layers.Lambda(lambda inputs: smootheness_loss(inputs[0], inputs[1]) / scale,
-                             name=f"smooth_loss_{i}")([disp, image])
-        losses.append(loss)
-    photo_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=1), axis=1),
-                               name="smooth_loss_sum")(losses)
-    return photo_loss
-
-
-def smootheness_loss(disp, image):
-    """
-    :param disp: scaled disparity map, list of [batch, height/scale, width/scale, 1]
-    :param image: scaled original target image [batch, height/scale, width/scale, 3]
-    :return: smootheness loss [batch]
-    """
-    def gradient_x(img):
-        gx = img[:, :, :-1, :] - img[:, :, 1:, :]
-        return gx
-
-    def gradient_y(img):
-        gy = img[:, :-1, :, :] - img[:, 1:, :, :]
-        return gy
-
-    disp_gradients_x = gradient_x(disp)
-    disp_gradients_y = gradient_y(disp)
-
-    image_gradients_x = gradient_x(image)
-    image_gradients_y = gradient_y(image)
-
-    weights_x = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_x), 3, keepdims=True))
-    weights_y = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_y), 3, keepdims=True))
-
-    # [batch, height/scale, width/scale, 1]
-    smoothness_x = disp_gradients_x * weights_x
-    smoothness_y = disp_gradients_y * weights_y
-
-    # return [batch]
-    smoothness = 0.5 * tf.reduce_mean(tf.abs(smoothness_x), axis=[1, 2, 3]) + \
-                 0.5 * tf.reduce_mean(tf.abs(smoothness_y), axis=[1, 2, 3])
-    return smoothness
-
-
-def depth_error_metric(depth_pred, depth_true):
-    """
-    :param depth_pred: predicted depth [batch, height, width, 1]
-    :param depth_true: ground truth depth [batch, height, width, 1]
-    :return: depth error metric (scalar)
-    """
-    # flatten depths
-    batch, height, width, _ = depth_pred.get_shape().as_list()
-    depth_pred_vec = tf.reshape(depth_pred, (batch, height*width))
-    depth_true_vec = tf.reshape(depth_true, (batch, height*width))
-
-    # filter out zero depths
-    depth_invalid_mask = tf.math.equal(depth_true_vec, 0)
-    depth_pred_vec = tf.where(depth_invalid_mask, tf.constant(0, dtype=tf.float32), depth_pred_vec)
-    depth_true_vec = tf.where(depth_invalid_mask, tf.constant(0, dtype=tf.float32), depth_true_vec)
-
-    # normalize depths, [height*width, batch] / [batch] = [height*width, batch]
-    depth_pred_vec = tf.transpose(depth_pred_vec) / tf.reduce_mean(depth_pred_vec, axis=1)
-    depth_true_vec = tf.transpose(depth_true_vec) / tf.reduce_mean(depth_true_vec, axis=1)
-    # [height*width, batch] -> [batch]
-    depth_error = tf.reduce_mean(tf.abs(depth_pred_vec - depth_true_vec), axis=0)
-    return depth_error
-
-
-# ==================== tests ====================
 import os.path as op
 import numpy as np
 import cv2
+import tensorflow as tf
+from tensorflow.keras import layers
+
+import settings
+from config import opts
+import utils.util_funcs as uf
+import utils.convert_pose as cp
 from tfrecords.tfrecord_reader import TfrecordGenerator
+from model.synthesize.synthesize_factory import synthesizer_factory
+from model.loss_and_metric.losses import photometric_loss_l1, smootheness_loss
 
 WAIT_KEY = 200
 
@@ -192,7 +36,7 @@ def test_photometric_loss_quality():
         target_ms = uf.multi_scale_like(target_image, depth_gt_ms)
         batch, height, width, _ = target_image.get_shape().as_list()
 
-        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms, pose_gt)
+        synth_target_ms = synthesizer_factory()(source_image, intrinsic, depth_gt_ms, pose_gt)
 
         srcimgs = uf.to_uint8_image(source_image).numpy()[0]
         srcimg0 = srcimgs[0:height]
@@ -201,7 +45,7 @@ def test_photometric_loss_quality():
         losses = []
         for scale, synt_target, orig_target in zip([1, 2, 4, 8], synth_target_ms, target_ms):
             # EXECUTE
-            loss = photometric_loss(synt_target, orig_target)
+            loss = photometric_loss_l1(synt_target, orig_target)
             losses.append(loss)
 
             recon_target = uf.to_uint8_image(synt_target).numpy()
@@ -276,13 +120,13 @@ def test_photometric_loss_quantity():
 
 
 def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
-    synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms, pose_gt)
+    synth_target_ms = synthesizer_factory(opts.SYNTHESIZER)(source_image, intrinsic, depth_gt_ms, pose_gt)
 
     losses = []
     recon_image = 0
     for scale, synt_target, orig_target in zip([1, 2, 4, 8], synth_target_ms, target_ms):
         # EXECUTE
-        loss = photometric_loss(synt_target, orig_target)
+        loss = photometric_loss_l1(synt_target, orig_target)
         losses.append(loss)
         if scale == 1:
             recon_target = uf.to_uint8_image(synt_target).numpy()

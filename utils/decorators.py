@@ -2,56 +2,51 @@ import tensorflow as tf
 from config import opts
 
 
-class ShapeCheckReal:
-    def __init__(self, f):
-        self.func = f
-        self.name = f.__name__
-
-    def __call__(self, *args, **kwargs):
-        print("@ShapeCheck", self.name)
+def shape_check_real(func):
+    def decorator(*args, **kwargs):
+        print("@shape_check", func.__name__)
         for i, arg in enumerate(args):
-            self.print_tensor_shape(arg, i, 'input')
+            print_tensor_shape(arg, i, 'input')
 
-        out = self.func(*args, **kwargs)
+        out = func(*args, **kwargs)
 
-        self.print_tensor_shape(out, 0, f"{self.name} output")
+        print_tensor_shape(out, 0, f"{func.__name__} output")
         return out
-
-    def print_tensor_shape(self, tensor, index, name):
-        if isinstance(tensor, tf.Tensor):
-            print(f"  {name} {index}:", tensor.get_shape().as_list())
-        elif isinstance(tensor, list):
-            for k, val in enumerate(tensor):
-                if isinstance(val, tf.Tensor):
-                    print(f"  {name} {index}-{k} in list:", val.get_shape().as_list())
-                else:
-                    print(f"  {name} {index}-{k} is no tensor")
-                    break
-        elif isinstance(tensor, dict):
-            for key, val in tensor.items():
-                if isinstance(val, tf.Tensor):
-                    print(f"  {name} {index}-{key} in dict:", val.get_shape().as_list())
-                else:
-                    print(f"  {name} {index}-{key} is no tensor")
-                    break
-        else:
-            print(f"  {name} {index} is no tensor")
+    return decorator
 
 
-class ShapeCheckDummy:
-    def __init__(self, f):
-        self.func = f
-        self.name = f.__name__
+def print_tensor_shape(tensor, index, name):
+    if isinstance(tensor, tf.Tensor):
+        print(f"  {name} {index}:", tensor.get_shape().as_list())
+    elif isinstance(tensor, list):
+        for k, val in enumerate(tensor):
+            if isinstance(val, tf.Tensor):
+                print(f"  {name} {index}-{k} in list:", val.get_shape().as_list())
+            else:
+                print(f"  {name} {index}-{k} is no tensor")
+                break
+    elif isinstance(tensor, dict):
+        for key, val in tensor.items():
+            if isinstance(val, tf.Tensor):
+                print(f"  {name} {index}-{key} in dict:", val.get_shape().as_list())
+            else:
+                print(f"  {name} {index}-{key} is no tensor")
+                break
+    else:
+        print(f"  {name} {index} is no tensor")
 
-    def __call__(self, *args, **kwargs):
-        return self.func(*args, **kwargs)
+
+def shape_check_dummy(func):
+    def decorator(*args, **kwargs):
+        return func(*args, **kwargs)
+    return decorator
 
 
 """
-In case you like to check in-out tensor shapes, inherit "ShapeCheckReal"
-otherwise, you can turn it off by inherinting "ShapeCheckDummy"
+In case you like to check in-out tensor shapes, inherit "shape_checkReal"
+otherwise, you can turn it off by inherinting "shape_checkDummy"
 """
 if opts.ENABLE_SHAPE_DECOR:
-    ShapeCheck = ShapeCheckReal
+    shape_check = shape_check_real
 else:
-    ShapeCheck = ShapeCheckDummy
+    shape_check = shape_check_dummy
