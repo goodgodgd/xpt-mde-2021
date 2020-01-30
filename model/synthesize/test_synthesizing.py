@@ -1,8 +1,13 @@
 import os.path as op
+import numpy as np
+import tensorflow as tf
 from tensorflow.keras import layers
 import cv2
 
-from model.synthesize_batch import *
+from config import opts
+from model.synthesize.synthesize_base import SynthesizeBatchBasic
+from model.synthesize.synthesize_factory import synthesize_batch_multi_scale
+from model.synthesize.bilinear_interp import BilinearInterpolation
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.convert_pose as cp
 import utils.util_funcs as uf
@@ -29,7 +34,8 @@ def test_synthesize_batch_multi_scale():
         pred_pose = cp.pose_matr2rvec_batch(pose_gt)
 
         # EXECUTE
-        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms, pred_pose)
+        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, depth_gt_ms,
+                                                       pred_pose, "synthesize_basic")
 
         # compare target image and reconstructed images
         # recon_img0[0, 0]: reconstructed from the first image
@@ -73,16 +79,18 @@ def test_synthesize_batch_view():
         width_ori = source_image.get_shape().as_list()[2]
         batch, height_sc, width_sc, _ = depth_scaled.get_shape().as_list()
         scale = int(width_ori // width_sc)
+        # create synthesizer
+        synthesizer = SynthesizeBatchBasic(shape=(batch, height_sc, width_sc), num_src=4, scale=scale)
         # adjust intrinsic upto scale
-        intrinsic_sc = layers.Lambda(lambda intrin: scale_intrinsic(intrin, scale),
+        intrinsic_sc = layers.Lambda(lambda intrin: synthesizer.scale_intrinsic(intrin, scale),
                                      name=f"scale_intrin_sc{scale}")(intrinsic)
         # reorganize source images: [batch, 4, height, width, 3]
-        srcimg_scaled = layers.Lambda(lambda image: reshape_source_images(image, scale),
+        srcimg_scaled = layers.Lambda(lambda image: synthesizer.reshape_source_images(image),
                                       name=f"reorder_source_sc{scale}")(source_image)
 
         # EXECUTE
-        recon_image_sc = synthesize_batch_view(srcimg_scaled, depth_scaled, pose_gt,
-                                               intrinsic_sc, suffix=f"sc{scale}")
+        recon_image_sc = synthesizer.synthesize_batch_view(
+            srcimg_scaled, depth_scaled, pose_gt, intrinsic_sc, suffix=f"sc{scale}")
 
         print("reconstructed image shape:", recon_image_sc.get_shape())
         # convert single target image in batch
@@ -110,9 +118,12 @@ def test_reshape_source_images():
     stacked_image = features['image']
     source_image, target_image = uf.split_into_source_and_target(stacked_image)
     print("batch source image shape", source_image.shape)
+    # create synthesizer
+    batch, height, width, _ = target_image.get_shape().as_list()
+    synthesizer = SynthesizeBatchBasic((batch, int(height/2), int(width/2)), 4, 2)
 
     # EXECUTE
-    reshaped_image = reshape_source_images(source_image, 2)
+    reshaped_image = synthesizer.reshape_source_images(source_image)
 
     print("reorganized source image shape", reshaped_image.get_shape().as_list())
     reshaped_image = uf.to_uint8_image(reshaped_image).numpy()
@@ -133,12 +144,13 @@ def test_reshape_source_images():
 
 def test_scale_intrinsic():
     print("===== start test_scale_intrinsic")
+    batch = 8
     intrinsic = np.array([8, 0, 4, 0, 8, 4, 0, 0, 1], dtype=np.float32).reshape((1, 3, 3))
-    intrinsic = tf.constant(np.tile(intrinsic, (8, 1, 1)))
+    intrinsic = tf.constant(np.tile(intrinsic, (batch, 1, 1)))
     scale = 2
 
     # EXECUTE
-    intrinsic_sc = scale_intrinsic(intrinsic, scale)
+    intrinsic_sc = SynthesizeBatchBasic(shape=(batch, 1, 1)).scale_intrinsic(intrinsic, scale)
 
     print("original intrinsic:", intrinsic[0])
     print("scaled intrinsic:", intrinsic_sc[0])
@@ -149,15 +161,18 @@ def test_scale_intrinsic():
 
 def test_pixel2cam():
     print("===== start test_pixel2cam")
-    batch, height, width = (8, 4, 4)
-    tgt_pixel_coords = pixel_meshgrid(height, width)
+    shape = (8, 4, 4)
+    batch, height, width = shape
+    # create synthesizer
+    synthesizer = SynthesizeBatchBasic(shape, 4, 1)
+    tgt_pixel_coords = synthesizer.pixel_meshgrid(height, width)
     tgt_pixel_coords = tf.cast(tgt_pixel_coords, dtype=tf.float32)
     intrinsic = np.array([4, 0, height/2, 0, 4, width/2, 0, 0, 1], dtype=np.float32).reshape((1, 3, 3))
     intrinsic = tf.constant(np.tile(intrinsic, (batch, 1, 1)), dtype=tf.float32)
     depth = tf.ones((batch, height, width), dtype=tf.float32) * 2
 
     # EXECUTE
-    tgt_cam_coords = pixel2cam(tgt_pixel_coords, depth, intrinsic)
+    tgt_cam_coords = synthesizer.pixel2cam(tgt_pixel_coords, depth, intrinsic)
 
     print(tgt_cam_coords[0])
     assert (tgt_cam_coords.get_shape() == (batch, 4, height*width))
@@ -182,7 +197,7 @@ def test_transform_to_source():
     poses = tf.constant(poses, dtype=tf.float32)
 
     # EXECUTE
-    src_coords = transform_to_source(coords, poses)
+    src_coords = SynthesizeBatchBasic().transform_to_source(coords, poses)
 
     print(f"src coordinates: {src_coords.get_shape()}\n{src_coords[2, 1]}")
     assert np.isclose(coords[2, :3]*2 + 1, src_coords[2, 1, :3]).all()
@@ -209,7 +224,7 @@ def test_pixel_weighting():
     print("----- start test neighbor_int_pixels")
 
     # EXECUTE -> pixel_floorceil[batch, num_src, :, i] = [u_ceil, u_floor, v_ceil, v_floor]
-    pixel_floorceil = neighbor_int_pixels(pixel_coords, height, width)
+    pixel_floorceil = BilinearInterpolation().neighbor_int_pixels(pixel_coords, height, width)
 
     print(f"pixel coords floorceil \n{pixel_floorceil[1, 1, :, :6]}")
     print(np.floor(pixel_coords[1, 1, :2, :6] + 1))
@@ -219,10 +234,10 @@ def test_pixel_weighting():
     print("----- start test calc_neighbor_weights")
 
     # EXECUTE
-    valid_mask = make_valid_mask(pixel_floorceil)
+    valid_mask = BilinearInterpolation().make_valid_mask(pixel_floorceil)
 
     # EXECUTE -> weights[batch, num_src, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
-    weights = calc_neighbor_weights([pixel_coords, pixel_floorceil, valid_mask])
+    weights = BilinearInterpolation().calc_neighbor_weights([pixel_coords, pixel_floorceil, valid_mask])
 
     print(f"pixel weights \n{weights[1, 1, :, :6]}")
     assert np.isclose(weights[:, :, 0, 3], (1 - chk_u) * (1 - chk_v)).all()  # ufvf
@@ -251,9 +266,9 @@ def test_reconstruct_bilinear_interp():
     pixel_coords = tf.constant(pixel_coords)
 
     # EXECUTE
-    pixel_floorceil = neighbor_int_pixels(pixel_coords, height, width)
+    pixel_floorceil = BilinearInterpolation().neighbor_int_pixels(pixel_coords, height, width)
     # EXECUTE
-    mask = make_valid_mask(pixel_floorceil)
+    mask = BilinearInterpolation().make_valid_mask(pixel_floorceil)
 
     print("valid mask\n", mask[0, 0, 0].numpy().reshape((height, width)))
     expected_mask = np.zeros((batch, num_src, height, width), dtype=np.float)
@@ -272,7 +287,7 @@ def test_reconstruct_bilinear_interp():
     depth = tf.constant(depth)
 
     # EXECUTE
-    recon_image = reconstruct_bilinear_interp(pixel_coords, image, depth)
+    recon_image = BilinearInterpolation()(pixel_coords, image, depth)
 
     expected_image = (image + u_add) * expected_mask.reshape((batch, num_src, height, width, 1))
     print("input image", image[0, 0, :, :, 0])

@@ -3,12 +3,6 @@ from utils.decorators import shape_check
 
 
 class BilinearInterpolation:
-    def __init__(self):
-        self.batch = 0
-        self.height = 0
-        self.width = 0
-        self.num_src = 0
-
     @shape_check
     def __call__(self, pixel_coords, image, depth):
         """
@@ -17,10 +11,10 @@ class BilinearInterpolation:
         :param depth: target depth image [batch, height, width, 1]
         :return: reconstructed image [batch, num_src, height, width, 3]
         """
-        self.batch, self.num_src, self.height, self.width, _ = image.get_shape().as_list()
+        batch, num_src, height, width, _ = image.get_shape().as_list()
 
         # pixel_floorceil[batch, num_src, :, height*width] = (u_ceil, u_floor, v_ceil, v_floor)
-        pixel_floorceil = self.neighbor_int_pixels(pixel_coords, self.height, self.width)
+        pixel_floorceil = self.neighbor_int_pixels(pixel_coords, height, width)
 
         # valid_mask: [batch, num_src, 1, height*width]
         valid_mask = self.make_valid_mask(pixel_floorceil)
@@ -35,8 +29,8 @@ class BilinearInterpolation:
         # recon_image[batch, num_src, height*width, 3]
         flat_image = self.merge_images([sampled_images, weights])
 
-        flat_image = self.erase_invalid_pixels([flat_image, depth])
-        recon_image = tf.reshape(flat_image, shape=(self.batch, self.num_src, self.height, self.width, 3))
+        flat_image = self.erase_invalid_pixels([flat_image, depth, batch])
+        recon_image = tf.reshape(flat_image, shape=(batch, num_src, height, width, 3))
         return recon_image
 
     def neighbor_int_pixels(self, pixel_coords, height, width):
@@ -145,14 +139,14 @@ class BilinearInterpolation:
 
     @shape_check
     def erase_invalid_pixels(self, inputs):
-        flat_image, depth = inputs
+        flat_image, depth, batch = inputs
         """
         flat_image: [batch, num_src, height*width, 3]
         depth: target view depth [batch, height, width, 1]
         return: [batch, num_src, height*width, 3]
         """
         # depth_vec [batch, height*width, 1]
-        depth_vec = tf.reshape(depth, shape=(self.batch, -1, 1))
+        depth_vec = tf.reshape(depth, shape=(batch, -1, 1))
         depth_vec = tf.expand_dims(depth_vec, 1)
         # depth_vec [batch, 1, height*width, 1]
         depth_invalid_mask = tf.math.equal(depth_vec, 0)

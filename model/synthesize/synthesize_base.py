@@ -7,12 +7,11 @@ from model.synthesize.bilinear_interp import BilinearInterpolation
 
 
 class SynthesizeBatchBasic:
-    def __init__(self):
-        self.batch = 0
-        self.height = 0
-        self.width = 0
-        self.num_src = 0
-        self.scale = 0
+    def __init__(self, shape=(0, 0, 0), num_src=0, scale=0):
+        # shape is scaled from the original shape, height = original_height / scale
+        self.batch, self.height, self.width = shape
+        self.num_src = num_src
+        self.scale = scale
 
     def __call__(self, src_img_stacked, intrinsic, depth_sc, poses_matr):
         """
@@ -26,7 +25,7 @@ class SynthesizeBatchBasic:
         # adjust intrinsic upto scale
         intrinsic_sc = layers.Lambda(lambda intrin: self.scale_intrinsic(intrin, self.scale),
                                      name=f"scale_intrin_sc{self.scale}")(intrinsic)
-        # reorganize source images: [batch, 4, height, width, 3]
+        # reorganize and resize source images: [batch, 4, height/scale, width/scale, 3]
         source_images_sc = layers.Lambda(lambda image: self.reshape_source_images(image),
                                          name=f"reorder_source_sc{self.scale}")(src_img_stacked)
         # reconstruct target view from source images

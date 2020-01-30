@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-from model.synthesize_batch import synthesize_batch_multi_scale
+from model.synthesize.synthesize_factory import synthesize_batch_multi_scale
 
 import settings
 from config import opts
@@ -29,7 +29,8 @@ def compute_loss_vode(predictions, features):
 
     target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
 
-    synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
+    synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms,
+                                                   pred_pose, opts.SYNTHESIZER)
     photo_loss = photometric_loss_multi_scale(synth_target_ms, target_ms)
     height_orig = target_image.get_shape().as_list()[2]
     smooth_loss = smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)
