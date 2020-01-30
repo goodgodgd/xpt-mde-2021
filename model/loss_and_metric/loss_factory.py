@@ -1,5 +1,5 @@
 from config import opts
-from model.loss.losses import TotalLoss, PhotometricLossL1MultiScale, SmoothenessLossMultiScale
+from model.loss_and_metric.losses import TotalLoss, PhotometricLossL1MultiScale, SmoothenessLossMultiScale
 from utils.util_class import WrongInputException
 
 

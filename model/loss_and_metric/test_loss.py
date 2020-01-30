@@ -10,7 +10,7 @@ import utils.util_funcs as uf
 import utils.convert_pose as cp
 from tfrecords.tfrecord_reader import TfrecordGenerator
 from model.synthesize.synthesize_factory import synthesizer_factory
-from model.loss.losses import photometric_loss_l1, smootheness_loss
+from model.loss_and_metric.losses import photometric_loss_l1, smootheness_loss
 
 WAIT_KEY = 200
 

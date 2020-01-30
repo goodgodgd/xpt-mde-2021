@@ -12,8 +12,8 @@ from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 from utils.util_class import TrainException
-from model.loss.loss_factory import loss_factory
-from model.metric import compute_metric_pose
+from model.loss_and_metric.loss_factory import loss_factory
+from model.loss_and_metric.metric import compute_metric_pose
 from model.build_model.model_factory import model_factory
 from model.synthesize.synthesize_factory import synthesizer_factory
 from model.optimizers import optimizer_factory
