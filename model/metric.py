@@ -29,8 +29,7 @@ def compute_loss_vode(predictions, features):
 
     target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
 
-    synthesizer = synthesizer_factory(opts.SYNTHESIZER)
-    synth_target_ms = synthesizer(source_image, intrinsic, pred_depth_ms, pred_pose)
+    synth_target_ms = synthesizer_factory()(source_image, intrinsic, pred_depth_ms, pred_pose)
     photo_loss = photometric_loss_multi_scale(synth_target_ms, target_ms)
     height_orig = target_image.get_shape().as_list()[2]
     smooth_loss = smootheness_loss_multi_scale(pred_disp_ms, target_ms, height_orig)

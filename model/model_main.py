@@ -12,7 +12,8 @@ from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 from utils.util_class import TrainException
-import model.loss_and_metric as lm
+from model.loss.loss_factory import loss_factory
+from model.metric import compute_metric_pose
 from model.build_model.model_factory import model_factory
 from model.synthesize.synthesize_factory import synthesizer_factory
 from model.optimizers import optimizer_factory
@@ -44,8 +45,7 @@ def train():
         raise TrainException("!! final_epoch <= initial_epoch, no need to train")
 
     set_configs(opts.CKPT_NAME)
-    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, opts.BATCH_SIZE, image_shape, opts.SNIPPET_LEN)
+    model = model_factory()
     model = try_load_weights(model, opts.CKPT_NAME)
 
     # TODO WARNING! using "val" split for training dataset is just to check training process
@@ -112,12 +112,13 @@ def get_dataset(dataset_name, split, batch_size=opts.BATCH_SIZE):
 # Eager training is slow ...
 def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
     results = []
+    compute_loss = loss_factory()
     # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     for step, features in enumerate(dataset):
         start = time.time()
         with tf.GradientTape() as tape:
             preds = model(features['image'])
-            loss = lm.compute_loss_vode(preds, features)
+            loss = compute_loss(preds, features)
 
         grads = tape.gradient(loss, model.trainable_weights)
         optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -135,10 +136,11 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
 # Graph training is faster than eager training TWO TIMES!!
 def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
     results = []
+    compute_loss = loss_factory()
     # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     for step, features in enumerate(dataset):
         start = time.time()
-        preds, loss = train_a_batch(model, features, optimizer)
+        preds, loss = train_a_batch(model, features, optimizer, compute_loss)
 
         trjerr, roterr = get_metric_pose(preds, features)
         results.append((loss.numpy(), trjerr, roterr))
@@ -151,11 +153,11 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
 
 
 @tf.function
-def train_a_batch(model, features, optimizer):
+def train_a_batch(model, features, optimizer, compute_loss):
     with tf.GradientTape() as tape:
         # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
         preds = model(features['image'])
-        loss = lm.compute_loss_vode(preds, features)
+        loss = compute_loss(preds, features)
 
     grads = tape.gradient(loss, model.trainable_weights)
     optimizer.apply_gradients(zip(grads, model.trainable_weights))
@@ -165,11 +167,12 @@ def train_a_batch(model, features, optimizer):
 
 def validate_an_epoch_eager(model, dataset, steps_per_epoch):
     results = []
+    compute_loss = loss_factory()
     # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
     for step, features in enumerate(dataset):
         start = time.time()
         preds = model(features['image'])
-        loss = lm.compute_loss_vode(preds, features)
+        loss = compute_loss(preds, features)
 
         loss_num = loss.numpy().mean()
         trjerr, roterr = get_metric_pose(preds, features)
@@ -183,9 +186,10 @@ def validate_an_epoch_eager(model, dataset, steps_per_epoch):
 
 def validate_an_epoch_graph(model, dataset, steps_per_epoch):
     results = []
+    compute_loss = loss_factory()
     for step, features in enumerate(dataset):
         start = time.time()
-        preds, loss = validate_a_batch(model, features)
+        preds, loss = validate_a_batch(model, features, compute_loss)
 
         trjerr, roterr = get_metric_pose(preds, features)
         results.append((loss.numpy(), trjerr, roterr))
@@ -198,16 +202,16 @@ def validate_an_epoch_graph(model, dataset, steps_per_epoch):
 
 
 @tf.function
-def validate_a_batch(model, features):
+def validate_a_batch(model, features, compute_loss):
     preds = model(features['image'])
-    loss = lm.compute_loss_vode(preds, features)
+    loss = compute_loss(preds, features)
     loss_mean = tf.reduce_mean(loss)
     return preds, loss_mean
 
 
 def get_metric_pose(preds, features):
     if "pose_gt" in features:
-        trjerr, roterr = lm.compute_metric_pose(preds['pose'], features['pose_gt'])
+        trjerr, roterr = compute_metric_pose(preds['pose'], features['pose_gt'])
         return trjerr.numpy(), roterr.numpy()
     else:
         return 0, 0
@@ -344,8 +348,7 @@ def predict_by_user_interaction():
 def predict(weight_name="latest.h5"):
     set_configs(opts.CKPT_NAME)
     batch_size = 1
-    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, batch_size, image_shape, opts.SNIPPET_LEN)
+    model = model_factory()
     model = try_load_weights(model, opts.CKPT_NAME, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
@@ -383,8 +386,7 @@ def test_model_output():
     ckpt_name = "vode1"
     test_dir_name = "kitti_raw_test"
     set_configs(ckpt_name)
-    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, opts.BATCH_SIZE, image_shape, opts.SNIPPET_LEN)
+    model = model_factory()
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
@@ -440,8 +442,7 @@ def check_disparity(ckpt_name, test_dir_name):
     commit: 68612cb3600cfc934d8f26396b51aba0622ba357
     """
     set_configs(ckpt_name)
-    image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, opts.BATCH_SIZE, image_shape, opts.SNIPPET_LEN)
+    model = model_factory()
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
