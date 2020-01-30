@@ -17,7 +17,7 @@ class VodeOptions:
         self.SMOOTH_WEIGHT = 0.5
         self.DATASET = "kitti_raw"
         self.MODEL_TYPE = "no_resizing_model"
-        self.SYNTHESIZER = "synthesize_basic"
+        self.SYNTHESIZER = "synthesize_multi_scale"
         self.OPTIMIZER = "adam_constant"
         self.CKPT_NAME = "vode1"
 

@@ -4,6 +4,7 @@ from tensorflow.keras import layers
 
 from utils.decorators import shape_check
 from model.synthesize.bilinear_interp import BilinearInterpolation
+from utils.convert_pose import pose_rvec2matr_batch
 
 
 class SynthesizeBatchBasic:
@@ -154,3 +155,24 @@ class SynthesizeBatchBasic:
         pixel_scales = pixel_coords[:, :, 2:3, :]
         pixel_coords = pixel_coords / (pixel_scales + 1e-10)
         return pixel_coords
+
+
+class SynthesizeMultiScale:
+    @shape_check
+    def __call__(self, src_img_stacked, intrinsic, pred_depth_ms, pred_pose):
+        """
+        :param src_img_stacked: [batch, height*num_src, width, 3]
+        :param intrinsic: [batch, 3, 3]
+        :param pred_depth_ms: predicted depth in multi scale, list of [batch, height/scale, width/scale, 1]}
+        :param pred_pose: predicted source pose in twist form [batch, num_src, 6]
+        :return: reconstructed target view in multi scale, list of [batch, num_src, height/scale, width/scale, 3]}
+        """
+        # convert pose vector to transformation matrix
+        poses_matr = layers.Lambda(lambda pose: pose_rvec2matr_batch(pose),
+                                   name="pose2matrix")(pred_pose)
+        synth_images = []
+        for depth_sc in pred_depth_ms:
+            synth_image_sc = SynthesizeBatchBasic()(src_img_stacked, intrinsic, depth_sc, poses_matr)
+            synth_images.append(synth_image_sc)
+
+        return synth_images

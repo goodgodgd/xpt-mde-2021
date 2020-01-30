@@ -14,7 +14,7 @@ import utils.util_funcs as uf
 from utils.util_class import TrainException
 import model.loss_and_metric as lm
 from model.build_model.model_factory import model_factory
-from model.synthesize.synthesize_factory import synthesize_batch_multi_scale
+from model.synthesize.synthesize_factory import synthesizer_factory
 from model.optimizers import optimizer_factory
 
 
@@ -299,8 +299,8 @@ def make_reconstructed_views(model, dataset):
         intrinsic = features['intrinsic']
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         true_target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
-        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms,
-                                                       pred_pose, opts.SYNTHESIZER)
+        synth_target_ms = synthesizer_factory(opts.SYNTHESIZER)(source_image, intrinsic,
+                                                                pred_depth_ms, pred_pose)
 
         # make stacked image of [true target, reconstructed target, source image, predicted depth] in 1/1 scale
         sclidx = 0
