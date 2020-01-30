@@ -1,20 +1,25 @@
 import os.path as op
 
-# TODO: Edit
+# TODO: edit VodeOptions to select model options
 
 
 class VodeOptions:
     def __init__(self):
-        self.DATASET = "kitti_raw"
         self.SNIPPET_LEN = 5
         self.IM_WIDTH = 384
         self.IM_HEIGHT = 128
         self.BATCH_SIZE = 8
         self.EPOCHS = 100
+        self.LEARNING_RATE = 0.0002
         self.MIN_DEPTH = 1e-3
         self.MAX_DEPTH = 80
         self.ENABLE_SHAPE_DECOR = False
         self.SMOOTH_WEIGHT = 0.5
+        self.DATASET = "kitti_raw"
+        self.MODEL_TYPE = "no_resizing_model"
+        self.SYNTHESIZER = "synthesize_basic"
+        self.OPTIMIZER = "adam_constant"
+        self.CKPT_NAME = "vode1"
 
         self.DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
         assert(op.isdir(self.DATAPATH))
@@ -28,6 +33,7 @@ class VodeOptions:
 
 opts = VodeOptions()
 
+# TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
 RAW_DATA_PATHS = {
     "kitti_raw": "/media/ian/IanPrivatePP/Datasets/kitti_raw_data",
     "kitti_odom": "/media/ian/IanPrivatePP/Datasets/kitti_odometry",

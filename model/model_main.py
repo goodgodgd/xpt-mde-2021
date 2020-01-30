@@ -14,7 +14,8 @@ import utils.util_funcs as uf
 from utils.util_class import TrainException
 import model.loss_and_metric as lm
 from model.build_model.model_factory import model_factory
-from model.synthesize_batch import synthesize_batch_multi_scale
+from model.synthesize.synthesize_factory import synthesize_batch_multi_scale
+from model.optimizers import optimizer_factory
 
 
 def train_by_user_interaction():
@@ -44,17 +45,18 @@ def train():
 
     set_configs(opts.CKPT_NAME)
     image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, image_shape, opts.BATCH_SIZE, opts.SNIPPET_LEN)
+    model = model_factory(opts.MODEL_TYPE, opts.BATCH_SIZE, image_shape, opts.SNIPPET_LEN)
     model = try_load_weights(model, opts.CKPT_NAME)
-    optimizer = tf.optimizers.Adam(learning_rate=opts.LEARNING_RATE)
 
-    # TODO WARNING! using "val" split for training dataset just for quick training
+    # TODO WARNING! using "val" split for training dataset is just to check training process
     dataset_train, train_steps = get_dataset(opts.DATASET, "val")
     dataset_val, val_steps = get_dataset(opts.DATASET, "val")
+    optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, opts.EPOCHS):
         print(f"========== Start epoch: {epoch}/{opts.EPOCHS} ==========")
+
         result_train = train_an_epoch_graph(model, dataset_train, optimizer, train_steps)
         print(f"\n[Train Epoch MEAN], loss={result_train[0]:1.4f}, "
               f"metric={result_train[1]:1.4f}, {result_train[2]:1.4f}")
@@ -297,7 +299,8 @@ def make_reconstructed_views(model, dataset):
         intrinsic = features['intrinsic']
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         true_target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
-        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms, pred_pose)
+        synth_target_ms = synthesize_batch_multi_scale(source_image, intrinsic, pred_depth_ms,
+                                                       pred_pose, opts.SYNTHESIZER)
 
         # make stacked image of [true target, reconstructed target, source image, predicted depth] in 1/1 scale
         sclidx = 0
@@ -340,12 +343,13 @@ def predict_by_user_interaction():
 
 def predict(weight_name="latest.h5"):
     set_configs(opts.CKPT_NAME)
+    batch_size = 1
     image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, image_shape, 1, opts.SNIPPET_LEN)
+    model = model_factory(opts.MODEL_TYPE, batch_size, image_shape, opts.SNIPPET_LEN)
     model = try_load_weights(model, opts.CKPT_NAME, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
-    dataset, steps = get_dataset(opts.DATASET, "test", 1)
+    dataset, steps = get_dataset(opts.DATASET, "test", batch_size)
     # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     predictions = model.predict(dataset)
     for pred in predictions:
@@ -380,7 +384,7 @@ def test_model_output():
     test_dir_name = "kitti_raw_test"
     set_configs(ckpt_name)
     image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, image_shape, opts.BATCH_SIZE, opts.SNIPPET_LEN)
+    model = model_factory(opts.MODEL_TYPE, opts.BATCH_SIZE, image_shape, opts.SNIPPET_LEN)
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
@@ -437,7 +441,7 @@ def check_disparity(ckpt_name, test_dir_name):
     """
     set_configs(ckpt_name)
     image_shape = (opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = model_factory(opts.MODEL_TYPE, image_shape, opts.BATCH_SIZE, opts.SNIPPET_LEN)
+    model = model_factory(opts.MODEL_TYPE, opts.BATCH_SIZE, image_shape, opts.SNIPPET_LEN)
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()

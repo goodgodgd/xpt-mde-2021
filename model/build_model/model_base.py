@@ -7,9 +7,11 @@ import model.build_model.model_utils as mu
 
 
 class ModelBuilderBase:
-    def __init__(self, image_shape, batch_size, snippet_len):
-        self.image_shape = image_shape
-        self.batch_size = batch_size
+    def __init__(self, batch_size, image_shape, snippet_len):
+        self.batch = batch_size
+        self.height = image_shape[0]
+        self.width = image_shape[1]
+        self.channel = image_shape[2]
         self.snippet_len = snippet_len
 
     def get_model(self):
@@ -29,13 +31,13 @@ class BasicModel(ModelBuilderBase):
     """
     Basic VODE model used in sfmlearner and geonet
     """
-    def __init__(self, image_shape, batch_size, snippet_len):
-        super().__init__(image_shape, batch_size, snippet_len)
+    def __init__(self, batch_size, image_shape, snippet_len):
+        super().__init__(batch_size, image_shape, snippet_len)
 
     def get_model(self):
-        input_img_shape = (self.image_shape[0]*self.snippet_len, self.image_shape[1], self.image_shape[2])
+        input_img_shape = (self.height*self.snippet_len, self.width, self.channel)
         # input tensor
-        stacked_image = layers.Input(shape=input_img_shape, batch_size=self.batch_size, name="image")
+        stacked_image = layers.Input(shape=input_img_shape, batch_size=self.batch, name="image")
         source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
                                                    name="split_stacked_image")(stacked_image)
         # build a network that outputs depth and pose
@@ -48,7 +50,7 @@ class BasicModel(ModelBuilderBase):
         return model
 
     def build_depth_estim_layers(self, target_image):
-        imheight, imwidth, imchannel = self.image_shape
+        imheight, imwidth = self.height, self.width
 
         conv1 = mu.convolution(target_image, 32, 7, strides=1, name="dp_conv1a")
         conv1 = mu.convolution(conv1, 32, 7, strides=2, name="dp_conv1b")
@@ -122,8 +124,8 @@ class NoResizingModel(BasicModel):
     Modified BasicModel to remove resizing features in decoding layers
     Width and height of input image must be integer multiple of 128
     """
-    def __init__(self, image_shape, batch_size, snippet_len):
-        super().__init__(image_shape, batch_size, snippet_len)
+    def __init__(self, batch_size, image_shape, snippet_len):
+        super().__init__(batch_size, image_shape, snippet_len)
 
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
         upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
