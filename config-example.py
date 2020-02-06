@@ -1,37 +1,50 @@
 import os.path as op
 
-# TODO: edit VodeOptions to select model options
-
 
 class VodeOptions:
-    def __init__(self):
-        self.SNIPPET_LEN = 5
-        self.IM_WIDTH = 384
-        self.IM_HEIGHT = 128
-        self.BATCH_SIZE = 8
-        self.EPOCHS = 100
-        self.LEARNING_RATE = 0.0002
-        self.MIN_DEPTH = 1e-3
-        self.MAX_DEPTH = 80
-        self.ENABLE_SHAPE_DECOR = False
-        self.SMOOTH_WEIGHT = 0.5
-        self.DATASET = "kitti_raw"
-        self.MODEL_TYPE = "no_resizing_model"
-        self.SYNTHESIZER = "synthesize_multi_scale"
-        self.OPTIMIZER = "adam_constant"
-        self.CKPT_NAME = "vode1"
+    """
+    data options
+    """
+    SNIPPET_LEN = 5
+    IM_WIDTH = 384
+    IM_HEIGHT = 128
+    MIN_DEPTH = 1e-3
+    MAX_DEPTH = 80
 
-        self.DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
-        assert(op.isdir(self.DATAPATH))
-        self.DATAPATH_SRC = op.join(self.DATAPATH, "srcdata")
-        self.DATAPATH_TFR = op.join(self.DATAPATH, "tfrecords")
-        self.DATAPATH_CKP = op.join(self.DATAPATH, "checkpts")
-        self.DATAPATH_LOG = op.join(self.DATAPATH, "log")
-        self.DATAPATH_PRD = op.join(self.DATAPATH, "prediction")
-        self.DATAPATH_EVL = op.join(self.DATAPATH, "evaluation")
+    """
+    training options
+    """
+    BATCH_SIZE = 8
+    EPOCHS = 100
+    LEARNING_RATE = 0.0002
+    ENABLE_SHAPE_DECOR = False
+    CKPT_NAME = "vode1"
+
+    """
+    path options
+    """
+    DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
+    assert(op.isdir(DATAPATH))
+    DATAPATH_SRC = op.join(DATAPATH, "srcdata")
+    DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
+    DATAPATH_CKP = op.join(DATAPATH, "checkpts")
+    DATAPATH_LOG = op.join(DATAPATH, "log")
+    DATAPATH_PRD = op.join(DATAPATH, "prediction")
+    DATAPATH_EVL = op.join(DATAPATH, "evaluation")
+
+    """
+    model options: network architecture, loss wegihts, ...
+    """
+    PHOTO_LOSS = "L1"
+    SMOOTH_WEIGHT = 0.5
+    DATASET = "kitti_raw"
+    MODEL_TYPE = "no_resizing_model"
+    SYNTHESIZER = "synthesize_multi_scale"
+    OPTIMIZER = "adam_constant"
 
 
 opts = VodeOptions()
+
 
 # TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
 RAW_DATA_PATHS = {
