@@ -1,3 +1,7 @@
+"""
+Keras pretrained models are listed in
+https://keras.io/applications/
+"""
 import tensorflow as tf
 import tensorflow.keras.applications as tfapp
 import json
