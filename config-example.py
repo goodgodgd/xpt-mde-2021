@@ -38,9 +38,10 @@ class VodeOptions:
     PHOTO_LOSS = "L1"
     SMOOTH_WEIGHT = 0.5
     DATASET = "kitti_raw"
-    MODEL_TYPE = "no_resizing_model"
+    NET_NAMES = {"depth": "NASNetMobile", "camera": "pose_only"}
     SYNTHESIZER = "synthesize_multi_scale"
     OPTIMIZER = "adam_constant"
+    PRETRAINED_WEIGHT = True
 
 
 opts = VodeOptions()

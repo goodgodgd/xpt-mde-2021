@@ -14,14 +14,14 @@ import utils.util_funcs as uf
 from utils.util_class import TrainException
 from model.loss_and_metric.loss_factory import loss_factory
 from model.loss_and_metric.metric import compute_metric_pose
-from model.build_model.model_factory import model_factory
+from model.build_model.model_factory import ModelFactory
 from model.synthesize.synthesize_factory import synthesizer_factory
 from model.optimizers import optimizer_factory
 
 
 def train_by_user_interaction():
     options = {"dataset_name": opts.DATASET,
-               "model_type": opts.MODEL_TYPE,
+               "model_name": opts.NET_NAMES,
                "ckpt_name": opts.CKPT_NAME,
                "learning_rate": opts.LEARNING_RATE,
                "final_epoch": opts.EPOCHS,
@@ -45,7 +45,8 @@ def train():
         raise TrainException("!! final_epoch <= initial_epoch, no need to train")
 
     set_configs(opts.CKPT_NAME)
-    model = model_factory()
+    pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
+    model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model, opts.CKPT_NAME)
 
     # TODO WARNING! using "val" split for training dataset is just to check training process
@@ -320,7 +321,7 @@ def make_reconstructed_views(model, dataset):
 
 def predict_by_user_interaction():
     options = {"dataset_name": opts.DATASET,
-               "model_type": opts.MODEL_TYPE,
+               "model_name": opts.NET_NAMES,
                "ckpt_name": opts.CKPT_NAME,
                "weight_name": "latest.h5"
                }
@@ -348,7 +349,7 @@ def predict_by_user_interaction():
 def predict(weight_name="latest.h5"):
     set_configs(opts.CKPT_NAME)
     batch_size = 1
-    model = model_factory()
+    model = ModelFactory().get_model()
     model = try_load_weights(model, opts.CKPT_NAME, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
@@ -386,7 +387,7 @@ def test_model_output():
     ckpt_name = "vode1"
     test_dir_name = "kitti_raw_test"
     set_configs(ckpt_name)
-    model = model_factory()
+    model = ModelFactory().get_model()
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
@@ -442,7 +443,7 @@ def check_disparity(ckpt_name, test_dir_name):
     commit: 68612cb3600cfc934d8f26396b51aba0622ba357
     """
     set_configs(ckpt_name)
-    model = model_factory()
+    model = ModelFactory().get_model()
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
@@ -471,5 +472,5 @@ def check_disparity(ckpt_name, test_dir_name):
 
 if __name__ == "__main__":
     train()
-    predict()
-    test_model_output()
+    # predict()
+    # test_model_output()

@@ -1,3 +1,4 @@
+import os.path as op
 import tensorflow as tf
 from tensorflow.keras import layers
 import tensorflow.keras.applications as tfapp
@@ -24,7 +25,8 @@ class PretrainedModel:
         batch, snippet, height, width, channel = total_shape
         input_shape = (height, width, channel)
         weights = "imagenet" if pretrained_weight else None
-        output_layers = self.read_output_layers(settings.sub_package_path + '/scaled_layers.json')
+        jsonfile = op.join(opts.PROJECT_ROOT, "model", "build_model", "scaled_layers.json")
+        output_layers = self.read_output_layers(jsonfile)
         out_layer_names = output_layers[net_name]
 
         if net_name == "MobileNetV2":
@@ -124,7 +126,6 @@ class DecoderForPretrained(DepthNetNoResize):
         disp0, disp_n1_up = self.get_disp_vgg(upconv0, height, width, "dp_disp0")           # 1
 
         return [disp0, disp1, disp2, disp3]
-
 
 
 # ==================================================
