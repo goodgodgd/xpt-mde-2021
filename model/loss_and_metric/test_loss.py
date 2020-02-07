@@ -9,7 +9,7 @@ from config import opts
 import utils.util_funcs as uf
 import utils.convert_pose as cp
 from tfrecords.tfrecord_reader import TfrecordGenerator
-from model.synthesize.synthesize_factory import synthesizer_factory
+from model.synthesize.synthesize_base import SynthesizeMultiScale
 from model.loss_and_metric.losses import photometric_loss_l1, smootheness_loss
 
 WAIT_KEY = 200
@@ -36,7 +36,7 @@ def test_photometric_loss_quality():
         target_ms = uf.multi_scale_like(target_image, depth_gt_ms)
         batch, height, width, _ = target_image.get_shape().as_list()
 
-        synth_target_ms = synthesizer_factory()(source_image, intrinsic, depth_gt_ms, pose_gt)
+        synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, depth_gt_ms, pose_gt)
 
         srcimgs = uf.to_uint8_image(source_image).numpy()[0]
         srcimg0 = srcimgs[0:height]
@@ -120,7 +120,7 @@ def test_photometric_loss_quantity():
 
 
 def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
-    synth_target_ms = synthesizer_factory(opts.SYNTHESIZER)(source_image, intrinsic, depth_gt_ms, pose_gt)
+    synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, depth_gt_ms, pose_gt)
 
     losses = []
     recon_image = 0

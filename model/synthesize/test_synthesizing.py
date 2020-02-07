@@ -5,8 +5,7 @@ from tensorflow.keras import layers
 import cv2
 
 from config import opts
-from model.synthesize.synthesize_base import SynthesizeBatchBasic
-from model.synthesize.synthesize_factory import synthesizer_factory
+from model.synthesize.synthesize_base import SynthesizeBatchBasic, SynthesizeMultiScale
 from model.synthesize.bilinear_interp import BilinearInterpolation
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.convert_pose as cp
@@ -34,8 +33,7 @@ def test_synthesize_batch_multi_scale():
         pred_pose = cp.pose_matr2rvec_batch(pose_gt)
 
         # EXECUTE
-        synth_target_ms = synthesizer_factory(opts.SYNTHESIZER)\
-                            (source_image, intrinsic, depth_gt_ms, pred_pose)
+        synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, depth_gt_ms, pred_pose)
 
         # compare target image and reconstructed images
         # recon_img0[0, 0]: reconstructed from the first image

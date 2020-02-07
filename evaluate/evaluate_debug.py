@@ -11,7 +11,7 @@ from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 import utils.convert_pose as cp
 import evaluate.eval_funcs as ef
-from model.synthesize.synthesize_factory import synthesizer_factory
+from model.synthesize.synthesize_base import SynthesizeMultiScale
 from model.loss_and_metric import photometric_loss, smootheness_loss
 from model.model_main import set_configs, create_model, try_load_weights
 
@@ -114,7 +114,7 @@ def evaluate_batch(index, x, model):
 
 def compute_photo_loss(target_true, source_image, intrinsic, depth_pred_ms, pose_pred):
     # synthesize target image
-    synth_target_ms = synthesizer_factory(opts.SYNTHESIZER)(source_image, intrinsic, depth_pred_ms, pose_pred)
+    synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, depth_pred_ms, pose_pred)
     losses = []
     target_pred = synth_target_ms[0]
     # photometric loss: [batch, num_src]
@@ -240,7 +240,7 @@ def save_worst_views(frame, x, model, sample_inds, save_path, scale=1):
 
     depth_pred_ms = [depth*scale for depth in depth_pred_ms]
 
-    synthesizer = synthesizer_factory(opts.SYNTHESIZER)
+    synthesizer = SynthesizeMultiScale()
     synth_target_pred_ms = synthesizer(source_image, intrinsic, depth_pred_ms, pose_pred)
     synth_target_gt_ms = synthesizer(source_image, intrinsic, depth_gt_ms, pose_gt)
 

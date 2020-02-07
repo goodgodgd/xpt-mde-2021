@@ -31,15 +31,16 @@ class VodeOptions:
     DATAPATH_LOG = op.join(DATAPATH, "log")
     DATAPATH_PRD = op.join(DATAPATH, "prediction")
     DATAPATH_EVL = op.join(DATAPATH, "evaluation")
+    PROJECT_ROOT = op.dirname(__file__)
 
     """
     model options: network architecture, loss wegihts, ...
     """
-    PHOTO_LOSS = "L1"
-    SMOOTH_WEIGHT = 0.5
+    SSIM_RATIO = 0.8
+    LOSS_WEIGHTS = {"L1": 1 - SSIM_RATIO, "SSIM": SSIM_RATIO, "smootheness": 0.5}
     DATASET = "kitti_raw"
-    NET_NAMES = {"depth": "NASNetMobile", "camera": "pose_only"}
-    SYNTHESIZER = "synthesize_multi_scale"
+    NET_NAMES = {"depth": "NASNetMobile", "camera": "PoseNet"}
+    SYNTHESIZER = "SynthesizeMultiScale"
     OPTIMIZER = "adam_constant"
     PRETRAINED_WEIGHT = True
 
