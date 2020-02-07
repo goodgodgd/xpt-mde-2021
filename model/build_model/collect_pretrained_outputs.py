@@ -14,7 +14,7 @@ def extract_scaled_layers():
     models = collect_models()
     layer_names = collect_layers(models)
     with open(settings.sub_package_path + '/scaled_layers.json', 'w') as fp:
-        json.dump(layer_names, fp)
+        json.dump(layer_names, fp, separators=(',\n', ': '))
 
 
 def collect_models():
@@ -81,6 +81,16 @@ if __name__ == "__main__":
 
 # ==============================
 # example of making a new model
+# refer to: https://github.com/tensorflow/tensorflow/issues/33129
+# models are defined here: ~/.pyenv/versions/vode_37/lib/python3.7/site-packages/keras_applications
+
+def make_new_model():
+    resnet50 = tfapp.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
+    midout = resnet50.get_layer('conv3_block4_out').output
+    output = convolution(midout, 128, 3, 1, 'custom_output')
+    model = tf.keras.Model(resnet50.input, outputs=output)
+    model.summary()
+
 
 def convolution(x, filters, kernel_size, strides, name):
     conv = tf.keras.layers.Conv2D(filters, kernel_size, strides=strides,
@@ -89,12 +99,4 @@ def convolution(x, filters, kernel_size, strides, name):
                                   kernel_regularizer=tf.keras.regularizers.l2(0.001),
                                   name=name)(x)
     return conv
-
-# midout = resnet50.get_layer('conv3_block4_out').output
-# output = convolution(midout, 128, 3, 1, 'custom_output')
-# model = tf.keras.Model(resnet50.input, outputs=output)
-# model.summary()
-
-# refer to: https://github.com/tensorflow/tensorflow/issues/33129
-# models are defined here: ~/.pyenv/versions/vode_37/lib/python3.7/site-packages/keras_applications
 

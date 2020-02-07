@@ -5,81 +5,50 @@ import settings
 import utils.util_funcs as uf
 import model.build_model.model_utils as mu
 
-
-class ModelBuilderBase:
-    def __init__(self, batch_size, image_shape, snippet_len):
-        self.batch = batch_size
-        self.height = image_shape[0]
-        self.width = image_shape[1]
-        self.channel = image_shape[2]
-        self.snippet_len = snippet_len
-
-    def get_model(self):
-        raise NotImplementedError()
-
-    def build_depth_estim_layers(self, target_image):
-        raise NotImplementedError()
-
-    def build_visual_odom_layers(self, image_snippet):
-        raise NotImplementedError()
-
-
 DISP_SCALING_VGG = 10
 
 
-class BasicModel(ModelBuilderBase):
+class DepthNetBasic:
     """
-    Basic VODE model used in sfmlearner and geonet
+    Basic DepthNet model used in sfmlearner and geonet
     """
-    def __init__(self, batch_size, image_shape, snippet_len):
-        super().__init__(batch_size, image_shape, snippet_len)
+    def __call__(self, input_tensor, input_shape):
+        """
+        :param input_tensor: input image with size: [batch, height, width, channel]
+        :param input_shape: explicit shape (batch, snippet, height, width, channel)
+        In the code below, the 'n' in conv'n' or upconv'n' represents scale of the feature map
+        conv'n' implies that it is scaled by 1/2^n
+        """
+        batch, snippet, height, width, channel = input_shape
 
-    def get_model(self):
-        input_img_shape = (self.height*self.snippet_len, self.width, self.channel)
-        # input tensor
-        stacked_image = layers.Input(shape=input_img_shape, batch_size=self.batch, name="image")
-        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
-                                                   name="split_stacked_image")(stacked_image)
-        # build a network that outputs depth and pose
-        pred_disps_ms = self.build_depth_estim_layers(target_image)
-        pred_poses = self.build_visual_odom_layers(stacked_image)
-        # create model
-        model_input = {"image": stacked_image}
-        predictions = {"disp_ms": pred_disps_ms, "pose": pred_poses}
-        model = tf.keras.Model(model_input, predictions)
-        return model
+        conv0 = mu.convolution(input_tensor, 32, 7, strides=1, name="dp_conv0b")
+        conv1 = mu.convolution(conv0, 32, 7, strides=2, name="dp_conv1a")
+        conv1 = mu.convolution(conv1, 64, 5, strides=1, name="dp_conv1b")
+        conv2 = mu.convolution(conv1, 64, 5, strides=2, name="dp_conv2a")
+        conv2 = mu.convolution(conv2, 128, 3, strides=1, name="dp_conv2b")
+        conv3 = mu.convolution(conv2, 128, 3, strides=2, name="dp_conv3a")
+        conv3 = mu.convolution(conv3, 256, 3, strides=1, name="dp_conv3b")
+        conv4 = mu.convolution(conv3, 256, 3, strides=2, name="dp_conv4a")
+        conv4 = mu.convolution(conv4, 512, 3, strides=1, name="dp_conv4b")
+        conv5 = mu.convolution(conv4, 512, 3, strides=2, name="dp_conv5a")
+        conv5 = mu.convolution(conv5, 512, 3, strides=1, name="dp_conv5b")
+        conv6 = mu.convolution(conv5, 512, 3, strides=2, name="dp_conv6a")
+        conv6 = mu.convolution(conv6, 512, 3, strides=1, name="dp_conv6b")
+        conv7 = mu.convolution(conv6, 512, 3, strides=2, name="dp_conv7a")
 
-    def build_depth_estim_layers(self, target_image):
-        imheight, imwidth = self.height, self.width
+        upconv6 = self.upconv_with_skip_connection(conv7, conv6, 512, "dp_up6")     # 1/64
+        upconv5 = self.upconv_with_skip_connection(upconv6, conv5, 512, "dp_up5")   # 1/32
+        upconv4 = self.upconv_with_skip_connection(upconv5, conv4, 256, "dp_up4")   # 1/16
+        upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")   # 1/8
+        disp3, disp2_up = self.get_disp_vgg(upconv3, int(height // 4), int(width // 4), "dp_disp3")
+        upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", disp2_up)  # 1/4
+        disp2, disp1_up = self.get_disp_vgg(upconv2, int(height // 2), int(width // 2), "dp_disp2")
+        upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", disp1_up)  # 1/2
+        disp1, disp0_up = self.get_disp_vgg(upconv1, height, width, "dp_disp1")
+        upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
+        disp0, disp_n1_up = self.get_disp_vgg(upconv0, height, width, "dp_disp0")
 
-        conv1 = mu.convolution(target_image, 32, 7, strides=1, name="dp_conv1a")
-        conv1 = mu.convolution(conv1, 32, 7, strides=2, name="dp_conv1b")
-        conv2 = mu.convolution(conv1, 64, 5, strides=1, name="dp_conv2a")
-        conv2 = mu.convolution(conv2, 64, 5, strides=2, name="dp_conv2b")
-        conv3 = mu.convolution(conv2, 128, 3, strides=1, name="dp_conv3a")
-        conv3 = mu.convolution(conv3, 128, 3, strides=2, name="dp_conv3b")
-        conv4 = mu.convolution(conv3, 256, 3, strides=1, name="dp_conv4a")
-        conv4 = mu.convolution(conv4, 256, 3, strides=2, name="dp_conv4b")
-        conv5 = mu.convolution(conv4, 512, 3, strides=1, name="dp_conv5a")
-        conv5 = mu.convolution(conv5, 512, 3, strides=2, name="dp_conv5b")
-        conv6 = mu.convolution(conv5, 512, 3, strides=1, name="dp_conv6a")
-        conv6 = mu.convolution(conv6, 512, 3, strides=2, name="dp_conv6b")
-        conv7 = mu.convolution(conv6, 512, 3, strides=1, name="dp_conv7a")
-        conv7 = mu.convolution(conv7, 512, 3, strides=2, name="dp_conv7b")
-
-        upconv7 = self.upconv_with_skip_connection(conv7, conv6, 512, "dp_up7")
-        upconv6 = self.upconv_with_skip_connection(upconv7, conv5, 512, "dp_up6")
-        upconv5 = self.upconv_with_skip_connection(upconv6, conv4, 256, "dp_up5")
-        upconv4 = self.upconv_with_skip_connection(upconv5, conv3, 128, "dp_up4")
-        disp4, disp4_up = self.get_disp_vgg(upconv4, int(imheight // 4), int(imwidth // 4), "dp_disp4")
-        upconv3 = self.upconv_with_skip_connection(upconv4, conv2, 64, "dp_up3", disp4_up)
-        disp3, disp3_up = self.get_disp_vgg(upconv3, int(imheight // 2), int(imwidth // 2), "dp_disp3")
-        upconv2 = self.upconv_with_skip_connection(upconv3, conv1, 32, "dp_up2", disp3_up)
-        disp2, disp2_up = self.get_disp_vgg(upconv2, imheight, imwidth, "dp_disp2")
-        upconv1 = self.upconv_with_skip_connection(upconv2, disp2_up, 16, "dp_up1")
-        disp1, disp1_up = self.get_disp_vgg(upconv1, imheight, imwidth, "dp_disp1")
-
-        return [disp1, disp2, disp3, disp4]
+        return [disp0, disp1, disp2, disp3]
 
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
         upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
@@ -98,11 +67,30 @@ class BasicModel(ModelBuilderBase):
         disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
         return disp, disp_up
 
-    def build_visual_odom_layers(self, image_snippet):
-        channel_stack_image = layers.Lambda(lambda image: mu.restack_on_channels(image, self.snippet_len),
-                                            name="channel_stack")(image_snippet)
-        print("[build_visual_odom_layers] channel stacked image shape=", channel_stack_image.get_shape())
-        num_sources = self.snippet_len - 1
+
+class DepthNetNoResize(DepthNetBasic):
+    """
+    Modified BasicModel to remove resizing features in decoding layers
+    Width and height of input image must be integer multiple of 128
+    """
+    def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
+        upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
+        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv1")
+        upconv = tf.cond(bef_pred is not None,
+                         lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer, bef_pred]),
+                         lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer])
+                         )
+        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
+        return upconv
+
+
+class PoseNet:
+    def __call__(self, snippet_image, input_shape):
+        batch, snippet, height, width, channel = input_shape
+        channel_stack_image = layers.Lambda(lambda image: mu.restack_on_channels(image, snippet),
+                                            name="channel_stack")(snippet_image)
+        print("[PoseNet] channel stacked image shape=", channel_stack_image.get_shape())
+        num_sources = snippet - 1
 
         conv1 = mu.convolution(channel_stack_image, 16, 7, 2, "vo_conv1")
         conv2 = mu.convolution(conv1, 32, 5, 2, "vo_conv2")
@@ -117,23 +105,4 @@ class BasicModel(ModelBuilderBase):
         poses = tf.keras.layers.GlobalAveragePooling2D("channels_last", name="vo_pred")(poses)
         poses = tf.keras.layers.Reshape((num_sources, 6), name="vo_reshape")(poses)
         return poses
-
-
-class NoResizingModel(BasicModel):
-    """
-    Modified BasicModel to remove resizing features in decoding layers
-    Width and height of input image must be integer multiple of 128
-    """
-    def __init__(self, batch_size, image_shape, snippet_len):
-        super().__init__(batch_size, image_shape, snippet_len)
-
-    def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
-        upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
-        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv1")
-        upconv = tf.cond(bef_pred is not None,
-                         lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer, bef_pred]),
-                         lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer])
-                         )
-        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
-        return upconv
 
