@@ -43,8 +43,7 @@ def shape_check_dummy(func):
 
 
 """
-In case you like to check in-out tensor shapes, inherit "shape_checkReal"
-otherwise, you can turn it off by inherinting "shape_checkDummy"
+If you like to check in-out tensor shapes, set ENABLE_SHAPE_DECOR as True
 """
 if opts.ENABLE_SHAPE_DECOR:
     shape_check = shape_check_real
