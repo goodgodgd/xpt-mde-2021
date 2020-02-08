@@ -1,16 +1,18 @@
 from config import opts
-from model.loss_and_metric.losses import TotalLoss, PhotometricLossL1MultiScale, SmoothenessLossMultiScale
-from utils.util_class import WrongInputException
+import model.loss_and_metric.losses as lm
 
 
-def loss_factory(photo_loss_type=opts.PHOTO_LOSS, smoothness_weight=opts.SMOOTH_WEIGHT):
+def loss_factory(loss_weights=opts.LOSS_WEIGHTS):
     losses = []
-    if photo_loss_type == "L1":
-        losses.append((PhotometricLossL1MultiScale(), 1.))
-    else:
-        WrongInputException(f"{photo_loss_type} is NOT an available photometric loss type")
+    weights = []
+    if "L1" in loss_weights and loss_weights["L1"] > 0:
+        losses.append(lm.PhotometricLossMultiScale("L1"))
+        weights.append(loss_weights["L1"])
+    if "SSIM" in loss_weights and loss_weights["SSIM"] > 0:
+        losses.append(lm.PhotometricLossMultiScale("SSIM"))
+        weights.append(loss_weights["SSIM"])
+    if "smootheness" in loss_weights and loss_weights["smootheness"] > 0:
+        losses.append(lm.SmoothenessLossMultiScale())
+        weights.append(loss_weights["smootheness"])
 
-    if smoothness_weight > 0:
-        losses.append((SmoothenessLossMultiScale(), smoothness_weight))
-
-    return TotalLoss(losses)
+    return lm.TotalLoss(losses, weights)

@@ -88,7 +88,7 @@ class PretrainedModel:
         outputs = []
         for layer_name in out_layer_names:
             layer = model.get_layer(layer_name)
-            print(layer.name, layer.get_input_shape_at(0), layer.get_output_shape_at(0))
+            # print("extract feature layers:", layer.name, layer.get_input_shape_at(0), layer.get_output_shape_at(0))
             outputs.append(layer.output)
 
         # create model with multi scale outputs
