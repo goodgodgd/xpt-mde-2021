@@ -10,7 +10,7 @@ import utils.util_funcs as uf
 import utils.convert_pose as cp
 from tfrecords.tfrecord_reader import TfrecordGenerator
 from model.synthesize.synthesize_base import SynthesizeMultiScale
-from model.loss_and_metric.losses import photometric_loss_l1, smootheness_loss
+import model.loss_and_metric.losses as ls
 
 WAIT_KEY = 200
 
@@ -45,7 +45,7 @@ def test_photometric_loss_quality():
         losses = []
         for scale, synt_target, orig_target in zip([1, 2, 4, 8], synth_target_ms, target_ms):
             # EXECUTE
-            loss = photometric_loss_l1(synt_target, orig_target)
+            loss = ls.photometric_loss_l1(synt_target, orig_target)
             losses.append(loss)
 
             recon_target = uf.to_uint8_image(synt_target).numpy()
@@ -126,7 +126,7 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
     recon_image = 0
     for scale, synt_target, orig_target in zip([1, 2, 4, 8], synth_target_ms, target_ms):
         # EXECUTE
-        loss = photometric_loss_l1(synt_target, orig_target)
+        loss = ls.photometric_loss_l1(synt_target, orig_target)
         losses.append(loss)
         if scale == 1:
             recon_target = uf.to_uint8_image(synt_target).numpy()
@@ -150,8 +150,26 @@ def test_smootheness_loss_quantity():
     print("\n===== start test_smootheness_loss_quantity")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
 
+    """
+    gather additional data required to compute losses
+    :param features: {image, intrinsic}
+            image: stacked image snippet [batch, snippet_len*height, width, 3]
+            intrinsic: camera projection matrix [batch, 3, 3]
+    :param predictions: {disp_ms, pose}
+            disp_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
+            pose: poses that transform points from target to source [batch, num_src, 6]
+    :return augm_data: {depth_ms, source, target, target_ms, synth_target_ms}
+            depth_ms: multi scale depth, list of [batch, height/scale, width/scale, 1]
+            source: source frames [batch, num_src*height, width, 3]
+            target: target frame [batch, height, width, 3]
+            target_ms: multi scale target frame, list of [batch, height/scale, width/scale, 3]
+            synth_target_ms: multi scale synthesized target frames generated from each source image,
+                            list of [batch, num_src, height/scale, width/scale, 3]
+    """
+
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
+
         stacked_image = features['image']
         depth_gt = features['depth_gt']
         # interpolate depth
@@ -160,13 +178,18 @@ def test_smootheness_loss_quantity():
         # make multi-scale data
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
-        disp_gt_ms = test_depth_to_disp(depth_gt_ms)
+        disp_gt_ms = tu_depth_to_disp(depth_gt_ms)
         target_ms = uf.multi_scale_like(target_image, depth_gt_ms)
 
-        # EXECUTE
-        batch_loss_right, scale_loss_right = test_smooth_loss(disp_gt_ms, target_ms)
+        features = {"image": stacked_image}
+        predictions = {"disp_ms": disp_gt_ms}
+        augm_data = {"target_ms": target_ms}
 
-        print("\ncorrupt depth to increase gradient of depth")
+        # EXECUTE
+        batch_loss_right = tu_smootheness_loss(features, predictions, augm_data)
+        print("> batch photometric losses:", batch_loss_right)
+
+        print("> corrupt depth to increase gradient of depth")
         depth_gt = depth_gt.numpy()
         depth_gt_right = np.copy(depth_gt)
         depth_gt_wrong = np.copy(depth_gt)
@@ -175,15 +198,17 @@ def test_smootheness_loss_quantity():
         depth_gt_wrong[:, 12:200:20] = 0
         depth_gt = tf.constant(depth_gt_wrong, dtype=tf.float32)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
-        disp_gt_ms = test_depth_to_disp(depth_gt_ms)
+        disp_gt_ms = tu_depth_to_disp(depth_gt_ms)
+
+        # change prediction
+        predictions = {"disp_ms": disp_gt_ms}
 
         # EXECUTE
-        batch_loss_wrong, scale_loss_wrong = test_smooth_loss(disp_gt_ms, target_ms)
+        batch_loss_wrong = tu_smootheness_loss(features, predictions, augm_data)
 
         # TEST
-        print("loss diff: wrong - right =", batch_loss_wrong - batch_loss_right)
+        print("> loss diff: wrong - right =", batch_loss_wrong - batch_loss_right)
         assert np.sum(batch_loss_right.numpy() <= batch_loss_wrong.numpy()).all()
-        assert np.sum(scale_loss_right.numpy() <= scale_loss_wrong.numpy()).all()
 
         view = np.concatenate([depth_gt_right[0], depth_gt_wrong[0]], axis=0)
         cv2.imshow("target image corruption", view)
@@ -195,7 +220,7 @@ def test_smootheness_loss_quantity():
     print("!!! test_smootheness_loss_quantity passed")
 
 
-def test_depth_to_disp(depth_ms):
+def tu_depth_to_disp(depth_ms):
     disp_ms = []
     for i, depth in enumerate(depth_ms):
         disp = layers.Lambda(lambda dep: tf.where(dep > 0.001, 1./dep, 0), name=f"todisp_{i}")(depth)
@@ -203,27 +228,10 @@ def test_depth_to_disp(depth_ms):
     return disp_ms
 
 
-def test_smooth_loss(disp_ms, target_ms):
-    """
-    :param disp_ms: list of [batch, height/scale, width/scale, 1]
-    :param target_ms: list of [batch, height/scale, width/scale, 3]
-    :return:
-    """
-    losses = []
-    for scale, disp, image in zip([1, 2, 4, 8], disp_ms, target_ms):
-
-        # EXECUTE
-        loss = smootheness_loss(disp, image)
-
-        losses.append(loss)
-
-    losses = tf.stack(losses, axis=0)
-    batch_loss = tf.reduce_sum(losses, axis=0)
-    scale_loss = tf.reduce_sum(losses, axis=1)
-    print("all photometric loss:", losses)
-    print("batch mean photometric loss:", batch_loss)
-    print("scale mean photometric loss:", scale_loss)
-    return batch_loss, scale_loss
+@tf.function
+def tu_smootheness_loss(features, predictions, augm_data):
+    batch_loss_wrong = ls.SmoothenessLossMultiScale()(features, predictions, augm_data)
+    return batch_loss_wrong
 
 
 def test():
