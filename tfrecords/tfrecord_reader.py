@@ -91,7 +91,7 @@ class TfrecordGenerator:
 
     def dataset_process(self, dataset):
         if self.shuffle:
-            dataset = dataset.shuffle(buffer_size=1000)
+            dataset = dataset.shuffle(buffer_size=500)
             print("[dataset] dataset suffled")
         print(f"[dataset] num epochs={self.epochs}, batch size={self.batch_size}")
         dataset = dataset.repeat(self.epochs)
