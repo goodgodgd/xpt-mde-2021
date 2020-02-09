@@ -5,7 +5,8 @@ import os
 from collections import Counter
 
 
-def generate_depth_map(velo_data, calib_dir, orig_shape, target_shape, cam='02', interp=False):
+def generate_depth_map(velo_data, calib_dir, orig_shape, target_shape, right=False):
+    cam = '03' if right else '02'
     # load calibration files
     cam2cam = read_calib_file(os.path.join(calib_dir, 'calib_cam_to_cam.txt'))
     velo2cam = read_calib_file(os.path.join(calib_dir, 'calib_velo_to_cam.txt'))
@@ -57,14 +58,9 @@ def generate_depth_map(velo_data, calib_dir, orig_shape, target_shape, cam='02',
         x_loc = int(velo_pts_im[pts[0], 0])
         y_loc = int(velo_pts_im[pts[0], 1])
         depth[y_loc, x_loc] = velo_pts_im[pts, 2].min()
-    depth[depth < 0] = 0
 
-    if interp:
-        # interpolate the depth map to fill in holes
-        depth_interp = lin_interp(target_shape, velo_pts_im)
-        return depth, depth_interp
-    else:
-        return depth
+    depth[depth < 0] = 0
+    return depth
 
 
 def read_calib_file(path):
@@ -91,15 +87,3 @@ def read_calib_file(path):
 def sub2ind(matrixSize, rowSub, colSub):
     m, n = matrixSize
     return rowSub * (n - 1) + colSub - 1
-
-
-# deprecated
-def lin_interp(shape, xyd):
-    # taken from https://github.com/hunse/kitti
-    m, n = shape
-    ij, d = xyd[:, 1::-1], xyd[:, 2]
-    f = LinearNDInterpolator(ij, d, fill_value=0)
-    J, I = np.meshgrid(np.arange(n), np.arange(m))
-    IJ = np.vstack([I.flatten(), J.flatten()]).T
-    disparity = f(IJ).reshape(shape)
-    return disparity

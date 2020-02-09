@@ -6,22 +6,27 @@ import pykitti
 import prepare_data.kitti_depth_generator as kdg
 import utils.convert_pose as cp
 
+"""
+when 'stereo' is True, 'get_xxx' function returns two data
+"""
 
-class KittiUtil:
-    def __init__(self):
+
+class KittiReader:
+    def __init__(self, stereo=False):
         self.static_frames = self.read_static_frames()
+        self.stereo = stereo
         self.drive_loader = None
         self.pose_avail = True
         self.depth_avail = True
 
     def read_static_frames(self):
-        filename = self.get_static_frame_file()
+        filename = self.static_frame_filename()
         with open(filename, "r") as fr:
             lines = fr.readlines()
             static_frames = [line.strip("\n") for line in lines]
         return static_frames
 
-    def get_static_frame_file(self):
+    def static_frame_filename(self):
         raise NotImplementedError()
 
     def remove_static_frames(self, frames):
@@ -29,84 +34,113 @@ class KittiUtil:
         print(f"[remove_static_frames] {len(frames)} -> {len(valid_frames)}")
         return valid_frames
 
-    def get_image(self, index):
-        return self.drive_loader.get_rgb(index)
-
-    def get_intrinsic(self):
-        intrinsic = self.drive_loader.calib.P_rect_20[:, :3]
-        return intrinsic
-
     def list_drives(self, split, base_path):
         raise NotImplementedError()
 
-    def get_drive_path(self, base_path, drive):
+    def verify_drives(self, drives, base_path):
+        # verify drive paths
+        verified_drives = []
+        for drive in drives:
+            drive_path = self.make_drive_path(base_path, drive)
+            if not op.isdir(drive_path):
+                continue
+            frame_inds = self.find_frame_indices(drive_path, 5)
+            if len(frame_inds) == 0:
+                continue
+            verified_drives.append(drive)
+
+        print("drive list:", verified_drives)
+        return verified_drives
+
+    def make_drive_path(self, base_path, drive):
         raise NotImplementedError()
 
     def create_drive_loader(self, base_path, drive):
         raise NotImplementedError()
 
-    def frame_indices(self, drive_path, snippet_len):
+    def find_frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
+
+    def get_image(self, index):
+        images = self.drive_loader.get_rgb(index)
+        if self.stereo:
+            return np.array(images[0]), np.array(images[1])
+        else:
+            return np.array(images[0])
+
+    def get_intrinsic(self):
+        intrinsic = self.drive_loader.calib.P_rect_20[:, :3]
+        if self.stereo:
+            intrinsic_rig = self.drive_loader.calib.P_rect_30[:, :3]
+            return intrinsic, intrinsic_rig
+        else:
+            return intrinsic
 
     def get_quat_pose(self, index):
         raise NotImplementedError()
 
-    def load_depth_map(self, frame_idx, drive_path, raw_img_shape, target_shape):
+    def get_depth_map(self, frame_idx, drive_path, raw_img_shape, target_shape):
         raise NotImplementedError()
 
 
-class KittiRawUtil(KittiUtil):
-    def __init__(self):
-        super().__init__()
+class KittiRawReader(KittiReader):
+    def __init__(self, stereo=False):
+        super().__init__(stereo)
+        self.pose_avail = True
+        self.depth_avail = True
 
-    def get_static_frame_file(self):
-        return op.join(op.dirname(op.abspath(__file__)), "resources",
-                       "kitti_raw_static_frames.txt")
+    def static_frame_filename(self):
+        return op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_raw_static_frames.txt")
 
     def list_drives(self, split, base_path):
-        filename = op.join(op.dirname(op.abspath(__file__)), "resources",
-                           f"kitti_raw_{split}_scenes.txt")
+        filename = op.join(op.dirname(op.abspath(__file__)), "resources", f"kitti_raw_{split}_scenes.txt")
         with open(filename, "r") as f:
             drives = f.readlines()
             drives = [tuple(drive.strip("\n").split()) for drive in drives]
-            existing_drives = [drive for drive in drives if op.isdir(self.get_drive_path(base_path, drive))]
-            print("drive list:", existing_drives)
-            return existing_drives
+            drives = self.verify_drives(drives, base_path)
+            return drives
 
     def create_drive_loader(self, base_path, drive):
-        self.pose_avail = True
-        self.depth_avail = True
         print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         date, drive_id = drive
         self.drive_loader = pykitti.raw(base_path, date, drive_id)
 
-    def get_drive_path(self, base_path, drive):
+    def make_drive_path(self, base_path, drive):
         drive_path = op.join(base_path, drive[0], f"{drive[0]}_drive_{drive[1]}_sync")
         return drive_path
 
-    def frame_indices(self, drive_path, snippet_len):
+    def find_frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
     def get_quat_pose(self, index):
-        T_cam2_imu = self.drive_loader.calib.T_cam2_imu
-        T_imu_cam2 = np.linalg.inv(T_cam2_imu)
         T_w_imu = self.drive_loader.oxts[index].T_w_imu
-        T_W_cam2 = np.matmul(T_w_imu, T_imu_cam2)
-        return cp.pose_matr2quat(T_W_cam2)
+        T_imu_cam2 = np.linalg.inv(self.drive_loader.calib.T_cam2_imu)
+        T_w_cam2 = np.matmul(T_w_imu, T_imu_cam2)
+        pose_lef = cp.pose_matr2quat(T_w_cam2)
+        if self.stereo:
+            T_imu_cam3 = np.linalg.inv(self.drive_loader.calib.T_cam3_imu)
+            T_w_cam3 = np.matmul(T_w_imu, T_imu_cam3)
+            pose_rig = cp.pose_matr2quat(T_w_cam3)
+            return pose_lef, pose_rig
+        else:
+            return pose_lef
 
-    def load_depth_map(self, frame_idx, drive_path, original_shape, target_shape):
+    def get_depth_map(self, frame_idx, drive_path, original_shape, target_shape):
         calib_dir = op.dirname(drive_path)
         velo_data = self.drive_loader.get_velo(frame_idx)
-        depth_map = kdg.generate_depth_map(velo_data, calib_dir, original_shape, target_shape)
-        # print(f"depthmap shape={depth_map.shape}, mean={np.mean(depth_map, axis=None)}")
-        return depth_map
+        depth = kdg.generate_depth_map(velo_data, calib_dir, original_shape, target_shape, False)
+        if self.stereo:
+            depth_rig = kdg.generate_depth_map(velo_data, calib_dir, original_shape, target_shape, True)
+            return depth, depth_rig
+        else:
+            return depth
 
 
-class KittiRawTrainUtil(KittiRawUtil):
-    def __init__(self):
-        super().__init__()
+class KittiRawTrainUtil(KittiRawReader):
+    def __init__(self, stereo=False):
+        super().__init__(stereo)
 
-    def frame_indices(self, drive_path, snippet_len):
+    def find_frame_indices(self, drive_path, snippet_len):
         # list frame files in drive_path
         frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
         frame_paths = glob(frame_pattern)
@@ -126,11 +160,11 @@ class KittiRawTrainUtil(KittiRawUtil):
         return frame_inds
 
 
-class KittiRawTestUtil(KittiRawUtil):
-    def __init__(self):
-        super().__init__()
+class KittiRawTestUtil(KittiRawReader):
+    def __init__(self, stereo=False):
+        super().__init__(stereo)
 
-    def frame_indices(self, drive_path, snippet_len):
+    def find_frame_indices(self, drive_path, snippet_len):
         # count total frames in drive
         frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
         num_frames = len(glob(frame_pattern))
@@ -149,18 +183,17 @@ class KittiRawTestUtil(KittiRawUtil):
             frame_inds = [index for index in frame_inds if 2 <= index < num_frames-2]
             frame_inds.sort()
             frame_inds = np.array(frame_inds, dtype=int)
-            print("test frames:", frame_inds)
+            print("[find_frame_indices]", frame_inds[:20])
             return frame_inds
 
 
-class KittiOdomUtil(KittiUtil):
-    def __init__(self):
-        super().__init__()
+class KittiOdomReader(KittiReader):
+    def __init__(self, stereo=False):
+        super().__init__(stereo)
         self.poses = []
 
-    def get_static_frame_file(self):
-        return op.join(op.dirname(op.abspath(__file__)), "resources",
-                       "kitti_odom_static_frames.txt")
+    def static_frame_filename(self):
+        return op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_odom_static_frames.txt")
 
     def list_drives(self, split, base_path):
         raise NotImplementedError()
@@ -168,11 +201,11 @@ class KittiOdomUtil(KittiUtil):
     def create_drive_loader(self, base_path, drive):
         raise NotImplementedError()
 
-    def get_drive_path(self, base_path, drive):
+    def make_drive_path(self, base_path, drive):
         drive_path = op.join(base_path, "sequences", drive)
         return drive_path
 
-    def frame_indices(self, drive_path, snippet_len):
+    def find_frame_indices(self, drive_path, snippet_len):
         # list frame files in drive_path
         frame_pattern = op.join(drive_path, "image_2", "*.png")
         frame_paths = glob(frame_pattern)
@@ -194,25 +227,23 @@ class KittiOdomUtil(KittiUtil):
     def get_quat_pose(self, index):
         raise NotImplementedError()
 
-    def load_depth_map(self, frame_idx, drive_path, original_shape, target_shape):
+    def get_depth_map(self, frame_idx, drive_path, original_shape, target_shape):
         # no depth available for kitti_odometry dataset
         return None
 
 
-class KittiOdomTrainUtil(KittiOdomUtil):
-    def __init__(self):
-        super().__init__()
+class KittiOdomTrainReader(KittiOdomReader):
+    def __init__(self, stereo=False):
+        super().__init__(stereo)
+        self.pose_avail = False
+        self.depth_avail = False
 
     def list_drives(self, split, base_path):
         drives = [f"{i:02d}" for i in range(11, 22)]
-        existing_drives = [drive for drive in drives if op.isdir(self.get_drive_path(base_path, drive))]
-        print("drive list:", existing_drives)
-        return existing_drives
+        drives = self.verify_drives(drives, base_path)
+        return drives
 
     def create_drive_loader(self, base_path, drive):
-        self.poses = None
-        self.pose_avail = False
-        self.depth_avail = False
         print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         self.drive_loader = pykitti.odometry(base_path, drive)
 
@@ -221,26 +252,34 @@ class KittiOdomTrainUtil(KittiOdomUtil):
         return None
 
 
-class KittiOdomTestUtil(KittiOdomUtil):
-    def __init__(self):
-        super().__init__()
+class KittiOdomTestReader(KittiOdomReader):
+    def __init__(self, stereo=False):
+        super().__init__(stereo)
+        self.pose_avail = True
+        self.depth_avail = False
 
     def list_drives(self, split, base_path):
         drives = [f"{i:02d}" for i in range(0, 11)]
-        existing_drives = [drive for drive in drives if op.isdir(self.get_drive_path(base_path, drive))]
-        print("drive list:", existing_drives)
-        return existing_drives
+        drives = self.verify_drives(drives, base_path)
+        return drives
 
     def create_drive_loader(self, base_path, drive):
         pose_file = op.join(base_path, "poses", drive+".txt")
         self.poses = np.loadtxt(pose_file)
         print("read pose file:", pose_file)
-        self.pose_avail = True
-        self.depth_avail = False
         print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         self.drive_loader = pykitti.odometry(base_path, drive)
 
     def get_quat_pose(self, index):
-        tmat = self.poses[index].reshape((3, 4))
-        return cp.pose_matr2quat(tmat)
+        T_w_cam2 = self.poses[index].reshape((3, 4))
+        T_w_cam2 = np.concatenate([T_w_cam2, np.array([[0, 0, 0, 1]])], axis=0)
+        pose = cp.pose_matr2quat(T_w_cam2)
+        if self.stereo:
+            cal = self.drive_loader.calib
+            T_cam2_cam3 = np.dot(cal.T_cam2_velo, np.linalg.inv(cal.T_cam3_velo))
+            T_w_cam3 = T_w_cam2 * T_cam2_cam3
+            pose_rig = cp.pose_matr2quat(T_w_cam3)
+            return pose, pose_rig
+        else:
+            return pose
 
