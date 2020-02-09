@@ -65,7 +65,7 @@ def train():
 
         if epoch % 10 == 0:
             log.save_reconstruction_samples(model, dataset_val, opts.CKPT_NAME, epoch)
-            log.log_loss_scales(model, dataset_val, val_steps)
+            log.save_loss_scales(model, dataset_val, val_steps)
         save_model(model, opts.CKPT_NAME, result_val[1])
         log.save_log(epoch, result_train, result_val, opts.CKPT_NAME)
 
@@ -388,52 +388,6 @@ def check_disparity(ckpt_name, test_dir_name):
         print("pose\n", pred_pose[0, 0])
         if i > 5:
             break
-
-
-import model.loss_and_metric.losses as lm
-
-
-def test_loss_scale():
-    print("\n===== start test_loss_scale")
-    initial_epoch = uf.read_previous_epoch(opts.CKPT_NAME)
-    if opts.EPOCHS <= initial_epoch:
-        raise TrainException("!! final_epoch <= initial_epoch, no need to train")
-
-    set_configs(opts.CKPT_NAME)
-    pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
-    model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
-    model = try_load_weights(model, opts.CKPT_NAME)
-
-    dataset, steps = get_dataset(opts.DATASET, "val")
-    losses = collect_losses(model, dataset, steps)
-    for key, loss in losses.items():
-        print("> loss type and shape:", key, loss.shape)
-        print(f"\tloss min={loss.min():1.4f}, max={loss.max():1.4f}, mean={loss.mean():1.4f}, median={np.median(loss):1.4f}")
-        print(f"\tloss quantile={np.quantile(loss, np.arange(0, 1, 0.1))}")
-
-
-def collect_losses(model, dataset, steps_per_epoch):
-    results = {"photo_l1": [], "photo_ssim": [], "smoothe": []}
-    total_loss = lm.TotalLoss()
-    calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
-    calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
-    calc_smootheness_loss = lm.SmoothenessLossMultiScale()
-
-    for step, features in enumerate(dataset):
-        preds = model(features['image'])
-        augm_data = total_loss.augment_data(features, preds)
-        photo_l1 = calc_photo_loss_l1(features, preds, augm_data)
-        photo_ssim = calc_photo_loss_ssim(features, preds, augm_data)
-        smoothe = calc_smootheness_loss(features, preds, augm_data)
-
-        results["photo_l1"].append(photo_l1)
-        results["photo_ssim"].append(photo_ssim)
-        results["smoothe"].append(smoothe)
-        uf.print_progress_status(f"step: {step} / {steps_per_epoch}")
-
-    print("")
-    results = {key: tf.concat(res, 0).numpy() for key, res in results.items()}
-    return results
 
 
 if __name__ == "__main__":

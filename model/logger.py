@@ -89,10 +89,11 @@ def make_reconstructed_views(model, dataset):
     return recon_views
 
 
-def log_loss_scales(model, dataset, steps):
-    print("\n===== log_loss_scales")
-    losses = collect_losses(model, dataset, steps)
-    save_loss_to_file(losses)
+def save_loss_scales(model, dataset, steps):
+    if opts.LOG_LOSS:
+        print("\n===== save_loss_scales")
+        losses = collect_losses(model, dataset, steps)
+        save_loss_to_file(losses)
 
 
 def collect_losses(model, dataset, steps_per_epoch):
