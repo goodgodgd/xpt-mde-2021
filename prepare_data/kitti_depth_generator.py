@@ -1,7 +1,4 @@
-# Mostly based on the code written by Clement Godard: 
-# https://github.com/mrharicot/monodepth/blob/master/utils/evaluation_utils.py
 import numpy as np
-import os
 from collections import Counter
 
 

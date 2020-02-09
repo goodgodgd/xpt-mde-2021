@@ -193,7 +193,7 @@ def test_kitti_loader():
             print("this drive is EMPTY")
             continue
 
-        for index, i in enumerate(frame_indices):
+        for index in frame_indices:
             example = loader.example_generator(index, opts.SNIPPET_LEN)
             index = example["index"]
             frames = example["image"]

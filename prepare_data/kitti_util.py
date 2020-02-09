@@ -92,6 +92,17 @@ class KittiReader:
         self.T_left_right = T_cam2_cam3
         print("update stereo extrinsic T_left_right =\n", self.T_left_right)
 
+    def post_proc_indices(self, frame_inds, snippet_len):
+        if not frame_inds:
+            return frame_inds
+        frame_inds.sort()
+        last_ind = frame_inds[-1]
+        half_len = snippet_len // 2
+        frame_inds = [index for index in frame_inds if half_len <= index <= last_ind-half_len]
+        frame_inds = np.array(frame_inds, dtype=int)
+        print("[find_frame_indices]", frame_inds[:20])
+        return frame_inds
+
 
 class KittiRawReader(KittiReader):
     def __init__(self, stereo=False):
@@ -156,7 +167,6 @@ class KittiRawTrainUtil(KittiRawReader):
         frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
         frame_paths = glob(frame_pattern)
         frame_paths.sort()
-        frame_paths = frame_paths[snippet_len // 2:-snippet_len // 2]
         frame_files = []
         # reformat to 'date drive_id frame_id' format like '2011_09_26 0001 0000000000'
         for frame in frame_paths:
@@ -166,9 +176,7 @@ class KittiRawTrainUtil(KittiRawReader):
         frame_files = self.remove_static_frames(frame_files)
         # convert to frame name to int
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
-        frame_inds.sort()
-        frame_inds = np.array(frame_inds, dtype=int)
-        return frame_inds
+        return self.post_proc_indices(frame_inds, snippet_len)
 
 
 class KittiRawTestUtil(KittiRawReader):
@@ -191,11 +199,7 @@ class KittiRawTestUtil(KittiRawReader):
             test_frames = self.remove_static_frames(test_frames)
             # convert to int frame indices
             frame_inds = [int(frame.split()[-1]) for frame in test_frames]
-            frame_inds = [index for index in frame_inds if 2 <= index < num_frames-2]
-            frame_inds.sort()
-            frame_inds = np.array(frame_inds, dtype=int)
-            print("[find_frame_indices]", frame_inds[:20])
-            return frame_inds
+            return self.post_proc_indices(frame_inds, snippet_len)
 
 
 class KittiOdomReader(KittiReader):
@@ -221,7 +225,6 @@ class KittiOdomReader(KittiReader):
         frame_pattern = op.join(drive_path, "image_2", "*.png")
         frame_paths = glob(frame_pattern)
         frame_paths.sort()
-        frame_paths = frame_paths[snippet_len // 2:-snippet_len // 2]
         frame_files = []
         # reformat file paths into 'drive_id frame_id' format like '01 0000000000'
         for frame in frame_paths:
@@ -231,9 +234,7 @@ class KittiOdomReader(KittiReader):
         frame_files = self.remove_static_frames(frame_files)
         # convert to frame name to int
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
-        frame_inds.sort()
-        frame_inds = np.array(frame_inds, dtype=int)
-        return frame_inds
+        return self.post_proc_indices(frame_inds, snippet_len)
 
     def get_quat_pose(self, index):
         raise NotImplementedError()
@@ -288,9 +289,6 @@ class KittiOdomTestReader(KittiOdomReader):
         if self.stereo:
             T_cam2_cam3 = self.T_left_right
             T_w_cam3 = np.dot(T_w_cam2, T_cam2_cam3)
-            print("T_w_cam2\n", T_w_cam2)
-            print("T_cam2_cam3\n", T_cam2_cam3)
-            print("T_w_cam3\n", T_w_cam3)
             pose_rig = cp.pose_matr2quat(T_w_cam3)
             return pose, pose_rig
         else:

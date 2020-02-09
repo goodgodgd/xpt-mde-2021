@@ -41,11 +41,10 @@ def prepare_and_save_snippets(loader, dataset, split):
             for k, index in enumerate(frame_indices):
                 example = loader.example_generator(index, opts.SNIPPET_LEN)
                 mean_depth = save_example(example, index, data_paths)
-                print_progress_status(f"- Progress: mean depth={mean_depth:0.3f}, {k}/{num_frames}")
+                print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, {k}/{num_frames}")
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
-
-        print("\n\tprogress done")
+        print("")
     print(f"Data preparation of {dataset}_{split} is done")
 
 
@@ -71,7 +70,7 @@ def save_example(example, index, data_paths):
     filename = op.join(snippet_path, "intrinsic.txt")
     if not op.isfile(filename):
         intrinsic = example["intrinsic"]
-        print("##### intrinsic parameters\n", intrinsic)
+        print("intrinsic parameters\n", intrinsic)
         np.savetxt(filename, intrinsic, fmt="%3.5f")
 
     # cv2.imshow("example frames", frames)
