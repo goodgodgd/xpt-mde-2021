@@ -8,7 +8,7 @@ from utils.decorators import shape_check
 
 
 class TotalLoss:
-    def __init__(self, calc_losses, weights):
+    def __init__(self, calc_losses=None, weights=None):
         """
         :param calc_losses: list of loss calculators
         :param weights: list of weights of loss calculators
