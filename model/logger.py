@@ -12,12 +12,11 @@ import model.loss_and_metric.losses as lm
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 
 
-def save_log(epoch, results_train, results_val, ckpt_name):
+def save_log(epoch, results_train, results_val):
     """
     :param epoch: current epoch
     :param results_train: (loss, metric_trj, metric_rot) from train data
     :param results_val: (loss, metric_trj, metric_rot) from validation data
-    :param ckpt_name: model directory name
     """
     results = np.concatenate([[epoch], results_train, results_val], axis=0)
     results = np.expand_dims(results, 0)
@@ -25,7 +24,7 @@ def save_log(epoch, results_train, results_val, ckpt_name):
     results = pd.DataFrame(data=results, columns=columns)
     results['epoch'] = results['epoch'].astype(int)
 
-    filename = op.join(opts.DATAPATH_CKP, ckpt_name, 'history.txt')
+    filename = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'history.txt')
     # if the file existed, append new data to it
     if op.isfile(filename):
         existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
@@ -47,13 +46,13 @@ def save_log(epoch, results_train, results_val, ckpt_name):
         ax.legend()
     fig.tight_layout()
     # save graph as a file
-    filename = op.join(opts.DATAPATH_CKP, ckpt_name, 'history.png')
+    filename = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'history.png')
     fig.savefig(filename, dpi=100)
 
 
-def save_reconstruction_samples(model, dataset, ckpt_name, epoch):
+def save_reconstruction_samples(model, dataset, epoch):
     views = make_reconstructed_views(model, dataset)
-    savepath = op.join(opts.DATAPATH_CKP, ckpt_name, 'reconimg')
+    savepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'reconimg')
     if not op.isdir(savepath):
         os.makedirs(savepath, exist_ok=True)
     for i, view in enumerate(views):

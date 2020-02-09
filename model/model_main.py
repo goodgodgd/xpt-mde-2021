@@ -64,16 +64,16 @@ def train():
               f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
 
         if epoch % 10 == 0:
-            log.save_reconstruction_samples(model, dataset_val, opts.CKPT_NAME, epoch)
+            log.save_reconstruction_samples(model, dataset_val, epoch)
             log.save_loss_scales(model, dataset_val, val_steps)
         save_model(model, opts.CKPT_NAME, result_val[1])
-        log.save_log(epoch, result_train, result_val, opts.CKPT_NAME)
+        log.save_log(epoch, result_train, result_val)
 
 
-def set_configs(ckpt_name):
+def set_configs():
     np.set_printoptions(precision=3, suppress=True)
-    if not op.isdir(op.join(opts.DATAPATH_CKP, ckpt_name)):
-        os.makedirs(op.join(opts.DATAPATH_CKP, ckpt_name), exist_ok=True)
+    if not op.isdir(op.join(opts.DATAPATH_CKP, opts.CKPT_NAME)):
+        os.makedirs(op.join(opts.DATAPATH_CKP, opts.CKPT_NAME), exist_ok=True)
 
     # set gpu configs
     gpus = tf.config.experimental.list_physical_devices('GPU')
@@ -89,9 +89,9 @@ def set_configs(ckpt_name):
             print(e)
 
 
-def try_load_weights(model, ckpt_name, weight_name='latest.h5'):
-    if ckpt_name:
-        model_file_path = op.join(opts.DATAPATH_CKP, ckpt_name, weight_name)
+def try_load_weights(model, weight_name='latest.h5'):
+    if opts.CKPT_NAME:
+        model_file_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, weight_name)
         if op.isfile(model_file_path):
             print("===== load model weights", model_file_path)
             model.load_weights(model_file_path)
@@ -216,26 +216,25 @@ def get_metric_pose(preds, features):
         return 0, 0
 
 
-def save_model(model, ckpt_name, val_loss):
+def save_model(model, val_loss):
     """
     :param model: nn model object
-    :param ckpt_name: model directory name
     :param val_loss: current validation loss
     """
     # save the latest model
-    save_model_weights(model, ckpt_name, 'latest.h5')
+    save_model_weights(model, 'latest.h5')
     # save the best model (function static variable)
     save_model.best = getattr(save_model, 'best', 10000)
     if val_loss < save_model.best:
-        save_model_weights(model, ckpt_name, 'best.h5')
+        save_model_weights(model, 'best.h5')
         save_model.best = val_loss
 
 
-def save_model_weights(model, ckpt_name, weights_name):
-    model_dir_path = op.join(opts.DATAPATH_CKP, ckpt_name)
+def save_model_weights(model, weights_name):
+    model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME)
     if not op.isdir(model_dir_path):
         os.makedirs(model_dir_path, exist_ok=True)
-    model_file_path = op.join(opts.DATAPATH_CKP, ckpt_name, weights_name)
+    model_file_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, weights_name)
     model.save_weights(model_file_path)
 
 
