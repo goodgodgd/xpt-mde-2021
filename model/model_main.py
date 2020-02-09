@@ -63,10 +63,11 @@ def train():
         print(f"\n[Val Epoch MEAN],   loss={result_val[0]:1.4f}, "
               f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
 
-        save_model(model, opts.CKPT_NAME, result_val[1])
-        log.save_log(epoch, result_train, result_val, opts.CKPT_NAME)
         if epoch % 10 == 0:
             log.save_reconstruction_samples(model, dataset_val, opts.CKPT_NAME, epoch)
+            log.log_loss_scales(model, dataset_val, val_steps)
+        save_model(model, opts.CKPT_NAME, result_val[1])
+        log.save_log(epoch, result_train, result_val, opts.CKPT_NAME)
 
 
 def set_configs(ckpt_name):
@@ -436,7 +437,7 @@ def collect_losses(model, dataset, steps_per_epoch):
 
 
 if __name__ == "__main__":
-    # train()
+    train()
     # predict()
     # test_model_output()
-    test_loss_scale()
+    # test_loss_scale()

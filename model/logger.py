@@ -4,9 +4,11 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
+import tensorflow as tf
 
 from config import opts
 import utils.util_funcs as uf
+import model.loss_and_metric.losses as lm
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 
 
@@ -86,3 +88,42 @@ def make_reconstructed_views(model, dataset):
 
     return recon_views
 
+
+def log_loss_scales(model, dataset, steps):
+    print("\n===== log_loss_scales")
+    losses = collect_losses(model, dataset, steps)
+    save_loss_to_file(losses)
+
+
+def collect_losses(model, dataset, steps_per_epoch):
+    results = {"L1": [], "SSIM": [], "smootheness": []}
+    total_loss = lm.TotalLoss()
+    calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
+    calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
+    calc_smootheness_loss = lm.SmoothenessLossMultiScale()
+
+    for step, features in enumerate(dataset):
+        preds = model(features['image'])
+        augm_data = total_loss.augment_data(features, preds)
+        photo_l1 = calc_photo_loss_l1(features, preds, augm_data)
+        photo_ssim = calc_photo_loss_ssim(features, preds, augm_data)
+        smoothe = calc_smootheness_loss(features, preds, augm_data)
+
+        results["L1"].append(photo_l1)
+        results["SSIM"].append(photo_ssim)
+        results["smootheness"].append(smoothe)
+        uf.print_progress_status(f"step: {step} / {steps_per_epoch}")
+
+    print("")
+    results = {key: tf.concat(res, 0).numpy() for key, res in results.items()}
+    return results
+
+
+def save_loss_to_file(losses):
+    with open(op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "loss_scale.txt"), "a") as f:
+        for key, loss in losses.items():
+            f.write(f"> loss type={key}, weight={opts.LOSS_WEIGHTS[key]}, shape={loss.shape}\n")
+            f.write(f"\tloss min={loss.min():1.4f}, max={loss.max():1.4f}, mean={loss.mean():1.4f}, median={np.median(loss):1.4f}\n")
+            f.write(f"\tloss quantile={np.quantile(loss, np.arange(0, 1, 0.1))}\n")
+        f.write("\n\n")
+        print("loss_scale.txt written !!")
