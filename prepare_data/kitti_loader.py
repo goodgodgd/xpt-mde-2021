@@ -42,6 +42,7 @@ class KittiDataLoader:
 
     def load_drive(self, drive, snippet_len):
         self.kitti_reader.create_drive_loader(self.base_path, drive)
+        self.kitti_reader.update_stereo_extrinsic()
         self.drive_path = self.kitti_reader.make_drive_path(self.base_path, drive)
         self.frame_inds = self.kitti_reader.find_frame_indices(self.drive_path, snippet_len)
         if self.frame_inds.size > 1:
@@ -119,14 +120,6 @@ class KittiDataLoaderStereo(KittiDataLoader):
     def __init__(self, base_path, split, reader):
         super().__init__(base_path, split, reader)
 
-    def load_drive(self, drive, snippet_len):
-        self.kitti_reader.create_drive_loader(self.base_path, drive)
-        self.drive_path = self.kitti_reader.make_drive_path(self.base_path, drive)
-        self.frame_inds = self.kitti_reader.find_frame_indices(self.drive_path, snippet_len)
-        if self.frame_inds.size > 1:
-            print(f"frame_indices: {self.frame_inds[0]} ~ {self.frame_inds[-1]}")
-        return self.frame_inds
-
     def example_generator(self, index, snippet_len):
         example = dict()
         example["index"] = index
@@ -187,10 +180,12 @@ class KittiDataLoaderStereo(KittiDataLoader):
         return depth
 
 
-def test():
-    np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    dataset = "kitti_odom"
-    loader = KittiDataLoader(get_raw_data_path(dataset), dataset, "train")
+def test_kitti_loader():
+    np.set_printoptions(precision=3, suppress=True, linewidth=150)
+    dataset = "kitti_raw"
+    loader = kitti_loader_factory(get_raw_data_path(dataset), dataset, "train")
+    delay = 0
+    height, width = opts.IM_HEIGHT, opts.IM_WIDTH
 
     for drive in loader.drive_list:
         frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
@@ -199,22 +194,41 @@ def test():
             continue
 
         for index, i in enumerate(frame_indices):
-            snippet = loader.snippet_generator(index, opts.SNIPPET_LEN)
-            index = snippet["index"]
-            frames = snippet["image"]
-            poses = snippet["pose_gt"]
-            depths = snippet["depth_gt"]
-            intrinsic = snippet["intrinsic"]
+            example = loader.example_generator(index, opts.SNIPPET_LEN)
+            index = example["index"]
+            frames = example["image"]
+            poses = example["pose_gt"]
+            depth_map = example["depth_gt"]
+            intrinsic = example["intrinsic"]
+            depth_map = np.clip(depth_map, 0, 20)
             print(f"frame {index}: concatenated image shape={frames.shape}, pose shape={poses.shape}")
             print("pose", poses[:3, :])
             print("intrinsic", intrinsic)
-            cv2.imshow("frame", frames)
-            key = cv2.waitKey(1000)
+
+            if opts.STEREO:
+                target_lef = frames[height * 2:height * 3, :width, :]
+                target_rig = frames[height * 2:height * 3, width:, :]
+                frame_view = np.concatenate([target_lef, target_rig], axis=0)
+                depth_lef = depth_map[:, :width]
+                depth_rig = depth_map[:, width:]
+                depth_view = np.concatenate([depth_lef, depth_rig], axis=0)
+                cv2.imshow("frame_target", frame_view)
+                cv2.imshow("depth_target", depth_view)
+            else:
+                cv2.imshow("depth_map", depth_map)
+
+            cv2.imshow("frames", frames)
+            key = cv2.waitKey(delay)
             if key == ord('q'):
                 return
-            if key == ord('s'):
+            if key == ord('n'):
                 break
+            if key == ord('s'):
+                if delay > 0:
+                    delay = 0
+                else:
+                    delay = 500
 
 
 if __name__ == "__main__":
-    test()
+    test_kitti_loader()

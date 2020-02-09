@@ -18,6 +18,7 @@ class KittiReader:
         self.drive_loader = None
         self.pose_avail = True
         self.depth_avail = True
+        self.T_left_right = None
 
     def read_static_frames(self):
         filename = self.static_frame_filename()
@@ -69,9 +70,9 @@ class KittiReader:
             return np.array(images[0])
 
     def get_intrinsic(self):
-        intrinsic = self.drive_loader.calib.P_rect_20[:, :3]
+        intrinsic = self.drive_loader.calib.K_cam2
         if self.stereo:
-            intrinsic_rig = self.drive_loader.calib.P_rect_30[:, :3]
+            intrinsic_rig = self.drive_loader.calib.K_cam3
             return intrinsic, intrinsic_rig
         else:
             return intrinsic
@@ -81,6 +82,15 @@ class KittiReader:
 
     def get_depth_map(self, frame_idx, drive_path, raw_img_shape, target_shape):
         raise NotImplementedError()
+
+    def get_stereo_extrinsic(self):
+        return self.T_left_right
+
+    def update_stereo_extrinsic(self):
+        cal = self.drive_loader.calib
+        T_cam2_cam3 = np.dot(cal.T_cam2_velo, np.linalg.inv(cal.T_cam3_velo))
+        self.T_left_right = T_cam2_cam3
+        print("update stereo extrinsic T_left_right =\n", self.T_left_right)
 
 
 class KittiRawReader(KittiReader):
@@ -115,22 +125,23 @@ class KittiRawReader(KittiReader):
     def get_quat_pose(self, index):
         T_w_imu = self.drive_loader.oxts[index].T_w_imu
         T_imu_cam2 = np.linalg.inv(self.drive_loader.calib.T_cam2_imu)
-        T_w_cam2 = np.matmul(T_w_imu, T_imu_cam2)
+        T_w_cam2 = np.dot(T_w_imu, T_imu_cam2)
         pose_lef = cp.pose_matr2quat(T_w_cam2)
         if self.stereo:
-            T_imu_cam3 = np.linalg.inv(self.drive_loader.calib.T_cam3_imu)
-            T_w_cam3 = np.matmul(T_w_imu, T_imu_cam3)
+            T_cam2_cam3 = self.T_left_right
+            T_w_cam3 = np.dot(T_w_cam2, T_cam2_cam3)
             pose_rig = cp.pose_matr2quat(T_w_cam3)
             return pose_lef, pose_rig
         else:
             return pose_lef
 
     def get_depth_map(self, frame_idx, drive_path, original_shape, target_shape):
-        calib_dir = op.dirname(drive_path)
         velo_data = self.drive_loader.get_velo(frame_idx)
-        depth = kdg.generate_depth_map(velo_data, calib_dir, original_shape, target_shape, False)
+        T_cam2_velo, K_cam2 = self.drive_loader.calib.T_cam2_velo, self.drive_loader.calib.K_cam2
+        depth = kdg.generate_depth_map(velo_data, T_cam2_velo, K_cam2, original_shape, target_shape)
         if self.stereo:
-            depth_rig = kdg.generate_depth_map(velo_data, calib_dir, original_shape, target_shape, True)
+            T_cam3_velo, K_cam3 = self.drive_loader.calib.T_cam3_velo, self.drive_loader.calib.K_cam3
+            depth_rig = kdg.generate_depth_map(velo_data, T_cam3_velo, K_cam3, original_shape, target_shape)
             return depth, depth_rig
         else:
             return depth
@@ -275,9 +286,11 @@ class KittiOdomTestReader(KittiOdomReader):
         T_w_cam2 = np.concatenate([T_w_cam2, np.array([[0, 0, 0, 1]])], axis=0)
         pose = cp.pose_matr2quat(T_w_cam2)
         if self.stereo:
-            cal = self.drive_loader.calib
-            T_cam2_cam3 = np.dot(cal.T_cam2_velo, np.linalg.inv(cal.T_cam3_velo))
-            T_w_cam3 = T_w_cam2 * T_cam2_cam3
+            T_cam2_cam3 = self.T_left_right
+            T_w_cam3 = np.dot(T_w_cam2, T_cam2_cam3)
+            print("T_w_cam2\n", T_w_cam2)
+            print("T_cam2_cam3\n", T_cam2_cam3)
+            print("T_w_cam3\n", T_w_cam3)
             pose_rig = cp.pose_matr2quat(T_w_cam3)
             return pose, pose_rig
         else:
