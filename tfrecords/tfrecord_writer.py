@@ -13,21 +13,20 @@ import tfrecords.data_feeders as df
 
 
 class TfrecordMaker:
-    def __init__(self, srcpath, dstpath):
+    def __init__(self, srcpath, dstpath, stereo, im_width):
         self.srcpath = srcpath
         self.dstpath = dstpath
+        self.data_root = op.dirname(op.dirname(dstpath))
         # check if there is depth data available
         depths = glob(srcpath + "/*/depth")
         poses = glob(srcpath + "/*/pose")
         self.depth_avail = True if depths else False
         self.pose_avail = True if poses else False
+        self.stereo = stereo
+        self.im_width = im_width
 
     def make(self):
-        try:
-            data_feeders = self.create_feeders()
-        except ValueError as e:
-            print(e)
-            return
+        data_feeders = self.create_feeders()
 
         self.write_tfrecord_config(data_feeders)
         num_images = len(data_feeders["image"])
@@ -38,13 +37,15 @@ class TfrecordMaker:
 
         for si in range(num_shards):
             outfile = f"{self.dstpath}/shard_{si:02d}.tfrecord"
-            print("\n===== start creating:", outfile.replace(opts.DATAPATH, ''))
+            print("\n===== start creating:", outfile.replace(self.data_root, ''))
             with tf.io.TFRecordWriter(outfile) as writer:
                 for fi in range(si*num_images_per_shard, (si+1)*num_images_per_shard):
-                    uf.print_numeric_progress(fi, num_images)
                     raw_example = self.create_next_example_dict(data_feeders)
+                    if self.stereo:
+                        raw_example = self.split_stereo_data(raw_example)
                     serialized = self.make_serialized_example(raw_example)
                     writer.write(serialized)
+                    uf.print_numeric_progress(fi, num_images)
 
         print(f"\ntfrecord maker finished: srcpath={self.srcpath}, dstpath={self.dstpath}\n")
 
@@ -84,10 +85,10 @@ class TfrecordMaker:
             pose_files = []
 
         print("## list sequence files")
-        print(f"frame: {[file.replace(opts.DATAPATH, '') for file in  image_files[0:1000:200]]}")
-        print(f"intrin: {[file.replace(opts.DATAPATH, '') for file in  intrin_files[0:1000:200]]}")
-        print(f"depth: {[file.replace(opts.DATAPATH, '') for file in  depth_files[0:1000:200]]}")
-        print(f"pose: {[file.replace(opts.DATAPATH, '') for file in  pose_files[0:1000:200]]}")
+        print(f"frame: {[file.replace(self.data_root, '') for file in  image_files[0:1000:200]]}")
+        print(f"intrin: {[file.replace(self.data_root, '') for file in  intrin_files[0:1000:200]]}")
+        print(f"depth: {[file.replace(self.data_root, '') for file in  depth_files[0:1000:200]]}")
+        print(f"pose: {[file.replace(self.data_root, '') for file in  pose_files[0:1000:200]]}")
 
         for files in [image_files, intrin_files, depth_files, pose_files]:
             for file in files:
@@ -123,6 +124,27 @@ class TfrecordMaker:
         serialized = example.SerializeToString()
         return serialized
 
+    def split_stereo_data(self, example):
+        image_stereo = example["image"]
+        intrinsic_stereo = example["intrinsic"]
+        pose_stereo = example["pose_gt"]
+        depth_stereo = example["depth_gt"]
+        print("pose shape", pose_stereo)
+        assert image_stereo.shape[1] == self.im_width * 2
+        assert intrinsic_stereo.shape[1] == 6
+        assert pose_stereo.shape[1] == 6
+        assert depth_stereo.shape[1] == self.im_width * 2
+        stereo_example = dict()
+        stereo_example["image"] = image_stereo[:, :self.im_width]
+        stereo_example["image_R"] = image_stereo[:, self.im_width:]
+        stereo_example["intrinsic"] = intrinsic_stereo[:, :3]
+        stereo_example["intrinsic_R"] = intrinsic_stereo[:, 3:]
+        stereo_example["pose_gt"] = pose_stereo[:, :7]
+        stereo_example["pose_gt_R"] = pose_stereo[:, 7:]
+        stereo_example["depth_gt"] = depth_stereo[:, :self.im_width]
+        stereo_example["depth_gt_R"] = depth_stereo[:, self.im_width:]
+        return stereo_example
+
 
 # ==================== file readers ====================
 
@@ -133,10 +155,9 @@ def image_reader(filename):
     image = cv2.imread(filename)
     height = int(image.shape[0] // opts.SNIPPET_LEN)
     half_len = int(opts.SNIPPET_LEN // 2)
-    # TODO (it's done, TODO is for highlighting in pycharm)
-    #   IMPORTANT! Target image is median image in the snippet sequence
-    #   but target image is located at the bottom of the image for future convinience
-    #   the images are split into sources and target in [split_into_source_and_target]
+    # TODO IMPORTANT!
+    #   image in 'srcdata': [src--, src-, target, src+, src++]
+    #   reordered in 'tfrecords': [src--, src-, src+, src++, target]
     src_up = image[:height*half_len]
     target = image[height*half_len:height*(half_len+1)]
     src_dw = image[height*(half_len+1):]
@@ -150,12 +171,17 @@ def pose_reader(filename):
     order: [src0 src1 tgt src2 src3] -> [src0 src1 src2 src3]
     shape: [5, 7] -> [4, 4, 4]
     """
+    # TODO if width is double, process stereo
+
     poses = np.loadtxt(filename)
     half_len = int(opts.SNIPPET_LEN // 2)
     poses = np.delete(poses, half_len, 0)
     pose_mats = []
     for pose in poses:
-        tmat = cp.pose_quat2matr(pose)
+        tmat = cp.pose_quat2matr(pose[:7])
+        if len(pose) == 14:
+            tmat_rig = cp.pose_quat2matr(pose[7:])
+            tmat = np.concatenate([tmat, tmat_rig], axis=1)
         pose_mats.append(tmat)
     pose_mats = np.stack(pose_mats, axis=0)
     return pose_mats.astype(np.float32)

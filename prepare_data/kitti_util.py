@@ -98,9 +98,10 @@ class KittiReader:
         frame_inds.sort()
         last_ind = frame_inds[-1]
         half_len = snippet_len // 2
+        print("[find_frame_indices] bef", frame_inds[:5], frame_inds[-5:])
         frame_inds = [index for index in frame_inds if half_len <= index <= last_ind-half_len]
         frame_inds = np.array(frame_inds, dtype=int)
-        print("[find_frame_indices]", frame_inds[:20])
+        print("[find_frame_indices] aft", frame_inds[:5], frame_inds[-5:])
         return frame_inds
 
 

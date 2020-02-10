@@ -19,7 +19,7 @@ def convert_to_tfrecords():
             print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
         else:
             os.makedirs(tfrpath, exist_ok=True)
-            tfrmaker = TfrecordMaker(srcpath, tfrpath)
+            tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO, opts.IM_WIDTH)
             tfrmaker.make()
 
 

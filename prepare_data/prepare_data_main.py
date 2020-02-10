@@ -34,14 +34,14 @@ def prepare_and_save_snippets(loader, dataset, split):
 
         print(f"\n{'=' * 50}\n[load drive] [{i}/{num_drives}] drive path: {snippet_path}")
         frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
-        assert len(frame_indices) > 0
+        num_frames = len(frame_indices)
+        assert num_frames > 0
 
         with PathManager(data_paths) as pm:
-            num_frames = len(frame_indices)
             for k, index in enumerate(frame_indices):
                 example = loader.example_generator(index, opts.SNIPPET_LEN)
                 mean_depth = save_example(example, index, data_paths)
-                print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, {k}/{num_frames}")
+                print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, index={index}, {k}/{num_frames}")
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
         print("")

@@ -1,5 +1,6 @@
 import numpy as np
 import tensorflow as tf
+from utils.util_class import WrongInputException
 
 
 class FeederBase:
@@ -24,8 +25,7 @@ class FeederBase:
             elif value.dtype == np.float32:
                 self.decode_type = "tf.float32"
             else:
-                print("numpy type:", value.dtype)
-                raise TypeError()
+                raise WrongInputException(f"[FeederBase] Wrong numpy type: {value.dtype}")
             self.parse_type = "tf.string"
             self.shape = list(value.shape)
 
@@ -34,8 +34,7 @@ class FeederBase:
             self.shape = None
 
         else:
-            print("type:", type(value))
-            raise TypeError()
+            raise WrongInputException(f"[FeederBase] Wrong type: {type(value)}")
 
     @staticmethod
     def _bytes_feature(value):
@@ -67,15 +66,8 @@ class FileFeeder(FeederBase):
 
     def get_next(self):
         self.idx = self.idx + 1
-        if self.idx >= len(self.files):
-            raise IndexError()
-
+        assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
         onedata = self.file_reader(self.files[self.idx])
-        if onedata is None:
-            raise FileNotFoundError(self.files[self.idx])
-
-        # wrap a single raw data as tf.train.Features()
-        features = dict()
         return self.convert_to_feature(onedata)
 
     def convert_to_feature(self, value):
@@ -103,9 +95,7 @@ class ConstArrayFeeder(FeederBase):
 
     def get_next(self):
         self.idx = self.idx + 1
-        if self.idx >= self.size:
-            raise IndexError()
-        
+        assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
         return self.convert_to_feature(self.data)
 
     def convert_to_feature(self, value):
