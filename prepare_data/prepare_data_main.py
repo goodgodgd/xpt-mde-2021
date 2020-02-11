@@ -32,7 +32,7 @@ def prepare_and_save_snippets(loader, dataset, split):
             print(f"this drive may have already prepared, check this path completed: {snippet_path}")
             continue
 
-        print(f"\n{'=' * 50}\n[load drive] [{i}/{num_drives}] drive path: {snippet_path}")
+        print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {snippet_path}")
         frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
         num_frames = len(frame_indices)
         assert num_frames > 0

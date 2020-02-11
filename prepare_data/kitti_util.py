@@ -19,6 +19,7 @@ class KittiReader:
         self.pose_avail = True
         self.depth_avail = True
         self.T_left_right = None
+        self.frame_count = [0, 0, 0]
 
     def read_static_frames(self):
         filename = self.static_frame_filename()
@@ -30,9 +31,9 @@ class KittiReader:
     def static_frame_filename(self):
         raise NotImplementedError()
 
-    def remove_static_frames(self, frames):
+    def remove_static_frames(self, frames, drive=""):
         valid_frames = [frame for frame in frames if frame not in self.static_frames]
-        print(f"[remove_static_frames] {len(frames)} -> {len(valid_frames)}")
+        print(f"[remove_static_frames] {drive}: {len(frames)} -> {len(valid_frames)}")
         return valid_frames
 
     def list_drives(self, split, base_path):
@@ -51,6 +52,7 @@ class KittiReader:
             verified_drives.append(drive)
 
         print("drive list:", verified_drives)
+        print("frame counts:", dict(zip(["total", "non-static", "clip-index"], self.frame_count)))
         return verified_drives
 
     def make_drive_path(self, base_path, drive):
@@ -98,10 +100,11 @@ class KittiReader:
         frame_inds.sort()
         last_ind = frame_inds[-1]
         half_len = snippet_len // 2
-        print("[find_frame_indices] bef", frame_inds[:5], frame_inds[-5:])
+        # print("[post_proc_indices] before:", frame_inds[:5], frame_inds[-5:])
         frame_inds = [index for index in frame_inds if half_len <= index <= last_ind-half_len]
         frame_inds = np.array(frame_inds, dtype=int)
-        print("[find_frame_indices] aft", frame_inds[:5], frame_inds[-5:])
+        # print("[post_proc_indices] after :", frame_inds[:5], frame_inds[-5:])
+        self.frame_count[2] += len(frame_inds)
         return frame_inds
 
 
@@ -174,7 +177,9 @@ class KittiRawTrainUtil(KittiRawReader):
             splits = frame.strip("\n").split("/")
             frame_files.append(f"{splits[-5]} {splits[-4][-9:-5]} {splits[-1][:-4]}")
 
-        frame_files = self.remove_static_frames(frame_files)
+        self.frame_count[0] += len(frame_files)
+        frame_files = self.remove_static_frames(frame_files, op.basename(drive_path))
+        self.frame_count[1] += len(frame_files)
         # convert to frame name to int
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
         return self.post_proc_indices(frame_inds, snippet_len)
@@ -196,8 +201,8 @@ class KittiRawTestUtil(KittiRawReader):
         with open(filename, "r") as fr:
             lines = fr.readlines()
             test_frames = [line.strip("\n") for line in lines if line.startswith(drive_id)]
-            # remove static frames
-            test_frames = self.remove_static_frames(test_frames)
+            self.frame_count[0] += len(test_frames)
+            self.frame_count[1] += len(test_frames)
             # convert to int frame indices
             frame_inds = [int(frame.split()[-1]) for frame in test_frames]
             return self.post_proc_indices(frame_inds, snippet_len)
@@ -207,6 +212,7 @@ class KittiOdomReader(KittiReader):
     def __init__(self, stereo=False):
         super().__init__(stereo)
         self.poses = []
+        self.remove_static = True
 
     def static_frame_filename(self):
         return op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_odom_static_frames.txt")
@@ -232,7 +238,10 @@ class KittiOdomReader(KittiReader):
             splits = frame.strip("\n").split("/")
             frame_files.append(f"{splits[-3]} {splits[-1][:-4]}")
 
-        frame_files = self.remove_static_frames(frame_files)
+        self.frame_count[0] += len(frame_files)
+        if self.remove_static:
+            frame_files = self.remove_static_frames(frame_files, op.basename(drive_path))
+        self.frame_count[1] += len(frame_files)
         # convert to frame name to int
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
         return self.post_proc_indices(frame_inds, snippet_len)
@@ -250,6 +259,7 @@ class KittiOdomTrainReader(KittiOdomReader):
         super().__init__(stereo)
         self.pose_avail = False
         self.depth_avail = False
+        self.remove_static = True
 
     def list_drives(self, split, base_path):
         drives = [f"{i:02d}" for i in range(11, 22)]
@@ -270,6 +280,7 @@ class KittiOdomTestReader(KittiOdomReader):
         super().__init__(stereo)
         self.pose_avail = True
         self.depth_avail = False
+        self.remove_static = False
 
     def list_drives(self, split, base_path):
         drives = [f"{i:02d}" for i in range(0, 11)]
