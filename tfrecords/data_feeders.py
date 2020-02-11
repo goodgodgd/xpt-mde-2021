@@ -52,7 +52,15 @@ class FeederBase:
         return tf.train.Feature(int64_list=tf.train.Int64List(value=[value]))
 
 
-class FileFeeder(FeederBase):
+class NpyFeeder(FeederBase):
+    def __init__(self):
+        super().__init__()
+
+    def convert_to_feature(self, value):
+        return self._bytes_feature(value.tostring())
+
+
+class NpyFileFeeder(NpyFeeder):
     def __init__(self, file_list, file_reader):
         super().__init__()
         self.files = file_list
@@ -70,19 +78,40 @@ class FileFeeder(FeederBase):
         onedata = self.file_reader(self.files[self.idx])
         return self.convert_to_feature(onedata)
 
-    def convert_to_feature(self, value):
-        raise NotImplementedError()
 
-
-class NpyFeeder(FileFeeder):
+class NpyFileFeederStereoLeft(NpyFileFeeder):
     def __init__(self, file_list, file_reader):
         super().__init__(file_list, file_reader)
+        # edit array 'width' which was set in set_type_and_shape()
+        self.shape[1] = self.shape[1] // 2
+        self.right_data = None
 
-    def convert_to_feature(self, value):
-        return self._bytes_feature(value.tostring())
+    def get_next(self):
+        self.idx = self.idx + 1
+        assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
+        stereodata = self.file_reader(self.files[self.idx])
+        width = self.shape[1]
+        left, right = stereodata[:, :width], stereodata[:, width:]
+        self.right_data = right
+        return self.convert_to_feature(left)
 
 
-class ConstArrayFeeder(FeederBase):
+class NpyFileFeederStereoRight(NpyFileFeeder):
+    def __init__(self, left_feeder):
+        super().__init__(left_feeder.files, left_feeder.file_reader)
+        # edit array 'width' which was set in set_type_and_shape()
+        self.shape[1] = self.shape[1] // 2
+        self.left_feeder = left_feeder
+
+    def get_next(self):
+        self.idx = self.idx + 1
+        assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
+        # right feeder MUST called AFTER calling left feeder
+        assert self.left_feeder.idx == self.idx
+        return self.convert_to_feature(self.left_feeder.right_data)
+
+
+class ConstArrayFeeder(NpyFeeder):
     def __init__(self, data, size):
         super().__init__()
         self.data = data
@@ -96,7 +125,5 @@ class ConstArrayFeeder(FeederBase):
     def get_next(self):
         self.idx = self.idx + 1
         assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
-        return self.convert_to_feature(self.data)
-
-    def convert_to_feature(self, value):
-        return self._bytes_feature(value.tostring())
+        feature = self.convert_to_feature(self.data)
+        return feature

@@ -41,8 +41,6 @@ class TfrecordMaker:
             with tf.io.TFRecordWriter(outfile) as writer:
                 for fi in range(si*num_images_per_shard, (si+1)*num_images_per_shard):
                     raw_example = self.create_next_example_dict(data_feeders)
-                    if self.stereo:
-                        raw_example = self.split_stereo_data(raw_example)
                     serialized = self.make_serialized_example(raw_example)
                     writer.write(serialized)
                     uf.print_numeric_progress(fi, num_images)
@@ -52,13 +50,27 @@ class TfrecordMaker:
     def create_feeders(self):
         image_files, intrin_files, depth_files, pose_files = self.list_sequence_files()
 
-        feeders = {"image": df.NpyFeeder(image_files, image_reader),
-                   "intrinsic": df.NpyFeeder(intrin_files, txt_reader),
-                   }
-        if self.depth_avail:
-            feeders["depth_gt"] = df.NpyFeeder(depth_files, depth_reader)
-        if self.pose_avail:
-            feeders["pose_gt"] = df.NpyFeeder(pose_files, pose_reader)
+        if self.stereo:
+            feeders = {"image": df.NpyFileFeederStereoLeft(image_files, image_reader),
+                       "intrinsic": df.NpyFileFeederStereoLeft(intrin_files, npytxt_reader),
+                       }
+            if self.depth_avail:
+                feeders["depth_gt"] = df.NpyFileFeederStereoLeft(depth_files, depth_reader)
+            if self.pose_avail:
+                feeders["pose_gt"] = df.NpyFileFeederStereoLeft(pose_files, pose_reader)
+            # add right side data
+            feeders_rig = dict()
+            for name, left_feeder in feeders.items():
+                feeders_rig[name + "_R"] = df.NpyFileFeederStereoRight(left_feeder)
+            feeders.update(feeders_rig)
+        else:
+            feeders = {"image": df.NpyFileFeeder(image_files, image_reader),
+                       "intrinsic": df.NpyFileFeeder(intrin_files, npytxt_reader),
+                       }
+            if self.depth_avail:
+                feeders["depth_gt"] = df.NpyFileFeeder(depth_files, depth_reader)
+            if self.pose_avail:
+                feeders["pose_gt"] = df.NpyFileFeeder(pose_files, pose_reader)
 
         return feeders
 
@@ -124,27 +136,6 @@ class TfrecordMaker:
         serialized = example.SerializeToString()
         return serialized
 
-    def split_stereo_data(self, example):
-        image_stereo = example["image"]
-        intrinsic_stereo = example["intrinsic"]
-        pose_stereo = example["pose_gt"]
-        depth_stereo = example["depth_gt"]
-        print("pose shape", pose_stereo)
-        assert image_stereo.shape[1] == self.im_width * 2
-        assert intrinsic_stereo.shape[1] == 6
-        assert pose_stereo.shape[1] == 6
-        assert depth_stereo.shape[1] == self.im_width * 2
-        stereo_example = dict()
-        stereo_example["image"] = image_stereo[:, :self.im_width]
-        stereo_example["image_R"] = image_stereo[:, self.im_width:]
-        stereo_example["intrinsic"] = intrinsic_stereo[:, :3]
-        stereo_example["intrinsic_R"] = intrinsic_stereo[:, 3:]
-        stereo_example["pose_gt"] = pose_stereo[:, :7]
-        stereo_example["pose_gt_R"] = pose_stereo[:, 7:]
-        stereo_example["depth_gt"] = depth_stereo[:, :self.im_width]
-        stereo_example["depth_gt_R"] = depth_stereo[:, self.im_width:]
-        return stereo_example
-
 
 # ==================== file readers ====================
 
@@ -171,8 +162,6 @@ def pose_reader(filename):
     order: [src0 src1 tgt src2 src3] -> [src0 src1 src2 src3]
     shape: [5, 7] -> [4, 4, 4]
     """
-    # TODO if width is double, process stereo
-
     poses = np.loadtxt(filename)
     half_len = int(opts.SNIPPET_LEN // 2)
     poses = np.delete(poses, half_len, 0)
@@ -187,18 +176,14 @@ def pose_reader(filename):
     return pose_mats.astype(np.float32)
 
 
-def npy_reader(filename):
-    data = np.load(filename)
-    return data.astype(np.float32)
-
-
-def txt_reader(filename):
+def npytxt_reader(filename):
     data = np.loadtxt(filename)
     return data.astype(np.float32)
 
 
 def depth_reader(filename):
     data = np.loadtxt(filename)
+    # add channel dimension
     data = np.expand_dims(data, -1)
     return data.astype(np.float32)
 
