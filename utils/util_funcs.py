@@ -102,13 +102,19 @@ def multi_scale_depths(depth, scales):
 
 
 def count_steps(dataset_dir, batch_size=opts.BATCH_SIZE):
-    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
-    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
-        config = json.load(fr)
+    config = read_tfrecords_info(dataset_dir)
     frames = config['length']
     steps = frames // batch_size
     print(f"[count steps] frames={frames}, steps={steps}")
     return steps
+
+
+def read_tfrecords_info(dataset_dir):
+    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
+    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
+        config = json.load(fr)
+    return config
+
 
 
 def check_tfrecord_including(dataset_dir, key_list):

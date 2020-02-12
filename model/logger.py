@@ -63,7 +63,7 @@ def save_reconstruction_samples(model, dataset, epoch):
 def make_reconstructed_views(model, dataset):
     recon_views = []
     for i, features in enumerate(dataset):
-        predictions = model(features['image'])
+        predictions = model(features)
         pred_disp_ms = predictions['disp_ms']
         pred_pose = predictions['pose']
         pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
