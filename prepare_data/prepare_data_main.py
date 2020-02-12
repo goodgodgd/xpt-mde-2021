@@ -11,12 +11,15 @@ from utils.util_funcs import print_progress_status
 from utils.util_class import PathManager
 
 
-def prepare_kitti_data():
-    for dataset in ["kitti_raw", "kitti_odom"]:
-        for split in ["test", "train"]:
+def prepare_kitti_data(dataset_in=None, split_in=None):
+    datasets = ["kitti_raw", "kitti_odom"] if dataset_in is None else [dataset_in]
+    splits = ["test", "train"] if split_in is None else [split_in]
+    for dataset in datasets:
+        for split in splits:
             loader = kitti_loader_factory(get_raw_data_path(dataset), dataset, split)
             prepare_and_save_snippets(loader, dataset, split)
-        create_validation_set(dataset)
+            if split == "test":
+                create_validation_set(dataset)
 
 
 def prepare_and_save_snippets(loader, dataset, split):
@@ -109,14 +112,6 @@ def create_validation_set(dataset):
     print(f"\n### create validation split for {dataset}")
 
 
-def prepare_single_dataset():
-    dataset = "kitti_odom"
-    split = "train"
-    loader = kitti_loader_factory(get_raw_data_path(dataset), dataset, split)
-    prepare_and_save_snippets(loader, dataset, split)
-
-
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_kitti_data()
-    # prepare_single_dataset()
+    prepare_kitti_data("kitti_raw", "train")

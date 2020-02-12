@@ -5,6 +5,7 @@ import numpy as np
 
 import settings
 from config import opts
+from utils.util_class import PathManager
 from tfrecords.tfrecord_writer import TfrecordMaker
 
 
@@ -18,9 +19,12 @@ def convert_to_tfrecords():
         if op.isdir(tfrpath):
             print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
         else:
-            os.makedirs(tfrpath, exist_ok=True)
-            tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO, opts.IM_WIDTH)
-            tfrmaker.make()
+            with PathManager([tfrpath]) as pm:
+                os.makedirs(tfrpath, exist_ok=True)
+                tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO, opts.IM_WIDTH)
+                tfrmaker.make()
+                # if set_ok() was NOT excuted, the generated path is removed
+                pm.set_ok()
 
 
 if __name__ == "__main__":
