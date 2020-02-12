@@ -19,7 +19,7 @@ class KittiReader:
         self.pose_avail = True
         self.depth_avail = True
         self.T_left_right = None
-        self.frame_count = [0, 0, 0]
+        self.frame_count = [0, 0]
 
     def read_static_frames(self):
         filename = self.static_frame_filename()
@@ -33,7 +33,6 @@ class KittiReader:
 
     def remove_static_frames(self, frames, drive=""):
         valid_frames = [frame for frame in frames if frame not in self.static_frames]
-        print(f"[remove_static_frames] {drive}: {len(frames)} -> {len(valid_frames)}")
         return valid_frames
 
     def list_drives(self, split, base_path):
@@ -52,7 +51,7 @@ class KittiReader:
             verified_drives.append(drive)
 
         print("drive list:", verified_drives)
-        print("frame counts:", dict(zip(["total", "non-static", "clip-index"], self.frame_count)))
+        print("frame counts:", dict(zip(["total", "non-static"], self.frame_count)))
         return verified_drives
 
     def make_drive_path(self, base_path, drive):
@@ -62,6 +61,15 @@ class KittiReader:
         raise NotImplementedError()
 
     def find_frame_indices(self, drive_path, snippet_len):
+        raise NotImplementedError()
+
+    def find_last_index(self, drive_path):
+        frame_files = self.find_frame_files(drive_path)
+        last_file = frame_files[-1]
+        last_index = last_file.strip("\n").split("/")[-1][:-4]
+        return int(last_index)
+
+    def find_frame_files(self, drive_path):
         raise NotImplementedError()
 
     def get_image(self, index):
@@ -94,19 +102,6 @@ class KittiReader:
         self.T_left_right = T_cam2_cam3
         print("update stereo extrinsic T_left_right =\n", self.T_left_right)
 
-    def post_proc_indices(self, frame_inds, snippet_len):
-        if not frame_inds:
-            return frame_inds
-        frame_inds.sort()
-        last_ind = frame_inds[-1]
-        half_len = snippet_len // 2
-        # print("[post_proc_indices] before:", frame_inds[:5], frame_inds[-5:])
-        frame_inds = [index for index in frame_inds if half_len <= index <= last_ind-half_len]
-        frame_inds = np.array(frame_inds, dtype=int)
-        # print("[post_proc_indices] after :", frame_inds[:5], frame_inds[-5:])
-        self.frame_count[2] += len(frame_inds)
-        return frame_inds
-
 
 class KittiRawReader(KittiReader):
     def __init__(self, stereo=False):
@@ -121,6 +116,7 @@ class KittiRawReader(KittiReader):
         filename = op.join(op.dirname(op.abspath(__file__)), "resources", f"kitti_raw_{split}_scenes.txt")
         with open(filename, "r") as f:
             drives = f.readlines()
+            drives.sort()
             drives = [tuple(drive.strip("\n").split()) for drive in drives]
             drives = self.verify_drives(drives, base_path)
             return drives
@@ -136,6 +132,12 @@ class KittiRawReader(KittiReader):
 
     def find_frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
+
+    def find_frame_files(self, drive_path):
+        frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
+        frame_files = glob(frame_pattern)
+        frame_files.sort()
+        return frame_files
 
     def get_quat_pose(self, index):
         T_w_imu = self.drive_loader.oxts[index].T_w_imu
@@ -168,21 +170,29 @@ class KittiRawTrainUtil(KittiRawReader):
 
     def find_frame_indices(self, drive_path, snippet_len):
         # list frame files in drive_path
-        frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
-        frame_paths = glob(frame_pattern)
-        frame_paths.sort()
-        frame_files = []
+        frame_paths = self.find_frame_files(drive_path)
+        frame_files_all = []
         # reformat to 'date drive_id frame_id' format like '2011_09_26 0001 0000000000'
         for frame in frame_paths:
             splits = frame.strip("\n").split("/")
-            frame_files.append(f"{splits[-5]} {splits[-4][-9:-5]} {splits[-1][:-4]}")
+            frame_files_all.append(f"{splits[-5]} {splits[-4][-9:-5]} {splits[-1][:-4]}")
 
-        self.frame_count[0] += len(frame_files)
-        frame_files = self.remove_static_frames(frame_files, op.basename(drive_path))
+        self.frame_count[0] += len(frame_files_all)
+        frame_files = self.remove_static_frames(frame_files_all, op.basename(drive_path))
+        if not frame_files:
+            print(f"[find_frame_indices] {op.basename(drive_path)}: {len(frame_files_all)} -> 0")
+            return []
+
         self.frame_count[1] += len(frame_files)
+        last_frame = self.find_last_index(drive_path)
+        half_len = snippet_len // 2
+
         # convert to frame name to int
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
-        return self.post_proc_indices(frame_inds, snippet_len)
+        frame_inds.sort()
+        frame_inds = [ind for ind in frame_inds if half_len <= ind <= last_frame - half_len]
+        print(f"[find_frame_indices] {op.basename(drive_path)}: {len(frame_files_all)} -> {len(frame_inds)}")
+        return frame_inds
 
 
 class KittiRawTestUtil(KittiRawReader):
@@ -190,11 +200,8 @@ class KittiRawTestUtil(KittiRawReader):
         super().__init__(stereo)
 
     def find_frame_indices(self, drive_path, snippet_len):
-        # count total frames in drive
-        frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
-        num_frames = len(glob(frame_pattern))
         drive_splits = drive_path.split("/")
-        # format drive_path into 'date drive'
+        # format drive_path like 'date drive'
         drive_id = f"{drive_splits[-2]} {drive_splits[-1][-9:-5]}"
 
         filename = op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_test_depth_frames.txt")
@@ -205,14 +212,15 @@ class KittiRawTestUtil(KittiRawReader):
             self.frame_count[1] += len(test_frames)
             # convert to int frame indices
             frame_inds = [int(frame.split()[-1]) for frame in test_frames]
-            return self.post_proc_indices(frame_inds, snippet_len)
+            frame_inds.sort()
+            print(f"[find_frame_indices] {op.basename(drive_path)}: {len(test_frames)} -> {len(frame_inds)}")
+            return frame_inds
 
 
 class KittiOdomReader(KittiReader):
     def __init__(self, stereo=False):
         super().__init__(stereo)
         self.poses = []
-        self.remove_static = True
 
     def static_frame_filename(self):
         return op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_odom_static_frames.txt")
@@ -228,23 +236,13 @@ class KittiOdomReader(KittiReader):
         return drive_path
 
     def find_frame_indices(self, drive_path, snippet_len):
-        # list frame files in drive_path
-        frame_pattern = op.join(drive_path, "image_2", "*.png")
-        frame_paths = glob(frame_pattern)
-        frame_paths.sort()
-        frame_files = []
-        # reformat file paths into 'drive_id frame_id' format like '01 0000000000'
-        for frame in frame_paths:
-            splits = frame.strip("\n").split("/")
-            frame_files.append(f"{splits[-3]} {splits[-1][:-4]}")
+        raise NotImplementedError()
 
-        self.frame_count[0] += len(frame_files)
-        if self.remove_static:
-            frame_files = self.remove_static_frames(frame_files, op.basename(drive_path))
-        self.frame_count[1] += len(frame_files)
-        # convert to frame name to int
-        frame_inds = [int(frame.split()[-1]) for frame in frame_files]
-        return self.post_proc_indices(frame_inds, snippet_len)
+    def find_frame_files(self, drive_path):
+        frame_pattern = op.join(drive_path, "image_2", "*.png")
+        frame_files = glob(frame_pattern)
+        frame_files.sort()
+        return frame_files
 
     def get_quat_pose(self, index):
         raise NotImplementedError()
@@ -259,7 +257,6 @@ class KittiOdomTrainReader(KittiOdomReader):
         super().__init__(stereo)
         self.pose_avail = False
         self.depth_avail = False
-        self.remove_static = True
 
     def list_drives(self, split, base_path):
         drives = [f"{i:02d}" for i in range(11, 22)]
@@ -269,6 +266,31 @@ class KittiOdomTrainReader(KittiOdomReader):
     def create_drive_loader(self, base_path, drive):
         print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         self.drive_loader = pykitti.odometry(base_path, drive)
+
+    def find_frame_indices(self, drive_path, snippet_len):
+        # list frame files in drive_path
+        frame_paths = self.find_frame_files(drive_path)
+        frame_files_all = []
+        # reformat file paths into 'drive_id frame_id' format like '01 0000000000'
+        for frame in frame_paths:
+            splits = frame.strip("\n").split("/")
+            frame_files_all.append(f"{splits[-3]} {splits[-1][:-4]}")
+
+        self.frame_count[0] += len(frame_files_all)
+        frame_files = self.remove_static_frames(frame_files_all, op.basename(drive_path))
+        if not frame_files:
+            print(f"[find_frame_indices] {op.basename(drive_path)}: {len(frame_files_all)} -> 0")
+            return []
+
+        self.frame_count[1] += len(frame_files)
+        last_frame = self.find_last_index(drive_path)
+        half_len = snippet_len // 2
+        # convert to frame name to int
+        frame_inds = [int(frame.split()[-1]) for frame in frame_files]
+        frame_inds.sort()
+        frame_inds = [ind for ind in frame_inds if half_len <= ind <= last_frame - half_len]
+        print(f"[find_frame_indices] {op.basename(drive_path)}: {len(frame_files_all)} -> {len(frame_inds)}")
+        return frame_inds
 
     def get_quat_pose(self, index):
         # no depth available for kitti_odom_train dataset
@@ -293,6 +315,23 @@ class KittiOdomTestReader(KittiOdomReader):
         print("read pose file:", pose_file)
         print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         self.drive_loader = pykitti.odometry(base_path, drive)
+
+    def find_frame_indices(self, drive_path, snippet_len):
+        # list frame files in drive_path
+        frame_paths = self.find_frame_files(drive_path)
+        frame_files = []
+        # reformat file paths into 'drive_id frame_id' format like '01 0000000000'
+        for frame in frame_paths:
+            splits = frame.strip("\n").split("/")
+            frame_files.append(f"{splits[-3]} {splits[-1][:-4]}")
+
+        self.frame_count[0] += len(frame_files)
+        self.frame_count[1] += len(frame_files)
+        # convert to frame name to int
+        frame_inds = [int(frame.split()[-1]) for frame in frame_files]
+        frame_inds.sort()
+        print(f"[find_frame_indices] {op.basename(drive_path)}: {len(frame_files)} -> {len(frame_inds)}")
+        return frame_inds
 
     def get_quat_pose(self, index):
         T_w_cam2 = self.poses[index].reshape((3, 4))

@@ -39,33 +39,42 @@ class KittiDataLoader:
         self.drive_list = self.kitti_reader.list_drives(split, base_path)
         self.drive_path = ""
         self.frame_inds = []
+        self.last_index = 0
+        self.num_frames = 0
 
     def load_drive(self, drive, snippet_len):
         self.kitti_reader.create_drive_loader(self.base_path, drive)
         self.kitti_reader.update_stereo_extrinsic()
         self.drive_path = self.kitti_reader.make_drive_path(self.base_path, drive)
         self.frame_inds = self.kitti_reader.find_frame_indices(self.drive_path, snippet_len)
-        if self.frame_inds.size > 1:
-            print(f"frame_indices: {self.frame_inds[0]} ~ {self.frame_inds[-1]}")
+        self.last_index = self.kitti_reader.find_last_index(self.drive_path)
+        self.num_frames = len(self.frame_inds)
+        print(f"frame_indices: {self.frame_inds[0]} ~ {self.frame_inds[-1]}, last={self.last_index}")
         return self.frame_inds
 
     def example_generator(self, index, snippet_len):
+        indices = self.make_snippet_indices(index, snippet_len)
         example = dict()
         example["index"] = index
-        example["image"], raw_img_shape = self.load_snippet_frames(index, snippet_len)
+        example["image"], raw_img_shape = self.load_snippet_frames(indices)
         example["intrinsic"] = self.load_intrinsic(raw_img_shape)
         if self.kitti_reader.pose_avail:
-            example["pose_gt"] = self.load_snippet_poses(index, snippet_len)
+            example["pose_gt"] = self.load_snippet_poses(indices, snippet_len)
         if self.kitti_reader.depth_avail:
-            example["depth_gt"] = self.load_frame_depth(index, self.drive_path, raw_img_shape)
+            example["depth_gt"] = self.load_frame_depth(indices, self.drive_path, raw_img_shape)
         return example
 
-    def load_snippet_frames(self, frame_idx, snippet_len):
-        halflen = snippet_len//2
+    def make_snippet_indices(self, frame_idx, snippet_len):
+        halflen = snippet_len // 2
+        indices = np.arange(frame_idx-halflen, frame_idx+halflen+1)
+        indices = np.clip(indices, 0, self.last_index).tolist()
+        return indices
+
+    def load_snippet_frames(self, frame_indices):
         frames = []
         raw_img_shape = ()
-        for ind in range(frame_idx-halflen, frame_idx+halflen+1):
-            frame = self.kitti_reader.get_image(ind)
+        for index in frame_indices:
+            frame = self.kitti_reader.get_image(index)
             raw_img_shape = frame.shape[:2]
             frame = cv2.resize(frame, dsize=(opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -74,16 +83,15 @@ class KittiDataLoader:
         frames = np.concatenate(frames, axis=0)
         return frames, raw_img_shape
 
-    def load_snippet_poses(self, frame_idx, snippet_len):
-        halflen = snippet_len//2
+    def load_snippet_poses(self, frame_indices, snippet_len):
         poses = []
-        for ind in range(frame_idx-halflen, frame_idx+halflen+1):
+        for ind in frame_indices:
             pose = self.kitti_reader.get_quat_pose(ind)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
         # print("poses bef\n", poses)
-        poses = self.to_local_pose(poses, halflen)
+        poses = self.to_local_pose(poses, snippet_len // 2)
         # print("poses local\n", poses)
         return poses
 
@@ -121,21 +129,21 @@ class KittiDataLoaderStereo(KittiDataLoader):
         super().__init__(base_path, split, reader)
 
     def example_generator(self, index, snippet_len):
+        indices = self.make_snippet_indices(index, snippet_len)
         example = dict()
         example["index"] = index
-        example["image"], raw_img_shape = self.load_snippet_frames_stereo(index, snippet_len)
+        example["image"], raw_img_shape = self.load_snippet_frames_stereo(indices)
         example["intrinsic"] = self.load_intrinsic_stereo(raw_img_shape)
         if self.kitti_reader.pose_avail:
-            example["pose_gt"] = self.load_snippet_poses_stereo(index, snippet_len)
+            example["pose_gt"] = self.load_snippet_poses_stereo(indices, snippet_len)
         if self.kitti_reader.depth_avail:
             example["depth_gt"] = self.load_frame_depth_stereo(index, self.drive_path, raw_img_shape)
         return example
 
-    def load_snippet_frames_stereo(self, frame_idx, snippet_len):
-        halflen = snippet_len//2
+    def load_snippet_frames_stereo(self, frame_indices):
         frames = []
         raw_img_shape = ()
-        for ind in range(frame_idx-halflen, frame_idx+halflen+1):
+        for ind in frame_indices:
             img_lef, img_rig = self.kitti_reader.get_image(ind)
             raw_img_shape = img_lef.shape[:2]
             img_lef = cv2.resize(img_lef, (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
@@ -157,19 +165,18 @@ class KittiDataLoaderStereo(KittiDataLoader):
         intrinsic[1, :] = intrinsic[1, :] * sy
         return intrinsic
 
-    def load_snippet_poses_stereo(self, frame_idx, snippet_len):
-        halflen = snippet_len//2
+    def load_snippet_poses_stereo(self, frame_indices, snippet_len):
         pose_seq_lef = []
         pose_seq_rig = []
-        for ind in range(frame_idx-halflen, frame_idx+halflen+1):
+        for ind in frame_indices:
             pose_lef, pose_rig = self.kitti_reader.get_quat_pose(ind)
             pose_seq_lef.append(pose_lef)
             pose_seq_rig.append(pose_rig)
 
         pose_seq_lef = np.stack(pose_seq_lef, axis=0)
         pose_seq_rig = np.stack(pose_seq_rig, axis=0)
-        pose_seq_lef = self.to_local_pose(pose_seq_lef, halflen)
-        pose_seq_rig = self.to_local_pose(pose_seq_rig, halflen)
+        pose_seq_lef = self.to_local_pose(pose_seq_lef, snippet_len//2)
+        pose_seq_rig = self.to_local_pose(pose_seq_rig, snippet_len//2)
         poses = np.concatenate([pose_seq_lef, pose_seq_rig], axis=1)
         return poses
 
