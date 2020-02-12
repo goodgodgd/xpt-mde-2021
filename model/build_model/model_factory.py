@@ -64,7 +64,6 @@ class ModelFactory:
             pose = PoseNet()(snippet_image, self.input_shape)
         else:
             raise WrongInputException("[camera_net_factory] wrong pose net name: " + net_name)
-
         return {"pose": pose}
 
 
@@ -81,17 +80,28 @@ class ModelWrapper:
         self.model = model
 
     def __call__(self, features):
-        preds = self.model(features['image'])
+        preds = self.model(features["image"])
         return preds
 
-    def predict(self, dataset):
-        predictions = {"depth": [], "pose": []}
-        for features in dataset:
-            pred = self.model.predict(features['image'])
-            predictions["depth"].append(pred[0].numpy())
-            predictions["pose"].append(pred[4].numpy())
+    def predict(self, dataset, total_steps):
+        return self.predict_oneside(dataset, "image", total_steps)
 
-        predictions["depth"] = np.concatenate(predictions["depth"], axis=0)
+    def predict_oneside(self, dataset, image_key, total_steps):
+        print(f"===== start prediction from [{image_key}] key")
+        predictions = {"disp": [], "pose": []}
+        for step, features in enumerate(dataset):
+            pred = self.model.predict(features[image_key])
+            predictions["disp"].append(pred[0])
+            predictions["pose"].append(pred[4])
+            uf.print_progress_status(f"Progress: {step} / {total_steps}")
+        print("")
+
+        predictions["disp"] = np.concatenate(predictions["disp"], axis=0)
+        disp = predictions["disp"]
+        mask = (disp > 0)
+        depth = np.zeros(disp.shape, dtype=np.float)
+        depth[mask] = 1. / disp[mask]
+        predictions["depth"] = depth
         predictions["pose"] = np.concatenate(predictions["pose"], axis=0)
         return predictions
 
@@ -101,34 +111,31 @@ class ModelWrapper:
     def trainable_weights(self):
         return self.model.trainable_weights
 
+    def save_weights(self, ckpt_path):
+        self.model.save_weights(ckpt_path)
+
+    def load_weights(self, ckpt_path):
+        self.model.load_weights(ckpt_path)
+
 
 class StereoModelWrapper(ModelWrapper):
     def __init__(self, model):
         super(StereoModelWrapper, self).__init__(model)
 
     def __call__(self, features):
-        preds = self.model(features['image'])
-        preds_rig = self.model(features['image_R'])
+        preds = self.model(features["image"])
+        preds_rig = self.model(features["image_R"])
         preds["disp_ms_R"] = preds_rig["disp_ms"]
         preds["pose_R"] = preds_rig["pose"]
         return preds
 
-    def predict(self, dataset):
-        predictions = {"depth": [], "pose": [], "depth_R": [], "pose_R": []}
-        for features in dataset:
-            pred = self.model.predict(features['image'])
-            predictions["depth"].append(pred[0].numpy())
-            predictions["pose"].append(pred[4].numpy())
-
-            pred_rig = self.model.predict(features['image_R'])
-            predictions["depth_R"].append(pred_rig[0].numpy())
-            predictions["pose_R"].append(pred_rig[4].numpy())
-
-        predictions["depth"] = np.concatenate(predictions["depth"], axis=0)
-        predictions["pose"] = np.concatenate(predictions["pose"], axis=0)
-        predictions["depth_R"] = np.concatenate(predictions["depth_R"], axis=0)
-        predictions["pose_R"] = np.concatenate(predictions["pose_R"], axis=0)
-        return predictions
+    def predict(self, dataset, total_steps):
+        preds = self.predict_oneside(dataset, "image", total_steps)
+        preds_rig = self.predict_oneside(dataset, "image_R", total_steps)
+        preds["disp_R"] = preds_rig["disp"]
+        preds["depth_R"] = preds_rig["depth"]
+        preds["pose_R"] = preds_rig["pose"]
+        return preds
 
 
 # ==================================================

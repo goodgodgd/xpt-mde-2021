@@ -67,7 +67,7 @@ def make_reconstructed_views(model, dataset):
         pred_disp_ms = predictions['disp_ms']
         pred_pose = predictions['pose']
         pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
-        print("predicted snippet poses:\n", pred_pose[0].numpy())
+        # print("predicted snippet poses:\n", pred_pose[0].numpy())
 
         # reconstruct target image
         stacked_image = features['image']

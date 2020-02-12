@@ -104,7 +104,7 @@ def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
     assert op.isdir(tfr_train_path)
     dataset = TfrecordGenerator(tfr_train_path, shuffle=shuffle, batch_size=batch_size).get_generator()
-    steps_per_epoch = uf.count_steps(tfr_train_path)
+    steps_per_epoch = uf.count_steps(tfr_train_path, batch_size)
     return dataset, steps_per_epoch
 
 
@@ -268,29 +268,28 @@ def predict_by_user_interaction():
 def predict(weight_name="latest.h5"):
     set_configs()
     batch_size = 1
-    model = ModelFactory().get_model()
+    input_shape = (batch_size, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    model = ModelFactory(input_shape=input_shape).get_model()
     model = try_load_weights(model, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
     dataset, steps = get_dataset(opts.DATASET, "test", False, batch_size)
     # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     # TODO: predict and collect outputs in for loop
-    predictions = model.predict(dataset)
-    for pred in predictions:
-        print(f"prediction shape={pred.shape}")
+    predictions = model.predict(dataset, steps)
+    for key, pred in predictions.items():
+        print(f"prediction: key={key}, shape={pred.shape}")
 
-    pred_disp = predictions[0]
-    pred_pose = predictions[4]
-    save_predictions(opts.CKPT_NAME, pred_disp, pred_pose)
+    save_predictions(opts.CKPT_NAME, predictions)
 
 
-def save_predictions(ckpt_name, pred_disp, pred_pose):
+def save_predictions(ckpt_name, predictions):
     pred_dir_path = op.join(opts.DATAPATH_PRD, ckpt_name)
+    print(f"save predictions in {pred_dir_path})")
     os.makedirs(pred_dir_path, exist_ok=True)
-    print(f"save depth in {pred_dir_path}, shape={pred_disp[0].shape}")
-    np.save(op.join(pred_dir_path, "depth.npy"), pred_disp)
-    print(f"save pose in {pred_dir_path}, shape={pred_pose.shape}")
-    np.save(op.join(pred_dir_path, "pose.npy"), pred_pose)
+    for key, value in predictions.items():
+        print(f"\tsave {key}.npy")
+        np.save(op.join(pred_dir_path, f"{key}.npy"), value)
 
 
 # ==================== tests ====================
@@ -365,6 +364,6 @@ def check_disparity(ckpt_name, test_dir_name):
 
 
 if __name__ == "__main__":
-    train()
-    # predict()
+    # train()
+    predict()
     # test_model_wrapper_output()
