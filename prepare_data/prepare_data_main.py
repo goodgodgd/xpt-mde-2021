@@ -102,6 +102,8 @@ def create_validation_set(dataset):
     elif dataset == "kitti_odom":
         os.makedirs(dstpath, exist_ok=True)
         for drive in ["09", "10"]:
+            if os.path.isdir(os.path.join(dstpath, drive)):
+                shutil.rmtree(os.path.join(dstpath, drive))
             shutil.copytree(os.path.join(srcpath, drive), os.path.join(dstpath, drive))
 
     print(f"\n### create validation split for {dataset}")
