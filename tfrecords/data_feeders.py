@@ -1,6 +1,36 @@
-import numpy as np
 import tensorflow as tf
+import cv2
+import numpy as np
+
+import settings
+from config import opts
 from utils.util_class import WrongInputException
+import os.path as op
+import utils.convert_pose as cp
+
+
+def feeder_factory(file_list, reader_type, feeder_type="npyfile", stereo=False):
+    if feeder_type == "npyfile":
+        if stereo:
+            FeederClass = NpyFileFeederStereoLeft
+        else:
+            FeederClass = NpyFileFeeder
+    else:
+        raise WrongInputException("Wrong feeder type: " + feeder_type)
+
+    if reader_type == "image":
+        reader = ImageReaderStereo() if stereo else ImageReader()
+    elif reader_type == "intrinsic":
+        reader = IntrinsicReaderStereo() if stereo else IntrinsicReader()
+    elif reader_type == "depth":
+        reader = DepthReaderStereo() if stereo else DepthReader()
+    elif reader_type == "pose":
+        reader = PoseReaderStereo() if stereo else PoseReader()
+    else:
+        raise WrongInputException("Wrong reader type: " + reader_type)
+
+    feeder = FeederClass(file_list, reader)
+    return feeder
 
 
 class FeederBase:
@@ -67,7 +97,7 @@ class NpyFileFeeder(NpyFeeder):
         self.file_reader = file_reader
         self.idx = -1
         value = self.file_reader(self.files[0])
-        self.set_type_and_shape(value)
+        self.set_type_and_shape(value[0])
 
     def __len__(self):
         return len(self.files)
@@ -75,23 +105,20 @@ class NpyFileFeeder(NpyFeeder):
     def get_next(self):
         self.idx = self.idx + 1
         assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
-        onedata = self.file_reader(self.files[self.idx])
-        return self.convert_to_feature(onedata)
+        data = self.file_reader(self.files[self.idx])
+        left = data[0]
+        return self.convert_to_feature(left)
 
 
 class NpyFileFeederStereoLeft(NpyFileFeeder):
     def __init__(self, file_list, file_reader):
         super().__init__(file_list, file_reader)
-        # edit array 'width' which was set in set_type_and_shape()
-        self.shape[1] = self.shape[1] // 2
         self.right_data = None
 
     def get_next(self):
         self.idx = self.idx + 1
         assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
-        stereodata = self.file_reader(self.files[self.idx])
-        width = self.shape[1]
-        left, right = stereodata[:, :width], stereodata[:, width:]
+        left, right = self.file_reader(self.files[self.idx])
         self.right_data = right
         return self.convert_to_feature(left)
 
@@ -99,8 +126,6 @@ class NpyFileFeederStereoLeft(NpyFileFeeder):
 class NpyFileFeederStereoRight(NpyFileFeeder):
     def __init__(self, left_feeder):
         super().__init__(left_feeder.files, left_feeder.file_reader)
-        # edit array 'width' which was set in set_type_and_shape()
-        self.shape[1] = self.shape[1] // 2
         self.left_feeder = left_feeder
 
     def get_next(self):
@@ -127,3 +152,154 @@ class ConstArrayFeeder(NpyFeeder):
         assert self.idx < len(self), f"[FileFeeder] index error: {self.idx} >= {len(self)}"
         feature = self.convert_to_feature(self.data)
         return feature
+
+
+# ==================== file readers ====================
+
+class FileReader:
+    def __call__(self, filename):
+        data = self.read_file(filename)
+        splits = self.split_data(data)
+        outdata = []
+        for split in splits:
+            split = self.preprocess(split)
+            outdata.append(split)
+        return outdata
+
+    def read_file(self, filename):
+        raise NotImplementedError()
+
+    def split_data(self, data):
+        return [data]
+
+    def preprocess(self, data):
+        return data
+
+
+class ImageReader(FileReader):
+    def read_file(self, filename):
+        image = cv2.imread(filename)
+        return image
+
+    def preprocess(self, image):
+        height = opts.IM_HEIGHT
+        half_len = int(opts.SNIPPET_LEN // 2)
+        # TODO IMPORTANT!
+        #   image in 'srcdata': [src--, src-, target, src+, src++]
+        #   reordered in 'tfrecords': [src--, src-, src+, src++, target]
+        src_up = image[:height * half_len]
+        target = image[height * half_len:height * (half_len + 1)]
+        src_dw = image[height * (half_len + 1):]
+        reordered = np.concatenate([src_up, src_dw, target], axis=0)
+        return reordered
+
+
+class ImageReaderStereo(ImageReader):
+    def split_data(self, image):
+        width = opts.IM_WIDTH
+        left, right = image[:, :width], image[:, width:]
+        return [left, right]
+
+
+class PoseReader(FileReader):
+    def read_file(self, filename):
+        poses = np.loadtxt(filename)
+        half_len = int(opts.SNIPPET_LEN // 2)
+        # remove target pose
+        poses = np.delete(poses, half_len, 0)
+        return poses.astype(np.float32)
+
+    def preprocess(self, poses):
+        pose_mats = []
+        for pose in poses:
+            tmat = cp.pose_quat2matr(pose)
+            pose_mats.append(tmat)
+        pose_mats = np.stack(pose_mats, axis=0).astype(np.float32)
+        return pose_mats
+
+
+class PoseReaderStereo(PoseReader):
+    def split_data(self, poses):
+        quat_pose_len = 7
+        left, right = poses[:, :quat_pose_len], poses[:, quat_pose_len:]
+        return [left, right]
+
+
+class IntrinsicReader(FileReader):
+    def read_file(self, filename):
+        data = np.loadtxt(filename)
+        return data.astype(np.float32)
+
+
+class IntrinsicReaderStereo(IntrinsicReader):
+    def split_data(self, data):
+        intrin_width = 3
+        left, right = data[:, :intrin_width], data[:, intrin_width:]
+        return [left, right]
+
+
+class DepthReader(FileReader):
+    def read_file(self, filename):
+        depth = np.loadtxt(filename)
+        # add channel dimension
+        depth = np.expand_dims(depth, -1)
+        return depth.astype(np.float32)
+
+
+class DepthReaderStereo(DepthReader):
+    def split_data(self, depth):
+        width = opts.IM_WIDTH
+        left, right = depth[:, :width], depth[:, width:]
+        return [left, right]
+
+
+# ==================== test file readers ====================
+
+def test_image_reader():
+    filename = op.join(opts.DATAPATH_SRC, "kitti_raw_train", "2011_09_26_0001", "000024.png")
+    original = cv2.imread(filename)
+    data = ImageReader()(filename)
+    reordered = data[0]
+    assert (original.shape == reordered.shape)
+    cv2.imshow("original", original)
+    cv2.imshow("reordered", reordered)
+    cv2.waitKey()
+    cv2.destroyAllWindows()
+
+
+def test_image_reader_stereo():
+    filename = op.join(opts.DATAPATH_SRC, "kitti_raw_train", "2011_09_26_0001", "000024.png")
+    original = cv2.imread(filename)
+    left, right = ImageReaderStereo()(filename)
+    assert (original.shape[1] // 2 == left.shape[1]) and (original.shape[1] // 2 == right.shape[1])
+    cv2.imshow("original", original)
+    cv2.imshow("left", left)
+    cv2.imshow("right", right)
+    cv2.waitKey()
+    cv2.destroyAllWindows()
+
+
+def test_pose_reader():
+    filename = op.join(opts.DATAPATH_SRC, "kitti_raw_train", "2011_09_26_0001", "pose", "000040.txt")
+    pose_quat = np.loadtxt(filename)
+    pose_mat = PoseReaderStereo()(filename)
+    print("quaternion pose:", pose_quat[0])
+    print("matrix pose:\n", pose_mat[0])
+    assert pose_mat[0].shape == (4, 4, 4)
+
+
+def test_pose_reader_stereo():
+    filename = op.join(opts.DATAPATH_SRC, "kitti_raw_train", "2011_09_26_0001", "pose", "000040.txt")
+    pose_quat = np.loadtxt(filename)
+    pose_left, pose_right = PoseReaderStereo()(filename)
+    print("quaternion pose:", pose_quat[0])
+    print("matrix pose:\n", pose_left)
+    assert (pose_left.shape == (4, 4, 4)) and (pose_right.shape == pose_left.shape)
+
+
+if __name__ == "__main__":
+    np.set_printoptions(precision=3, suppress=True)
+    test_image_reader()
+    test_image_reader_stereo()
+    test_pose_reader()
+    test_pose_reader_stereo()
