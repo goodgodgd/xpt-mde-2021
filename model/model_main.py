@@ -41,14 +41,14 @@ def train():
     if opts.EPOCHS <= initial_epoch:
         raise TrainException("!! final_epoch <= initial_epoch, no need to train")
 
-    set_configs(opts.CKPT_NAME)
+    set_configs()
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model, opts.CKPT_NAME)
 
-    # TODO WARNING! using "val" split for training dataset is just to check training process
-    dataset_train, train_steps = get_dataset(opts.DATASET, "val")
-    dataset_val, val_steps = get_dataset(opts.DATASET, "val")
+    # TODO WARNING! using "test" split for training dataset is just to check training process
+    dataset_train, train_steps = get_dataset(opts.DATASET, "test")
+    dataset_val, val_steps = get_dataset(opts.DATASET, "test")
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
@@ -66,7 +66,7 @@ def train():
         if epoch % 10 == 0:
             log.save_reconstruction_samples(model, dataset_val, epoch)
             log.save_loss_scales(model, dataset_val, val_steps)
-        save_model(model, opts.CKPT_NAME, result_val[1])
+        save_model(model, result_val[0])
         log.save_log(epoch, result_train, result_val)
 
 

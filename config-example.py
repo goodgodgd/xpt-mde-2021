@@ -5,6 +5,7 @@ class VodeOptions:
     """
     data options
     """
+    STEREO = True
     SNIPPET_LEN = 5
     IM_WIDTH = 384
     IM_HEIGHT = 128
@@ -18,13 +19,13 @@ class VodeOptions:
     EPOCHS = 51
     LEARNING_RATE = 0.0002
     ENABLE_SHAPE_DECOR = False
-    CKPT_NAME = "vode_ssim"
+    CKPT_NAME = "vode1"
     LOG_LOSS = False
 
     """
     path options
     """
-    DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
+    DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384_stereo"
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
     DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
