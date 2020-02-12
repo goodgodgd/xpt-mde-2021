@@ -11,7 +11,7 @@ import utils.convert_pose as cp
 
 def feeder_factory(file_list, reader_type, feeder_type="npyfile", stereo=False):
     if feeder_type == "npyfile":
-        if stereo:
+        if stereo and reader_type != "extrinsic":
             FeederClass = NpyFileFeederStereoLeft
         else:
             FeederClass = NpyFileFeeder
@@ -21,11 +21,13 @@ def feeder_factory(file_list, reader_type, feeder_type="npyfile", stereo=False):
     if reader_type == "image":
         reader = ImageReaderStereo() if stereo else ImageReader()
     elif reader_type == "intrinsic":
-        reader = IntrinsicReaderStereo() if stereo else IntrinsicReader()
+        reader = NpyTxtReaderStereo() if stereo else NpyTxtReader()
     elif reader_type == "depth":
         reader = DepthReaderStereo() if stereo else DepthReader()
     elif reader_type == "pose":
         reader = PoseReaderStereo() if stereo else PoseReader()
+    elif reader_type == "extrinsic":
+        reader = NpyTxtReader()
     else:
         raise WrongInputException("Wrong reader type: " + reader_type)
 
@@ -225,13 +227,13 @@ class PoseReaderStereo(PoseReader):
         return [left, right]
 
 
-class IntrinsicReader(FileReader):
+class NpyTxtReader(FileReader):
     def read_file(self, filename):
         data = np.loadtxt(filename)
         return data.astype(np.float32)
 
 
-class IntrinsicReaderStereo(IntrinsicReader):
+class NpyTxtReaderStereo(NpyTxtReader):
     def split_data(self, data):
         intrin_width = 3
         left, right = data[:, :intrin_width], data[:, intrin_width:]

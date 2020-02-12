@@ -76,6 +76,12 @@ def save_example(example, index, data_paths):
         print("intrinsic parameters\n", intrinsic)
         np.savetxt(filename, intrinsic, fmt="%3.5f")
 
+    if "stereo_T_LR" in example:
+        filename = op.join(snippet_path, "stereo_T_LR.txt")
+        if not op.isfile(filename):
+            extrinsic = example["stereo_T_LR"]
+            np.savetxt(filename, extrinsic, fmt="%3.5f")
+
     # cv2.imshow("example frames", frames)
     # cv2.waitKey(1)
     return mean_depth
@@ -114,4 +120,4 @@ def create_validation_set(dataset):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_kitti_data("kitti_raw", "train")
+    prepare_kitti_data("kitti_raw", "test")

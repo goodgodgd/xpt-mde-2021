@@ -138,6 +138,8 @@ class KittiDataLoaderStereo(KittiDataLoader):
             example["pose_gt"] = self.load_snippet_poses_stereo(indices, snippet_len)
         if self.kitti_reader.depth_avail:
             example["depth_gt"] = self.load_frame_depth_stereo(index, self.drive_path, raw_img_shape)
+        if self.kitti_reader.stereo:
+            example["stereo_T_LR"] = self.kitti_reader.get_stereo_extrinsic()
         return example
 
     def load_snippet_frames_stereo(self, frame_indices):

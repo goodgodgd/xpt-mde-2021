@@ -44,7 +44,7 @@ class TfrecordMaker:
         print(f"\ntfrecord maker finished: srcpath={self.srcpath}, dstpath={self.dstpath}\n")
 
     def create_feeders(self):
-        image_files, intrin_files, depth_files, pose_files = self.list_sequence_files()
+        image_files, intrin_files, depth_files, pose_files, extrin_files = self.list_sequence_files()
         feeders = {"image": df.feeder_factory(image_files, "image", "npyfile", self.stereo),
                    "intrinsic": df.feeder_factory(intrin_files, "intrinsic", "npyfile", self.stereo),
                    }
@@ -60,6 +60,8 @@ class TfrecordMaker:
                 print("left feeder", name, type(left_feeder))
                 feeders_rig[name + "_R"] = df.NpyFileFeederStereoRight(left_feeder)
             feeders.update(feeders_rig)
+            # stereo extrinsic
+            feeders["stereo_T_LR"] = df.feeder_factory(extrin_files, "extrinsic", "npyfile", self.stereo)
 
         return feeders
 
@@ -85,17 +87,24 @@ class TfrecordMaker:
         else:
             pose_files = []
 
+        if self.stereo:
+            extrin_files = [op.join(op.dirname(file_path), "stereo_T_LR.txt")
+                            for file_path in image_files]
+        else:
+            extrin_files = []
+
         print("## list sequence files")
         print(f"frame: {[file.replace(self.data_root, '') for file in  image_files[0:1000:200]]}")
         print(f"intrin: {[file.replace(self.data_root, '') for file in  intrin_files[0:1000:200]]}")
         print(f"depth: {[file.replace(self.data_root, '') for file in  depth_files[0:1000:200]]}")
         print(f"pose: {[file.replace(self.data_root, '') for file in  pose_files[0:1000:200]]}")
+        print(f"extrin: {[file.replace(self.data_root, '') for file in extrin_files[0:1000:200]]}")
 
-        for files in [image_files, intrin_files, depth_files, pose_files]:
+        for files in [image_files, intrin_files, depth_files, pose_files, extrin_files]:
             for file in files:
                 assert op.isfile(file), f"{file} NOT exist"
 
-        return image_files, intrin_files, depth_files, pose_files
+        return image_files, intrin_files, depth_files, pose_files, extrin_files
 
     def write_tfrecord_config(self, feeders):
         config = dict()

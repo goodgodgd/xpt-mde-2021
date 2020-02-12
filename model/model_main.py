@@ -66,7 +66,7 @@ def train():
         if epoch % 10 == 0:
             log.save_reconstruction_samples(model, dataset_val, epoch)
             log.save_loss_scales(model, dataset_val, val_steps)
-        save_model(model, opts.CKPT_NAME, result_val[1])
+        save_model(model, result_val[0])
         log.save_log(epoch, result_train, result_val)
 
 
