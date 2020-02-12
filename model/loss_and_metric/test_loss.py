@@ -15,7 +15,7 @@ import model.loss_and_metric.losses as ls
 WAIT_KEY = 200
 
 
-def test_photometric_loss_quality():
+def test_photometric_loss_quality(suffix=""):
     """
     gt depth와 gt pose를 입력했을 때 스케일 별로 복원되는 이미지를 정성적으로 확인하고
     복원된 이미지로부터 계산되는 photometric loss를 확인
@@ -26,10 +26,10 @@ def test_photometric_loss_quality():
 
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
-        stacked_image = features['image']
-        intrinsic = features['intrinsic']
-        depth_gt = features['depth_gt']
-        pose_gt = features['pose_gt']
+        stacked_image = features["image" + suffix]
+        intrinsic = features["intrinsic" + suffix]
+        depth_gt = features["depth_gt" + suffix]
+        pose_gt = features["pose_gt" + suffix]
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
@@ -69,7 +69,7 @@ def test_photometric_loss_quality():
     print("!!! test_photometric_loss_quality passed")
 
 
-def test_photometric_loss_quantity():
+def test_photometric_loss_quantity(suffix=""):
     """
     gt depth와 gt pose를 입력했을 때 나오는 photometric loss와
     gt pose에 노이즈를 추가하여 나오는 photometric loss를 비교
@@ -80,10 +80,10 @@ def test_photometric_loss_quantity():
 
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
-        stacked_image = features['image']
-        intrinsic = features['intrinsic']
-        depth_gt = features['depth_gt']
-        pose_gt = features['pose_gt']
+        stacked_image = features["image" + suffix]
+        intrinsic = features["intrinsic" + suffix]
+        depth_gt = features["depth_gt" + suffix]
+        pose_gt = features["pose_gt" + suffix]
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
@@ -170,8 +170,8 @@ def test_smootheness_loss_quantity():
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
 
-        stacked_image = features['image']
-        depth_gt = features['depth_gt']
+        stacked_image = features["image"]
+        depth_gt = features["depth_gt"]
         # interpolate depth
         depth_gt = tf.image.resize(depth_gt, size=(int(opts.IM_HEIGHT/2), int(opts.IM_WIDTH/2)), method="bilinear")
         depth_gt = tf.image.resize(depth_gt, size=(opts.IM_HEIGHT, opts.IM_WIDTH), method="bilinear")
