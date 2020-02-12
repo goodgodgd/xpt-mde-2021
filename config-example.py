@@ -39,7 +39,7 @@ class VodeOptions:
     model options: network architecture, loss wegihts, ...
     """
     SSIM_RATIO = 0.8
-    LOSS_WEIGHTS = {"L1": (1 - SSIM_RATIO)*1, "SSIM": SSIM_RATIO*0.5, "smootheness": 1}
+    LOSS_WEIGHTS = {"L1": (1 - SSIM_RATIO)*1, "SSIM": SSIM_RATIO*0.5, "smoothe": 1}
     DATASET = "kitti_raw"
     NET_NAMES = {"depth": "NASNetMobile", "camera": "PoseNet"}
     SYNTHESIZER = "SynthesizeMultiScale"

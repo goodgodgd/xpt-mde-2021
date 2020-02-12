@@ -96,7 +96,7 @@ def save_loss_scales(model, dataset, steps):
 
 
 def collect_losses(model, dataset, steps_per_epoch):
-    results = {"L1": [], "SSIM": [], "smootheness": []}
+    results = {"L1": [], "SSIM": [], "smoothe": []}
     total_loss = lm.TotalLoss()
     calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
     calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
@@ -111,7 +111,7 @@ def collect_losses(model, dataset, steps_per_epoch):
 
         results["L1"].append(photo_l1)
         results["SSIM"].append(photo_ssim)
-        results["smootheness"].append(smoothe)
+        results["smoothe"].append(smoothe)
         uf.print_progress_status(f"step: {step} / {steps_per_epoch}")
 
     print("")

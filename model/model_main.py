@@ -64,6 +64,7 @@ def train():
               f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
 
         if epoch % 10 == 0:
+            print("save intermediate results ...")
             log.save_reconstruction_samples(model, dataset_val, epoch)
             log.save_loss_scales(model, dataset_val, val_steps)
         save_model(model, result_val[0])
@@ -364,6 +365,6 @@ def check_disparity(ckpt_name, test_dir_name):
 
 
 if __name__ == "__main__":
-    # train()
-    predict()
+    train()
+    # predict()
     # test_model_wrapper_output()
