@@ -95,20 +95,24 @@ def multi_scale_depths(depth, scales):
     depth_ms = []
     for sc in scales:
         scaled_size = (int(height // sc), int(width // sc))
-        scdepth = tf.image.resize(depth, size=scaled_size, method="bilinear")
+        scdepth = tf.image.resize(depth, size=scaled_size, method="nearest")
         depth_ms.append(scdepth)
-        # print("[multi_scale_depths] scaled depth shape:", scdepth.get_shape().as_list())
     return depth_ms
 
 
 def count_steps(dataset_dir, batch_size=opts.BATCH_SIZE):
-    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
-    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
-        config = json.load(fr)
+    config = read_tfrecords_info(dataset_dir)
     frames = config['length']
     steps = frames // batch_size
     print(f"[count steps] frames={frames}, steps={steps}")
     return steps
+
+
+def read_tfrecords_info(dataset_dir):
+    tfrpath = op.join(opts.DATAPATH_TFR, dataset_dir)
+    with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
+        config = json.load(fr)
+    return config
 
 
 def check_tfrecord_including(dataset_dir, key_list):
@@ -138,11 +142,16 @@ def read_previous_epoch(model_name):
 
 
 def disp_to_depth_tensor(disp_ms):
-    target_ms = []
+    """
+    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :return:
+    """
+    depth_ms = []
     for i, disp in enumerate(disp_ms):
-        target = layers.Lambda(lambda dis: 1./dis, name=f"todepth_{i}")(disp)
-        target_ms.append(target)
-    return target_ms
+        mask = tf.cast(disp > 0.00001, tf.float32)
+        depth = (1. / (disp + 0.00001)) * mask
+        depth_ms.append(depth)
+    return depth_ms
 
 
 def multi_scale_like(image, disp_ms):
@@ -199,3 +208,7 @@ def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcid
     view = [trueim, predim, sourim, dpthim] if reconim is None else [trueim, reconim, predim, sourim, dpthim]
     view = np.concatenate(view, axis=0)
     return view
+
+
+def count_nan(tensor):
+    return tf.reduce_sum(tf.cast(tf.math.is_nan(tensor), tf.int32)).numpy()

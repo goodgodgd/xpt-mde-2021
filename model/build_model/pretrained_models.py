@@ -87,7 +87,7 @@ class PretrainedModel:
         # collect multi scale convolutional outputs
         outputs = []
         for layer_name in out_layer_names:
-            layer = model.get_layer(layer_name)
+            layer = model.get_layer(name=layer_name[1], index=layer_name[0])
             # print("extract feature layers:", layer.name, layer.get_input_shape_at(0), layer.get_output_shape_at(0))
             outputs.append(layer.output)
 

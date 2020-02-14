@@ -87,6 +87,8 @@ class TfrecordGenerator:
 
         # raw uint8 type may saturate during bilinear interpolation -> float (-1 ~ 1)
         decoded["image"] = uf.to_float_image(decoded["image"])
+        if "image_R" in self.config:
+            decoded["image_R"] = uf.to_float_image(decoded["image_R"])
         return decoded
 
     def dataset_process(self, dataset):
@@ -141,4 +143,4 @@ def test_reuse_dataset():
 if __name__ == "__main__":
     np.set_printoptions(precision=4, suppress=True)
     test_read_dataset()
-    test_reuse_dataset()
+    # test_reuse_dataset()

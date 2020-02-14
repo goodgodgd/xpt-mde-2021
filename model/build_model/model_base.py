@@ -2,7 +2,6 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 import settings
-import utils.util_funcs as uf
 import model.build_model.model_utils as mu
 
 DISP_SCALING_VGG = 10
@@ -40,9 +39,9 @@ class DepthNetBasic:
         upconv5 = self.upconv_with_skip_connection(upconv6, conv5, 512, "dp_up5")   # 1/32
         upconv4 = self.upconv_with_skip_connection(upconv5, conv4, 256, "dp_up4")   # 1/16
         upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")   # 1/8
-        disp3, disp2_up = self.get_disp_vgg(upconv3, int(height // 4), int(width // 4), "dp_disp3")
+        disp3, disp2_up = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")
         upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", disp2_up)  # 1/4
-        disp2, disp1_up = self.get_disp_vgg(upconv2, int(height // 2), int(width // 2), "dp_disp2")
+        disp2, disp1_up = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")
         upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", disp1_up)  # 1/2
         disp1, disp0_up = self.get_disp_vgg(upconv1, height, width, "dp_disp1")
         upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
@@ -105,4 +104,3 @@ class PoseNet:
         poses = tf.keras.layers.GlobalAveragePooling2D("channels_last", name="vo_pred")(poses)
         poses = tf.keras.layers.Reshape((num_sources, 6), name="vo_reshape")(poses)
         return poses
-

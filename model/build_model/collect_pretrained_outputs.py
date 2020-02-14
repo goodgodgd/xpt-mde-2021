@@ -52,9 +52,9 @@ def collect_layers(models, print_layer_shapes=True):
         layer_names = ["anonymous"] * len(scaled_heights)
 
         print("="*30 + "\ncollect last layer names of selected scales")
-        for layer in model.layers:
+        for layer_index, layer in enumerate(model.layers):
             if print_layer_shapes:
-                print(layer.name, layer.output_shape, layer.input_shape)
+                print("layer info:", layer_index, layer.name, layer.output_shape, layer.input_shape)
 
             if "input" in layer.name:
                 continue
@@ -64,7 +64,7 @@ def collect_layers(models, print_layer_shapes=True):
                 if sc_height == out_height \
                     and ((("NASNet" in model_name) and ("activation" in layer.name))
                          or ("NASNet" not in model_name)):
-                    layer_names[scid] = layer.name
+                    layer_names[scid] = [layer_index, layer.name]
 
         print("="*30 + "\ncollected layer names")
         for layer_name, height in zip(layer_names, scaled_heights):

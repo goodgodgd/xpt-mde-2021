@@ -213,6 +213,9 @@ class KittiRawTestUtil(KittiRawReader):
             # convert to int frame indices
             frame_inds = [int(frame.split()[-1]) for frame in test_frames]
             frame_inds.sort()
+            # last_frame = self.find_last_index(drive_path)
+            # half_len = snippet_len // 2
+            # frame_inds = [ind for ind in frame_inds if half_len <= ind <= last_frame - half_len]
             print(f"[find_frame_indices] {op.basename(drive_path)}: {len(test_frames)} -> {len(frame_inds)}")
             return frame_inds
 

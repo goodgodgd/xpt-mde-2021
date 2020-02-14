@@ -12,10 +12,10 @@ from tfrecords.tfrecord_reader import TfrecordGenerator
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 import model.loss_and_metric.losses as ls
 
-WAIT_KEY = 200
+WAIT_KEY = 0
 
 
-def test_photometric_loss_quality():
+def test_photometric_loss_quality(suffix=""):
     """
     gt depth와 gt pose를 입력했을 때 스케일 별로 복원되는 이미지를 정성적으로 확인하고
     복원된 이미지로부터 계산되는 photometric loss를 확인
@@ -26,10 +26,22 @@ def test_photometric_loss_quality():
 
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
-        stacked_image = features['image']
-        intrinsic = features['intrinsic']
-        depth_gt = features['depth_gt']
-        pose_gt = features['pose_gt']
+        stacked_image = features["image" + suffix]
+        intrinsic = features["intrinsic" + suffix]
+        depth_gt = features["depth_gt" + suffix]
+        pose_gt = features["pose_gt" + suffix]
+
+        target_ms = []
+        for i, disp in enumerate(disp_ms):
+            target = layers.Lambda(lambda dis: 1. / dis, name=f"todepth_{i}")(disp)
+            target_ms.append(target)
+
+        # identity pose results in NaN data
+        pose_gt_np = pose_gt.numpy()
+        for pose_seq in pose_gt_np:
+            for pose in pose_seq:
+                assert not np.isclose(np.identity(4, dtype=np.float), pose).all()
+
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
@@ -69,7 +81,7 @@ def test_photometric_loss_quality():
     print("!!! test_photometric_loss_quality passed")
 
 
-def test_photometric_loss_quantity():
+def test_photometric_loss_quantity(suffix=""):
     """
     gt depth와 gt pose를 입력했을 때 나오는 photometric loss와
     gt pose에 노이즈를 추가하여 나오는 photometric loss를 비교
@@ -80,10 +92,10 @@ def test_photometric_loss_quantity():
 
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
-        stacked_image = features['image']
-        intrinsic = features['intrinsic']
-        depth_gt = features['depth_gt']
-        pose_gt = features['pose_gt']
+        stacked_image = features["image" + suffix]
+        intrinsic = features["intrinsic" + suffix]
+        depth_gt = features["depth_gt" + suffix]
+        pose_gt = features["pose_gt" + suffix]
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
@@ -170,8 +182,8 @@ def test_smootheness_loss_quantity():
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
 
-        stacked_image = features['image']
-        depth_gt = features['depth_gt']
+        stacked_image = features["image"]
+        depth_gt = features["depth_gt"]
         # interpolate depth
         depth_gt = tf.image.resize(depth_gt, size=(int(opts.IM_HEIGHT/2), int(opts.IM_WIDTH/2)), method="bilinear")
         depth_gt = tf.image.resize(depth_gt, size=(opts.IM_HEIGHT, opts.IM_WIDTH), method="bilinear")
@@ -234,10 +246,76 @@ def tu_smootheness_loss(features, predictions, augm_data):
     return batch_loss_wrong
 
 
+def test_stereo_loss():
+    print("\n===== start test_photometric_loss_quality")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+
+    for i, features in enumerate(dataset):
+        print("\n--- fetch a batch data")
+        stereo_loss = ls.StereoDepthLoss("L1")
+        total_loss = ls.TotalLoss()
+        predictions = tu_make_prediction(features)
+        pred_right = tu_make_prediction(features, "_R")
+        predictions.update(pred_right)
+        augm_data = total_loss.augment_data(features, predictions)
+        augm_data_rig = total_loss.augment_data(features, predictions, "_R")
+        augm_data.update(augm_data_rig)
+
+        depth1 = augm_data["depth_ms"][0]
+        depth1 = tf.clip_by_value(depth1, 0, 20)[0].numpy()
+        cv2.imshow("depth1", depth1)
+
+        loss_left, synth_left_ms = \
+            stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
+                                               target_ms=augm_data["target_ms"],
+                                               disp_tgt_ms=predictions["disp_ms"],
+                                               pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
+                                               intrinsic=features["intrinsic"])
+        loss_right, synth_right_ms = \
+            stereo_loss.stereo_synthesize_loss(source_img=augm_data["target"],
+                                               target_ms=augm_data["target_ms_R"],
+                                               disp_tgt_ms=predictions["disp_ms_R"],
+                                               pose_t2s=features["stereo_T_LR"],
+                                               intrinsic=features["intrinsic_R"],
+                                               suffix="_R")
+
+        losses = loss_left + loss_right
+        batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
+                                   name="photo_loss_sum")(losses)
+
+        tu_show_synthesize_result(synth_left_ms, augm_data["target"], augm_data["target_R"], "left")
+        tu_show_synthesize_result(synth_right_ms, augm_data["target_R"], augm_data["target"], "right")
+        print("stereo loss:", batch_loss)
+        cv2.waitKey(0)
+
+
+def tu_make_prediction(features, suffix=""):
+    depth = features["depth_gt" + suffix]
+    depth_ms = uf.multi_scale_depths(depth, [1, 2, 4, 8])
+    disp_ms = tu_depth_to_disp(depth_ms)
+    poses = features["pose_gt" + suffix]
+    poses = cp.pose_matr2rvec_batch(poses)
+    predictions = {"pose" + suffix: poses, "disp_ms" + suffix: disp_ms}
+    return predictions
+
+
+def tu_show_synthesize_result(synth_target_ms, target, source, suffix):
+    synth_stacked = [uf.to_uint8_image(target)[0].numpy(), uf.to_uint8_image(source)[0].numpy()]
+    dstsize = (opts.IM_WIDTH, opts.IM_HEIGHT)
+
+    for synth in synth_target_ms:
+        synth_img = uf.to_uint8_image(synth)[0, 0].numpy()
+        synth_img = cv2.resize(synth_img, dstsize, interpolation=cv2.INTER_NEAREST)
+        synth_stacked.append(synth_img)
+    synth_stacked = np.concatenate(synth_stacked, axis=0)
+    cv2.imshow("synthesized_" + suffix, synth_stacked)
+
+
 def test():
-    test_photometric_loss_quality()
-    test_photometric_loss_quantity()
-    test_smootheness_loss_quantity()
+    # test_photometric_loss_quality("_R")
+    # test_photometric_loss_quantity("_R")
+    # test_smootheness_loss_quantity()
+    test_stereo_loss()
 
 
 if __name__ == "__main__":

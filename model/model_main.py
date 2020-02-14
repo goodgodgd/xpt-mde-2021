@@ -47,8 +47,8 @@ def train():
     model = try_load_weights(model, opts.CKPT_NAME)
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
-    dataset_train, train_steps = get_dataset(opts.DATASET, "test")
-    dataset_val, val_steps = get_dataset(opts.DATASET, "test")
+    dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
+    dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
@@ -64,8 +64,9 @@ def train():
               f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
 
         if epoch % 10 == 0:
+            print("save intermediate results ...")
             log.save_reconstruction_samples(model, dataset_val, epoch)
-            log.save_loss_scales(model, dataset_val, val_steps)
+            log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
         save_model(model, result_val[0])
         log.save_log(epoch, result_train, result_val)
 
@@ -100,11 +101,11 @@ def try_load_weights(model, weight_name='latest.h5'):
     return model
 
 
-def get_dataset(dataset_name, split, batch_size=opts.BATCH_SIZE):
+def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
     assert op.isdir(tfr_train_path)
-    dataset = TfrecordGenerator(tfr_train_path, shuffle=True, batch_size=batch_size).get_generator()
-    steps_per_epoch = uf.count_steps(tfr_train_path)
+    dataset = TfrecordGenerator(tfr_train_path, shuffle=shuffle, batch_size=batch_size).get_generator()
+    steps_per_epoch = uf.count_steps(tfr_train_path, batch_size)
     return dataset, steps_per_epoch
 
 
@@ -155,11 +156,11 @@ def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
 def train_a_batch(model, features, optimizer, compute_loss):
     with tf.GradientTape() as tape:
         # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
-        preds = model(features['image'])
+        preds = model(features)
         loss = compute_loss(preds, features)
 
-    grads = tape.gradient(loss, model.trainable_weights)
-    optimizer.apply_gradients(zip(grads, model.trainable_weights))
+    grads = tape.gradient(loss, model.trainable_weights())
+    optimizer.apply_gradients(zip(grads, model.trainable_weights()))
     loss_mean = tf.reduce_mean(loss)
     return preds, loss_mean
 
@@ -170,7 +171,7 @@ def validate_an_epoch_eager(model, dataset, steps_per_epoch):
     # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
     for step, features in enumerate(dataset):
         start = time.time()
-        preds = model(features['image'])
+        preds = model(features)
         loss = compute_loss(preds, features)
 
         loss_num = loss.numpy().mean()
@@ -202,7 +203,7 @@ def validate_an_epoch_graph(model, dataset, steps_per_epoch):
 
 @tf.function
 def validate_a_batch(model, features, compute_loss):
-    preds = model(features['image'])
+    preds = model(features)
     loss = compute_loss(preds, features)
     loss_mean = tf.reduce_mean(loss)
     return preds, loss_mean
@@ -266,78 +267,52 @@ def predict_by_user_interaction():
 
 
 def predict(weight_name="latest.h5"):
-    set_configs(opts.CKPT_NAME)
+    set_configs()
     batch_size = 1
-    model = ModelFactory().get_model()
-    model = try_load_weights(model, opts.CKPT_NAME, weight_name)
+    input_shape = (batch_size, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    model = ModelFactory(input_shape=input_shape).get_model()
+    model = try_load_weights(model, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
-    dataset, steps = get_dataset(opts.DATASET, "test", batch_size)
+    dataset, steps = get_dataset(opts.DATASET, "test", False, batch_size)
     # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
-    predictions = model.predict(dataset)
-    for pred in predictions:
-        print(f"prediction shape={pred.shape}")
+    # TODO: predict and collect outputs in for loop
+    predictions = model.predict(dataset, steps)
+    for key, pred in predictions.items():
+        print(f"prediction: key={key}, shape={pred.shape}")
 
-    pred_disp = predictions[0]
-    pred_pose = predictions[4]
-    save_predictions(opts.CKPT_NAME, pred_disp, pred_pose)
+    save_predictions(opts.CKPT_NAME, predictions)
 
 
-def save_predictions(ckpt_name, pred_disp, pred_pose):
+def save_predictions(ckpt_name, predictions):
     pred_dir_path = op.join(opts.DATAPATH_PRD, ckpt_name)
+    print(f"save predictions in {pred_dir_path})")
     os.makedirs(pred_dir_path, exist_ok=True)
-    print(f"save depth in {pred_dir_path}, shape={pred_disp[0].shape}")
-    np.save(op.join(pred_dir_path, "depth.npy"), pred_disp)
-    print(f"save pose in {pred_dir_path}, shape={pred_pose.shape}")
-    np.save(op.join(pred_dir_path, "pose.npy"), pred_pose)
+    for key, value in predictions.items():
+        print(f"\tsave {key}.npy")
+        np.save(op.join(pred_dir_path, f"{key}.npy"), value)
 
 
 # ==================== tests ====================
-def test_model_output():
-    """
-    check model output formats according to prediction methods
-    1) preds = model(image_tensor) -> dict('disp_ms': disp_ms, 'pose': pose)
-        disp_ms: list of [batch, height/scale, width/scale, 1]
-        pose: [batch, num_src, 6]
-    2) preds = model.predict(image_tensor) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
-    3) preds = model.predict({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
-    :return:
-    """
+
+def test_model_wrapper_output():
     ckpt_name = "vode1"
     test_dir_name = "kitti_raw_test"
-    set_configs(ckpt_name)
+    set_configs()
     model = ModelFactory().get_model()
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
 
-    print("===== check model output shape from 'preds = model(image)'")
-    for i, features in enumerate(dataset):
-        preds = model(features['image'])
-        print("output dict keys:", list(preds.keys()))
-        disp_ms = preds['disp_ms']
-        pose = preds['pose']
-        for disp in disp_ms:
-            print("disparity shape:", disp.get_shape().as_list())
-        print("pose shape:", pose.get_shape().as_list())
-        break
-
-    print("===== it does NOT work: 'preds = model({'image': ...})'")
-    # for i, features in enumerate(dataset):
-    #     preds = model(features)
-
-    print("===== check model output shape from 'preds = model.predict(image)'")
-    for i, features in enumerate(dataset):
-        preds = model.predict(features['image'])
-        for pred in preds:
-            print("predict output shape:", pred.shape)
-        break
-
-    print("===== check model output shape from 'preds = model.predict({'image': ...})'")
-    for i, features in enumerate(dataset):
-        preds = model.predict(features)
-        for pred in preds:
-            print("predict output shape:", pred.shape)
+    print("===== check model output shape")
+    for features in dataset:
+        preds = model(features)
+        for i, (key, value) in enumerate(preds.items()):
+            if isinstance(value, list):
+                for k, val in enumerate(value):
+                    print(f"check output[{i}]: key={key} [{k}], shape={val.get_shape().as_list()}, type={val.dtype}")
+            else:
+                print(f"check output[{i}]: key={key}, shape={value.get_shape().as_list()}, type={value.dtype}")
         break
 
 
@@ -361,7 +336,7 @@ def check_disparity(ckpt_name, test_dir_name):
     DEPRECATED: this function can be executed only when getting model_builder.py back to the below commit
     commit: 68612cb3600cfc934d8f26396b51aba0622ba357
     """
-    set_configs(ckpt_name)
+    set_configs()
     model = ModelFactory().get_model()
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
@@ -392,5 +367,4 @@ def check_disparity(ckpt_name, test_dir_name):
 if __name__ == "__main__":
     train()
     # predict()
-    # test_model_output()
-    # test_loss_scale()
+    # test_model_wrapper_output()

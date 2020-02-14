@@ -63,11 +63,11 @@ def save_reconstruction_samples(model, dataset, epoch):
 def make_reconstructed_views(model, dataset):
     recon_views = []
     for i, features in enumerate(dataset):
-        predictions = model(features['image'])
+        predictions = model(features)
         pred_disp_ms = predictions['disp_ms']
         pred_pose = predictions['pose']
         pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
-        print("predicted snippet poses:\n", pred_pose[0].numpy())
+        # print("predicted snippet poses:\n", pred_pose[0].numpy())
 
         # reconstruct target image
         stacked_image = features['image']
@@ -88,30 +88,37 @@ def make_reconstructed_views(model, dataset):
     return recon_views
 
 
-def save_loss_scales(model, dataset, steps):
+def save_loss_scales(model, dataset, steps, is_stereo):
     if opts.LOG_LOSS:
         print("\n===== save_loss_scales")
-        losses = collect_losses(model, dataset, steps)
+        losses = collect_losses(model, dataset, steps, is_stereo)
         save_loss_to_file(losses)
 
 
-def collect_losses(model, dataset, steps_per_epoch):
-    results = {"L1": [], "SSIM": [], "smootheness": []}
+def collect_losses(model, dataset, steps_per_epoch, is_stereo):
+    results = {"L1": [], "SSIM": [], "smoothe": [], "stereo": []}
     total_loss = lm.TotalLoss()
     calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
     calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
     calc_smootheness_loss = lm.SmoothenessLossMultiScale()
+    calc_stereo_loss = lm.StereoDepthLoss("L1")
 
     for step, features in enumerate(dataset):
-        preds = model(features['image'])
+        preds = model(features)
         augm_data = total_loss.augment_data(features, preds)
+        if is_stereo:
+            augm_data_rig = total_loss.augment_data(features, preds, "_R")
+            augm_data.update(augm_data_rig)
+
         photo_l1 = calc_photo_loss_l1(features, preds, augm_data)
         photo_ssim = calc_photo_loss_ssim(features, preds, augm_data)
         smoothe = calc_smootheness_loss(features, preds, augm_data)
+        stereo = calc_stereo_loss(features, preds, augm_data)
 
         results["L1"].append(photo_l1)
         results["SSIM"].append(photo_ssim)
-        results["smootheness"].append(smoothe)
+        results["smoothe"].append(smoothe)
+        results["stereo"].append(stereo)
         uf.print_progress_status(f"step: {step} / {steps_per_epoch}")
 
     print("")
