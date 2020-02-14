@@ -261,10 +261,24 @@ def test_stereo_loss():
         augm_data_rig = total_loss.augment_data(features, predictions, "_R")
         augm_data.update(augm_data_rig)
 
+        depth1 = augm_data["depth_ms"][0]
+        depth1 = tf.clip_by_value(depth1, 0, 20)[0].numpy()
+        cv2.imshow("depth1", depth1)
+
         loss_left, synth_left_ms = \
-            stereo_loss.stereo_synthesize_loss(features, predictions, augm_data, augm_data["target_R"], True)
+            stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
+                                               target_ms=augm_data["target_ms"],
+                                               disp_tgt_ms=predictions["disp_ms"],
+                                               pose_s2t=tf.linalg.inv(features["stereo_T_LR"]),
+                                               intrinsic=features["intrinsic"])
         loss_right, synth_right_ms = \
-            stereo_loss.stereo_synthesize_loss(features, predictions, augm_data, augm_data["target"], True, "_R")
+            stereo_loss.stereo_synthesize_loss(source_img=augm_data["target"],
+                                               target_ms=augm_data["target_ms_R"],
+                                               disp_tgt_ms=predictions["disp_ms_R"],
+                                               pose_s2t=features["stereo_T_LR"],
+                                               intrinsic=features["intrinsic_R"],
+                                               suffix="_R")
+
         losses = loss_left + loss_right
         batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
                                    name="photo_loss_sum")(losses)
@@ -280,7 +294,7 @@ def tu_make_prediction(features, suffix=""):
     depth_ms = uf.multi_scale_depths(depth, [1, 2, 4, 8])
     disp_ms = []
     for k, depth in enumerate(depth_ms):
-        disp = tf.where(depth < 0.00001, 0, 1. / depth)
+        disp = tf.where(depth < 0.00001, 0., 1. / depth)
         disp_ms.append(disp)
 
     poses = features["pose_gt" + suffix]
@@ -290,14 +304,15 @@ def tu_make_prediction(features, suffix=""):
 
 
 def tu_show_synthesize_result(synth_target_ms, target, source, suffix):
-    target_stacked = [target[0].numpy(), source[0].numpy()]
+    synth_stacked = [uf.to_uint8_image(target)[0].numpy(), uf.to_uint8_image(source)[0].numpy()]
     dstsize = (opts.IM_WIDTH, opts.IM_HEIGHT)
-    for target in synth_target_ms:
-        target_img = uf.to_uint8_image(target)[0][0].numpy()
-        target_rsz = cv2.resize(target_img, dstsize, interpolation=cv2.INTER_NEAREST)
-        target_stacked.append(target_rsz)
-    target_stacked = np.concatenate(target_stacked, axis=0)
-    cv2.imshow("synthesized_" + suffix, target_stacked)
+
+    for synth in synth_target_ms:
+        synth_img = uf.to_uint8_image(synth)[0, 0].numpy()
+        synth_img = cv2.resize(synth_img, dstsize, interpolation=cv2.INTER_NEAREST)
+        synth_stacked.append(synth_img)
+    synth_stacked = np.concatenate(synth_stacked, axis=0)
+    cv2.imshow("synthesized_" + suffix, synth_stacked)
 
 
 def test():

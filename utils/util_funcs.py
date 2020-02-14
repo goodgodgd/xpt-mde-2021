@@ -144,7 +144,7 @@ def read_previous_epoch(model_name):
 def disp_to_depth_tensor(disp_ms):
     depth_ms = []
     for i, disp in enumerate(disp_ms):
-        depth = layers.Lambda(lambda dis: tf.where(dis < 0.00001, 0, 1./dis), name=f"todepth_{i}")(disp)
+        depth = layers.Lambda(lambda dis: tf.where(dis < 0.00001, 0., 1./dis), name=f"todepth_{i}")(disp)
         depth_ms.append(depth)
     return depth_ms
 

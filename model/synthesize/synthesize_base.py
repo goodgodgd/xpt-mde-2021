@@ -54,8 +54,6 @@ class SynthesizeBatchBasic:
         # reconstruct target view from source images
         recon_image_sc = self.synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
                                                     intrinsic_sc, suffix=f"sc{self.scale}")
-        recon_image_sc = layers.Lambda(lambda inputs: self.filter_by_depth(inputs),
-                                       name="filter_by_depth" + suffix)([depth_sc, recon_image_sc])
         return recon_image_sc
 
     @shape_check
@@ -176,11 +174,3 @@ class SynthesizeBatchBasic:
         pixel_scales = pixel_coords[:, :, 2:3, :]
         pixel_coords = pixel_coords / (pixel_scales + 1e-10)
         return pixel_coords
-
-    def filter_by_depth(self, inputs):
-        depth, image = inputs
-        print("filter_by_depth depth zeros", tf.reduce_sum(tf.cast(depth[0] < 0.00001, tf.int32)).numpy())
-        print("filter_by_depth depth non-zeros", tf.reduce_sum(tf.cast(depth[0] > 0.00001, tf.int32)).numpy())
-        depth_expanded = tf.expand_dims(depth, 1)
-        filtered_image = tf.where(depth_expanded < 0.00001, 0, image)
-        return filtered_image

@@ -23,5 +23,8 @@ def loss_factory(loss_weights=opts.LOSS_WEIGHTS, stereo=opts.STEREO):
     if "smoothe_R" in loss_weights and loss_weights["smoothe_R"] > 0:
         losses.append(lm.SmoothenessLossMultiScale(key_suffix="_R"))
         weights.append(loss_weights["smoothe_R"])
+    if "stereo" in loss_weights and loss_weights["stereo"] > 0:
+        losses.append(lm.StereoDepthLoss("L1"))
+        weights.append(loss_weights["stereo"])
 
     return lm.TotalLoss(losses, weights, stereo)
