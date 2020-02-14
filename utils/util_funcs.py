@@ -142,9 +142,14 @@ def read_previous_epoch(model_name):
 
 
 def disp_to_depth_tensor(disp_ms):
+    """
+    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :return:
+    """
     depth_ms = []
     for i, disp in enumerate(disp_ms):
-        depth = layers.Lambda(lambda dis: tf.where(dis < 0.00001, 0., 1./dis), name=f"todepth_{i}")(disp)
+        mask = tf.cast(disp > 0.00001, tf.float32)
+        depth = (1. / (disp + 0.00001)) * mask
         depth_ms.append(depth)
     return depth_ms
 

@@ -247,12 +247,12 @@ class StereoDepthLoss(LossBase):
         loss_left, _ = self.stereo_synthesize_loss(source_img=augm_data["target_R"],
                                                    target_ms=augm_data["target_ms"],
                                                    disp_tgt_ms=predictions["disp_ms"],
-                                                   pose_s2t=tf.linalg.inv(features["stereo_T_LR"]),
+                                                   pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                    intrinsic=features["intrinsic"])
         loss_right, _ = self.stereo_synthesize_loss(source_img=augm_data["target"],
                                                     target_ms=augm_data["target_ms_R"],
                                                     disp_tgt_ms=predictions["disp_ms_R"],
-                                                    pose_s2t=features["stereo_T_LR"],
+                                                    pose_t2s=features["stereo_T_LR"],
                                                     intrinsic=features["intrinsic_R"],
                                                     suffix="_R")
         losses = loss_left + loss_right
@@ -262,13 +262,12 @@ class StereoDepthLoss(LossBase):
                                    name="photo_loss_sum")(losses)
         return batch_loss
 
-    def stereo_synthesize_loss(self, source_img, target_ms, disp_tgt_ms, pose_s2t, intrinsic, suffix=""):
+    def stereo_synthesize_loss(self, source_img, target_ms, disp_tgt_ms, pose_t2s, intrinsic, suffix=""):
         depth_ms = uf.disp_to_depth_tensor(disp_tgt_ms)
-        pose_stereo = cp.pose_matr2rvec_batch(tf.expand_dims(pose_s2t, 1))
+        pose_stereo = cp.pose_matr2rvec_batch(tf.expand_dims(pose_t2s, 1))
 
         # synth_xxx_ms: list of [batch, 1, height/scale, width/scale, 3]
         synth_target_ms = SynthesizeMultiScale()(source_img, intrinsic, depth_ms, pose_stereo)
-
         losses = []
         for i, (synth_image, source_image, depth) in enumerate(zip(synth_target_ms, target_ms, depth_ms)):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),

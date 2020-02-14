@@ -19,13 +19,13 @@ class VodeOptions:
     EPOCHS = 51
     LEARNING_RATE = 0.0002
     ENABLE_SHAPE_DECOR = False
-    CKPT_NAME = "vode2"
-    LOG_LOSS = False
+    CKPT_NAME = "vode1"
+    LOG_LOSS = True
 
     """
     path options
     """
-    DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384_stereo"
+    DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384_stereo_clip"
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
     DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
@@ -39,8 +39,9 @@ class VodeOptions:
     model options: network architecture, loss wegihts, ...
     """
     SSIM_RATIO = 0.8
-    LOSS_WEIGHTS = {"L1": (1 - SSIM_RATIO)*1, "SSIM": SSIM_RATIO*0.5, "smoothe": 1,
-                    "L1_R": (1 - SSIM_RATIO)*1, "SSIM_R": SSIM_RATIO*0.5, "smoothe_R": 1}
+    LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO)*1., "SSIM": SSIM_RATIO*0.5, "smoothe": 1.,
+                    "L1_R": (1. - SSIM_RATIO)*1., "SSIM_R": SSIM_RATIO*0.5, "smoothe_R": 1.,
+                    "stereo": 1.}
     DATASET = "kitti_raw"
     NET_NAMES = {"depth": "NASNetMobile", "camera": "PoseNet"}
     SYNTHESIZER = "SynthesizeMultiScale"

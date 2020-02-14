@@ -96,11 +96,12 @@ def save_loss_scales(model, dataset, steps):
 
 
 def collect_losses(model, dataset, steps_per_epoch):
-    results = {"L1": [], "SSIM": [], "smoothe": []}
+    results = {"L1": [], "SSIM": [], "smoothe": [], "stereo": []}
     total_loss = lm.TotalLoss()
     calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
     calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
     calc_smootheness_loss = lm.SmoothenessLossMultiScale()
+    calc_stereo_loss = lm.StereoDepthLoss("L1")
 
     for step, features in enumerate(dataset):
         preds = model(features['image'])
@@ -108,10 +109,12 @@ def collect_losses(model, dataset, steps_per_epoch):
         photo_l1 = calc_photo_loss_l1(features, preds, augm_data)
         photo_ssim = calc_photo_loss_ssim(features, preds, augm_data)
         smoothe = calc_smootheness_loss(features, preds, augm_data)
+        stereo = calc_stereo_loss(features, preds, augm_data)
 
         results["L1"].append(photo_l1)
         results["SSIM"].append(photo_ssim)
         results["smoothe"].append(smoothe)
+        results["stereo"].append(stereo)
         uf.print_progress_status(f"step: {step} / {steps_per_epoch}")
 
     print("")

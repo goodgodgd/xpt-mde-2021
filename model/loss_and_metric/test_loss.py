@@ -269,13 +269,13 @@ def test_stereo_loss():
             stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
                                                target_ms=augm_data["target_ms"],
                                                disp_tgt_ms=predictions["disp_ms"],
-                                               pose_s2t=tf.linalg.inv(features["stereo_T_LR"]),
+                                               pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                intrinsic=features["intrinsic"])
         loss_right, synth_right_ms = \
             stereo_loss.stereo_synthesize_loss(source_img=augm_data["target"],
                                                target_ms=augm_data["target_ms_R"],
                                                disp_tgt_ms=predictions["disp_ms_R"],
-                                               pose_s2t=features["stereo_T_LR"],
+                                               pose_t2s=features["stereo_T_LR"],
                                                intrinsic=features["intrinsic_R"],
                                                suffix="_R")
 
@@ -292,11 +292,7 @@ def test_stereo_loss():
 def tu_make_prediction(features, suffix=""):
     depth = features["depth_gt" + suffix]
     depth_ms = uf.multi_scale_depths(depth, [1, 2, 4, 8])
-    disp_ms = []
-    for k, depth in enumerate(depth_ms):
-        disp = tf.where(depth < 0.00001, 0., 1. / depth)
-        disp_ms.append(disp)
-
+    disp_ms = tu_depth_to_disp(depth_ms)
     poses = features["pose_gt" + suffix]
     poses = cp.pose_matr2rvec_batch(poses)
     predictions = {"pose" + suffix: poses, "disp_ms" + suffix: disp_ms}
