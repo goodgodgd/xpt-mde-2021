@@ -36,10 +36,11 @@ def pose_rvec2matr_batch(poses):
     # shape to [batch, N, 6, 1]
     poses = tf.expand_dims(poses, -1)
     batch, num_src, _, _ = poses.get_shape().as_list()
-    # split into translation and rotation [batch, N, 3, 1]
+    # split into translation and rotation [batch, N, 3]
     trans = poses[:, :, :3]
     uvec = poses[:, :, 3:]
-    unorm = tf.expand_dims(tf.linalg.norm(uvec, axis=2), axis=2)
+    # unorm: [batch, N, 1]
+    unorm = tf.norm(uvec, axis=2, keepdims=True)
     uvec = uvec / unorm
     # w1.shape = [batch, N, 1, 1]
     w1 = uvec[:, :, 0:1]
@@ -59,7 +60,8 @@ def pose_rvec2matr_batch(poses):
     identity = tf.expand_dims(tf.expand_dims(tf.eye(3), axis=0), axis=0)
     # identity.shape = [batch, N, 3, 3]
     identity = tf.tile(identity, (batch, num_src, 1, 1))
-    rotmat = identity + w_hat*tf.sin(unorm) + tf.matmul(w_hat, w_hat)*(1 - tf.cos(unorm))
+    tmpmat = identity + w_hat*tf.sin(unorm) + tf.matmul(w_hat, w_hat)*(1 - tf.cos(unorm))
+    rotmat = tf.where(tf.abs(unorm) < 0.00001, identity, tmpmat)
 
     tmat = tf.concat([rotmat, trans], axis=3)
     last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, num_src, 1, 1))
@@ -112,12 +114,13 @@ def pose_matr2rvec_batch(poses):
     # matrix에서 twist 형식으로 변환
     R = poses[:, :, :3, :3]
     theta = tf.math.acos((tf.linalg.trace(R) - 1.) / 2.)
+    # theta: [batch, num_src] -> [batch, num_src, 1]
     theta = tf.expand_dims(theta, -1)
+    # axis: [batch, num_src, 3]
     axis = tf.stack([R[:, :, 1, 2] - R[:, :, 2, 1],
-                    R[:, :, 2, 0] - R[:, :, 0, 2],
-                    R[:, :, 0, 1] - R[:, :, 1, 0]], axis=-1)
-    axis = axis / (2 * tf.math.sin(theta))
-    rvec = axis * theta
+                     R[:, :, 2, 0] - R[:, :, 0, 2],
+                     R[:, :, 0, 1] - R[:, :, 1, 0]], axis=-1)
+    rvec = tf.where(tf.abs(theta) < 0.00001, axis / 2., axis / (2 * tf.math.sin(theta)) * theta)
     trans = poses[:, :, :3, 3]
     pose_vec = tf.concat([trans, rvec], axis=-1)
     return pose_vec

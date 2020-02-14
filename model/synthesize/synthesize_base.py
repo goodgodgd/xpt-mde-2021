@@ -20,12 +20,12 @@ class SynthesizeMultiScale:
         # convert pose vector to transformation matrix
         poses_matr = layers.Lambda(lambda pose: pose_rvec2matr_batch(pose),
                                    name="pose2matrix")(pred_pose)
-        synth_images = []
+        synth_targets = []
         for depth_sc in pred_depth_ms:
-            synth_image_sc = SynthesizeBatchBasic()(src_img_stacked, intrinsic, depth_sc, poses_matr)
-            synth_images.append(synth_image_sc)
+            synth_target_sc = SynthesizeBatchBasic()(src_img_stacked, intrinsic, depth_sc, poses_matr)
+            synth_targets.append(synth_target_sc)
 
-        return synth_images
+        return synth_targets
 
 
 class SynthesizeBatchBasic:
@@ -40,19 +40,22 @@ class SynthesizeBatchBasic:
         :param src_img_stacked: stacked source images [batch, height*num_src, width, 3]
         :param intrinsic: intrinsic parameters [batch, 3, 3]
         :param depth_sc: scaled predicted depth for target image, [batch, height/scale, width/scale, 1]
-        :param poses_matr: predicted source pose in matrix form [batch, num_src, 3, 3]
+        :param poses_matr: predicted source pose in matrix form [batch, num_src, 4, 4]
         :return: reconstructed target view in scale, [batch, num_src, height/scale, width/scale, 3]
         """
+        suffix = f"_sc{self.scale}"
         self.read_shape(src_img_stacked, depth_sc)
         # adjust intrinsic upto scale
         intrinsic_sc = layers.Lambda(lambda intrin: self.scale_intrinsic(intrin, self.scale),
-                                     name=f"scale_intrin_sc{self.scale}")(intrinsic)
+                                     name=f"scale_intrin" + suffix)(intrinsic)
         # reorganize and resize source images: [batch, 4, height/scale, width/scale, 3]
         source_images_sc = layers.Lambda(lambda image: self.reshape_source_images(image),
-                                         name=f"reorder_source_sc{self.scale}")(src_img_stacked)
+                                         name=f"reorder_source" + suffix)(src_img_stacked)
         # reconstruct target view from source images
         recon_image_sc = self.synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
                                                     intrinsic_sc, suffix=f"sc{self.scale}")
+        recon_image_sc = layers.Lambda(lambda inputs: self.filter_by_depth(inputs),
+                                       name="filter_by_depth" + suffix)([depth_sc, recon_image_sc])
         return recon_image_sc
 
     @shape_check
@@ -94,7 +97,6 @@ class SynthesizeBatchBasic:
         """
         src_pixel_coords = layers.Lambda(lambda inputs: self.warp_pixel_coords(inputs, self.height, self.width),
                                          name="warp_pixel_" + suffix)([tgt_depth, pose, intrinsic])
-
         tgt_image_synthesized = layers.Lambda(lambda inputs:
                                               BilinearInterpolation()(inputs[0], inputs[1], inputs[2]),
                                               name="recon_interp_" + suffix)(
@@ -150,9 +152,8 @@ class SynthesizeBatchBasic:
         :param t2s_pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
         :return: transformed points in source frame like (x,y,z,1) [batch, num_src, 4, height*width]
         """
-        num_src = t2s_pose.get_shape().as_list()[1]
         tgt_coords_expand = tf.expand_dims(tgt_coords, 1)
-        tgt_coords_expand = tf.tile(tgt_coords_expand, (1, num_src, 1, 1))
+        tgt_coords_expand = tf.tile(tgt_coords_expand, (1, self.num_src, 1, 1))
         # [batch, num_src, 4, height*width] = [batch, num_src, 4, 4] x [batch, num_src, 4, height*width]
         src_coords = tf.matmul(t2s_pose, tgt_coords_expand)
         return src_coords
@@ -163,10 +164,9 @@ class SynthesizeBatchBasic:
         :param intrinsic: intrinsic camera matrix [batch, 3, 3]
         :return: projected pixel coordinates on source image plane (u,v,1) [batch, num_src, 3, height*width]
         """
-        batch, num_src, _, length = cam_coords.get_shape().as_list()
         intrinsic_expand = tf.expand_dims(intrinsic, 1)
         # [batch, num_src, 3, 3]
-        intrinsic_expand = tf.tile(intrinsic_expand, (1, num_src, 1, 1))
+        intrinsic_expand = tf.tile(intrinsic_expand, (1, self.num_src, 1, 1))
 
         # [batch, num_src, 3, height*width] = [batch, num_src, 3, 3] x [batch, num_src, 3, height*width]
         point_coords = tf.slice(cam_coords, (0, 0, 0, 0), (-1, -1, 3, -1))
@@ -176,3 +176,11 @@ class SynthesizeBatchBasic:
         pixel_scales = pixel_coords[:, :, 2:3, :]
         pixel_coords = pixel_coords / (pixel_scales + 1e-10)
         return pixel_coords
+
+    def filter_by_depth(self, inputs):
+        depth, image = inputs
+        print("filter_by_depth depth zeros", tf.reduce_sum(tf.cast(depth[0] < 0.00001, tf.int32)).numpy())
+        print("filter_by_depth depth non-zeros", tf.reduce_sum(tf.cast(depth[0] > 0.00001, tf.int32)).numpy())
+        depth_expanded = tf.expand_dims(depth, 1)
+        filtered_image = tf.where(depth_expanded < 0.00001, 0, image)
+        return filtered_image

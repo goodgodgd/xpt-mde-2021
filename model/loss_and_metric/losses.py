@@ -4,6 +4,7 @@ from model.synthesize.synthesize_base import SynthesizeMultiScale
 
 import utils.util_funcs as uf
 from utils.util_class import WrongInputException
+import utils.convert_pose as cp
 from utils.decorators import shape_check
 
 
@@ -17,6 +18,7 @@ class TotalLoss:
         self.weights = weights
         self.stereo = stereo
 
+    @shape_check
     def __call__(self, predictions, features):
         """
         :param predictions: {"disp_ms": .., "pose": ..}
@@ -113,16 +115,18 @@ class PhotometricLossMultiScale(LossBase):
 
 
 @shape_check
-def photometric_loss_l1(synt_target, orig_target):
+def photometric_loss_l1(synt_target, orig_target, depth=1):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
+    :param depth: scalar or [batch, height/scale, width/scale, 1]
     :return: photo_loss [batch, num_src]
     """
     orig_target = tf.expand_dims(orig_target, axis=1)
     # create mask to ignore black region
     synt_target_gray = tf.reduce_mean(synt_target, axis=-1, keepdims=True)
     error_mask = tf.equal(synt_target_gray, 0)
+    error_mask = tf.where(depth < 0.00001, True, error_mask)
 
     # orig_target: [batch, 1, height/scale, width/scale, 3]
     # axis=1 broadcasted in subtraction
@@ -134,10 +138,11 @@ def photometric_loss_l1(synt_target, orig_target):
 
 
 @shape_check
-def photometric_loss_ssim(synt_target, orig_target):
+def photometric_loss_ssim(synt_target, orig_target, depth=1):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
+    :param depth: scalar or [batch, height/scale, width/scale, 1]
     :return: photo_loss [batch, num_src]
     """
     num_src = synt_target.get_shape().as_list()[1]
@@ -146,6 +151,7 @@ def photometric_loss_ssim(synt_target, orig_target):
     # create mask to ignore black region
     synt_target_gray = tf.reduce_mean(synt_target, axis=-1, keepdims=True)
     error_mask = tf.equal(synt_target_gray, 0)
+    error_mask = tf.where(depth < 0.00001, True, error_mask)
 
     x = orig_target     # [batch, num_src, height/scale, width/scale, 3]
     y = synt_target     # [batch, num_src, height/scale, width/scale, 3]
@@ -223,3 +229,55 @@ class SmoothenessLossMultiScale(LossBase):
         smoothness_y = 0.5 * tf.reduce_mean(tf.abs(smoothness_y), axis=[1, 2, 3])
         smoothness = smoothness_x + smoothness_y
         return smoothness
+
+
+class StereoDepthLoss(LossBase):
+    def __init__(self, method):
+        if method == "L1":
+            self.photometric_loss = photometric_loss_l1
+        elif method == "SSIM":
+            self.photometric_loss = photometric_loss_ssim
+        else:
+            raise WrongInputException("Wrong photometric loss name: " + method)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        :return: photo_loss [batch]
+        """
+        # synthesize left image from right image
+        loss_left, synthe_left_ms = \
+            self.stereo_synthesize_loss(features, predictions, augm_data, augm_data["target_R"], True)
+        loss_right, synthe_right_ms = \
+            self.stereo_synthesize_loss(features, predictions, augm_data, augm_data["target"], True, "_R")
+        losses = loss_left + loss_right
+
+        # sum over sources x scales, after stack over scales: [batch, num_src, num_scales]
+        batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
+                                   name="photo_loss_sum")(losses)
+        return batch_loss
+
+    def stereo_synthesize_loss(self, features, predictions, augm_data, source_img, pose_inv, suffix=""):
+        stereo_pose = features["stereo_T_LR"]
+        intrinsic = features["intrinsic" + suffix]
+        target_ms = augm_data["target_ms" + suffix]
+        disp_left_ms = predictions["disp_ms" + suffix]
+        depth_ms = uf.disp_to_depth_tensor(disp_left_ms)
+        pose_stereo = tf.cond(pose_inv,
+                              lambda: cp.pose_matr2rvec_batch(tf.expand_dims(tf.linalg.inv(stereo_pose), 1)),
+                              lambda: cp.pose_matr2rvec_batch(tf.expand_dims(tf.linalg.inv(stereo_pose), 1)))
+
+        # synth_xxx_ms: list of [batch, 1, height/scale, width/scale, 3]
+        synth_target_ms = SynthesizeMultiScale()(source_img, intrinsic, depth_ms, pose_stereo)
+
+        print("depth zeros", tf.reduce_sum(tf.cast(depth_ms[0] < 0.00001, tf.int32)).numpy())
+        print("depth non zeros", tf.reduce_sum(tf.cast(depth_ms[0] >= 0.00001, tf.int32)).numpy())
+        print("synth zeros", tf.reduce_sum(tf.cast(synth_target_ms[0] < -1. + 0.00001, tf.int32)).numpy())
+        print("synth non zeros", tf.reduce_sum(tf.cast(synth_target_ms[0] >= -1. + 0.00001, tf.int32)).numpy())
+
+        losses = []
+        for i, (synth_image, source_image, depth) in enumerate(zip(synth_target_ms, target_ms, depth_ms)):
+            loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], inputs[2]),
+                                 name=f"photo_loss_{i}" + suffix)([synth_image, source_image, depth])
+            losses.append(loss)
+        return losses, synth_target_ms

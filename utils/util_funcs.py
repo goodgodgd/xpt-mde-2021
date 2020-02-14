@@ -95,9 +95,8 @@ def multi_scale_depths(depth, scales):
     depth_ms = []
     for sc in scales:
         scaled_size = (int(height // sc), int(width // sc))
-        scdepth = tf.image.resize(depth, size=scaled_size, method="bilinear")
+        scdepth = tf.image.resize(depth, size=scaled_size, method="nearest")
         depth_ms.append(scdepth)
-        # print("[multi_scale_depths] scaled depth shape:", scdepth.get_shape().as_list())
     return depth_ms
 
 
@@ -114,7 +113,6 @@ def read_tfrecords_info(dataset_dir):
     with open(op.join(tfrpath, "tfr_config.txt"), "r") as fr:
         config = json.load(fr)
     return config
-
 
 
 def check_tfrecord_including(dataset_dir, key_list):
@@ -144,11 +142,11 @@ def read_previous_epoch(model_name):
 
 
 def disp_to_depth_tensor(disp_ms):
-    target_ms = []
+    depth_ms = []
     for i, disp in enumerate(disp_ms):
-        target = layers.Lambda(lambda dis: 1./dis, name=f"todepth_{i}")(disp)
-        target_ms.append(target)
-    return target_ms
+        depth = layers.Lambda(lambda dis: tf.where(dis < 0.00001, 0, 1./dis), name=f"todepth_{i}")(disp)
+        depth_ms.append(depth)
+    return depth_ms
 
 
 def multi_scale_like(image, disp_ms):
@@ -205,3 +203,7 @@ def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcid
     view = [trueim, predim, sourim, dpthim] if reconim is None else [trueim, reconim, predim, sourim, dpthim]
     view = np.concatenate(view, axis=0)
     return view
+
+
+def count_nan(tensor):
+    return tf.reduce_sum(tf.cast(tf.math.is_nan(tensor), tf.int32)).numpy()

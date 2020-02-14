@@ -12,7 +12,7 @@ from tfrecords.tfrecord_reader import TfrecordGenerator
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 import model.loss_and_metric.losses as ls
 
-WAIT_KEY = 200
+WAIT_KEY = 0
 
 
 def test_photometric_loss_quality(suffix=""):
@@ -30,6 +30,18 @@ def test_photometric_loss_quality(suffix=""):
         intrinsic = features["intrinsic" + suffix]
         depth_gt = features["depth_gt" + suffix]
         pose_gt = features["pose_gt" + suffix]
+
+        target_ms = []
+        for i, disp in enumerate(disp_ms):
+            target = layers.Lambda(lambda dis: 1. / dis, name=f"todepth_{i}")(disp)
+            target_ms.append(target)
+
+        # identity pose results in NaN data
+        pose_gt_np = pose_gt.numpy()
+        for pose_seq in pose_gt_np:
+            for pose in pose_seq:
+                assert not np.isclose(np.identity(4, dtype=np.float), pose).all()
+
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
@@ -234,10 +246,65 @@ def tu_smootheness_loss(features, predictions, augm_data):
     return batch_loss_wrong
 
 
+def test_stereo_loss():
+    print("\n===== start test_photometric_loss_quality")
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+
+    for i, features in enumerate(dataset):
+        print("\n--- fetch a batch data")
+        stereo_loss = ls.StereoDepthLoss("L1")
+        total_loss = ls.TotalLoss()
+        predictions = tu_make_prediction(features)
+        pred_right = tu_make_prediction(features, "_R")
+        predictions.update(pred_right)
+        augm_data = total_loss.augment_data(features, predictions)
+        augm_data_rig = total_loss.augment_data(features, predictions, "_R")
+        augm_data.update(augm_data_rig)
+
+        loss_left, synth_left_ms = \
+            stereo_loss.stereo_synthesize_loss(features, predictions, augm_data, augm_data["target_R"], True)
+        loss_right, synth_right_ms = \
+            stereo_loss.stereo_synthesize_loss(features, predictions, augm_data, augm_data["target"], True, "_R")
+        losses = loss_left + loss_right
+        batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
+                                   name="photo_loss_sum")(losses)
+
+        tu_show_synthesize_result(synth_left_ms, augm_data["target"], augm_data["target_R"], "left")
+        tu_show_synthesize_result(synth_right_ms, augm_data["target_R"], augm_data["target"], "right")
+        print("stereo loss:", batch_loss)
+        cv2.waitKey(0)
+
+
+def tu_make_prediction(features, suffix=""):
+    depth = features["depth_gt" + suffix]
+    depth_ms = uf.multi_scale_depths(depth, [1, 2, 4, 8])
+    disp_ms = []
+    for k, depth in enumerate(depth_ms):
+        disp = tf.where(depth < 0.00001, 0, 1. / depth)
+        disp_ms.append(disp)
+
+    poses = features["pose_gt" + suffix]
+    poses = cp.pose_matr2rvec_batch(poses)
+    predictions = {"pose" + suffix: poses, "disp_ms" + suffix: disp_ms}
+    return predictions
+
+
+def tu_show_synthesize_result(synth_target_ms, target, source, suffix):
+    target_stacked = [target[0].numpy(), source[0].numpy()]
+    dstsize = (opts.IM_WIDTH, opts.IM_HEIGHT)
+    for target in synth_target_ms:
+        target_img = uf.to_uint8_image(target)[0][0].numpy()
+        target_rsz = cv2.resize(target_img, dstsize, interpolation=cv2.INTER_NEAREST)
+        target_stacked.append(target_rsz)
+    target_stacked = np.concatenate(target_stacked, axis=0)
+    cv2.imshow("synthesized_" + suffix, target_stacked)
+
+
 def test():
-    test_photometric_loss_quality()
-    test_photometric_loss_quantity()
-    test_smootheness_loss_quantity()
+    # test_photometric_loss_quality("_R")
+    # test_photometric_loss_quantity("_R")
+    # test_smootheness_loss_quantity()
+    test_stereo_loss()
 
 
 if __name__ == "__main__":
