@@ -263,6 +263,15 @@ class StereoDepthLoss(LossBase):
         return batch_loss
 
     def stereo_synthesize_loss(self, source_img, target_ms, disp_tgt_ms, pose_t2s, intrinsic, suffix=""):
+        """
+        synthesize image from source to target
+        :param source_img: [batch, num_src*height, width, 3]
+        :param target_ms: [batch, height, width, 3]
+        :param disp_tgt_ms: [batch, height, width, 1]
+        :param pose_t2s: [batch, num_src, 4, 4]
+        :param intrinsic: [batch, num_src, 3, 3]
+        :param suffix: "" if right to left, else "_R"
+        """
         depth_ms = uf.disp_to_depth_tensor(disp_tgt_ms)
         pose_stereo = cp.pose_matr2rvec_batch(tf.expand_dims(pose_t2s, 1))
 

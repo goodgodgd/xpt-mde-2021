@@ -88,14 +88,14 @@ def make_reconstructed_views(model, dataset):
     return recon_views
 
 
-def save_loss_scales(model, dataset, steps):
+def save_loss_scales(model, dataset, steps, is_stereo):
     if opts.LOG_LOSS:
         print("\n===== save_loss_scales")
-        losses = collect_losses(model, dataset, steps)
+        losses = collect_losses(model, dataset, steps, is_stereo)
         save_loss_to_file(losses)
 
 
-def collect_losses(model, dataset, steps_per_epoch):
+def collect_losses(model, dataset, steps_per_epoch, is_stereo):
     results = {"L1": [], "SSIM": [], "smoothe": [], "stereo": []}
     total_loss = lm.TotalLoss()
     calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
@@ -104,8 +104,12 @@ def collect_losses(model, dataset, steps_per_epoch):
     calc_stereo_loss = lm.StereoDepthLoss("L1")
 
     for step, features in enumerate(dataset):
-        preds = model(features['image'])
+        preds = model(features)
         augm_data = total_loss.augment_data(features, preds)
+        if is_stereo:
+            augm_data_rig = total_loss.augment_data(features, preds, "_R")
+            augm_data.update(augm_data_rig)
+
         photo_l1 = calc_photo_loss_l1(features, preds, augm_data)
         photo_ssim = calc_photo_loss_ssim(features, preds, augm_data)
         smoothe = calc_smootheness_loss(features, preds, augm_data)
