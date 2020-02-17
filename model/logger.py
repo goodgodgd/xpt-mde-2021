@@ -48,6 +48,7 @@ def save_log(epoch, results_train, results_val):
     # save graph as a file
     filename = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'history.png')
     fig.savefig(filename, dpi=100)
+    plt.close("all")
 
 
 def save_reconstruction_samples(model, dataset, epoch):

@@ -278,8 +278,8 @@ class StereoDepthLoss(LossBase):
         # synth_xxx_ms: list of [batch, 1, height/scale, width/scale, 3]
         synth_target_ms = SynthesizeMultiScale()(source_img, intrinsic, depth_ms, pose_stereo)
         losses = []
-        for i, (synth_image, source_image, depth) in enumerate(zip(synth_target_ms, target_ms, depth_ms)):
+        for i, (synth_img_sc, target_img_sc, depth) in enumerate(zip(synth_target_ms, target_ms, depth_ms)):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
-                                 name=f"photo_loss_{i}" + suffix)([synth_image, source_image])
+                                 name=f"photo_loss_{i}" + suffix)([synth_img_sc, target_img_sc])
             losses.append(loss)
         return losses, synth_target_ms

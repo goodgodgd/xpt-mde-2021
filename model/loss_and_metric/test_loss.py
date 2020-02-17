@@ -264,6 +264,7 @@ def test_stereo_loss():
         depth1 = augm_data["depth_ms"][0]
         depth1 = tf.clip_by_value(depth1, 0, 20)[0].numpy()
         cv2.imshow("depth1", depth1)
+        print("stereo_T_LR\n", features["stereo_T_LR"][0].numpy())
 
         loss_left, synth_left_ms = \
             stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
