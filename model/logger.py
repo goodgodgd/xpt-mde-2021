@@ -61,7 +61,7 @@ def save_depths(depth_train, depth_val, filename):
         existing = np.loadtxt(filepath)
         depths = np.concatenate([existing, [depths[1]]], axis=0)
     # write to a file
-    np.savetxt(filepath, depths, fmt="%8.4f")
+    np.savetxt(filepath, depths, fmt="%7.4f")
 
 
 def draw_and_save_plot(results, filename):
@@ -134,8 +134,12 @@ def collect_losses(model, dataset, steps_per_epoch, is_stereo):
     calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
     calc_smootheness_loss = lm.SmoothenessLossMultiScale()
     calc_stereo_loss = lm.StereoDepthLoss("L1")
+    stride = steps_per_epoch // 30
 
     for step, features in enumerate(dataset):
+        if step % stride > 0:
+            continue
+
         preds = model(features)
         augm_data = total_loss.augment_data(features, preds)
         if is_stereo:
