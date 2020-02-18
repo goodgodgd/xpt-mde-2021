@@ -8,19 +8,21 @@ from model.loss_and_metric.metric import compute_metric_pose
 
 
 class TrainValBase:
-    def __init__(self, train_val_name):
+    def __init__(self, train_val_name, steps_per_epoch, optimizer):
         self.train_val_name = train_val_name
+        self.steps_per_epoch = steps_per_epoch
+        self.optimizer = optimizer
 
-    def run_an_epoch(self, model, dataset, steps_per_epoch, optimizer=None):
+    def run_an_epoch(self, model, dataset):
         results = []
         depths = []
         compute_loss = loss_factory()
         # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
         for step, features in enumerate(dataset):
             start = time.time()
-            preds, loss, loss_by_type = self.run_a_batch(model, features, compute_loss, optimizer)
+            preds, loss, loss_by_type = self.run_a_batch(model, features, compute_loss, self.optimizer)
             batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type)
-            uf.print_progress_status(f"\t{self.train_val_name} {step}/{steps_per_epoch} steps, {log_msg}, "
+            uf.print_progress_status(f"\t{self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
                                      f"time={time.time() - start:1.4f} {mean_depths.shape}...")
             results.append(batch_result)
             depths.append(mean_depths)
@@ -38,8 +40,8 @@ class TrainValBase:
 
 
 class ModelTrainerGraph(TrainValBase):
-    def __init__(self):
-        super().__init__("Train (graph)")
+    def __init__(self, steps_per_epoch, optimizer=None):
+        super().__init__("Train (graph)", steps_per_epoch, optimizer)
 
     @tf.function
     def run_a_batch(self, model, features, compute_loss, optimizer):
@@ -61,8 +63,8 @@ class ModelTrainerGraph(TrainValBase):
 
 
 class ModelTrainerEager(TrainValBase):
-    def __init__(self):
-        super().__init__("Train (eager)")
+    def __init__(self, steps_per_epoch, optimizer=None):
+        super().__init__("Train (eager)", steps_per_epoch, optimizer)
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
         with tf.GradientTape() as tape:
@@ -83,8 +85,8 @@ class ModelTrainerEager(TrainValBase):
 
 
 class ModelValidaterGraph(TrainValBase):
-    def __init__(self):
-        super().__init__("Validate (graph)")
+    def __init__(self, steps_per_epoch, optimizer=None):
+        super().__init__("Validate (graph)", steps_per_epoch, optimizer)
 
     @tf.function
     def run_a_batch(self, model, features, compute_loss, optimizer):
@@ -96,8 +98,8 @@ class ModelValidaterGraph(TrainValBase):
 
 
 class ModelValidaterEager(TrainValBase):
-    def __init__(self):
-        super().__init__("Validate (eager)")
+    def __init__(self, steps_per_epoch, optimizer=None):
+        super().__init__("Validate (eager)", steps_per_epoch, optimizer)
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
         preds = model(features)

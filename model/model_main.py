@@ -11,7 +11,7 @@ from utils.util_class import TrainException
 from model.build_model.model_factory import ModelFactory
 from model.optimizers import optimizer_factory
 import model.logger as log
-from model.train_model import ModelTrainerGraph, ModelValidaterGraph
+from model.train_val import ModelTrainerGraph, ModelValidaterGraph
 
 
 def train_by_user_interaction():
@@ -47,15 +47,15 @@ def train():
     # TODO WARNING! using "test" split for training dataset is just to check training process
     dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
     dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
-    trainer_graph = ModelTrainerGraph()
-    validater_graph = ModelValidaterGraph()
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
+    trainer_graph = ModelTrainerGraph(train_steps, optimizer)
+    validater_graph = ModelValidaterGraph(val_steps)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, opts.EPOCHS):
         print(f"========== Start epoch: {epoch}/{opts.EPOCHS} ==========")
 
-        result_train, depth_train = trainer_graph.run_an_epoch(model, dataset_train, train_steps, optimizer)
+        result_train, depth_train = trainer_graph.run_an_epoch(model, dataset_train)
         print(f"[Train Epoch MEAN], result: loss={result_train[0]:1.4f}, "
               f"trj_err={result_train[1]:1.4f}, rot_err={result_train[2]:1.4f}")
 
