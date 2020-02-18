@@ -55,20 +55,20 @@ def train():
     for epoch in range(initial_epoch, opts.EPOCHS):
         print(f"========== Start epoch: {epoch}/{opts.EPOCHS} ==========")
 
-        result_train = train_an_epoch_graph(model, dataset_train, optimizer, train_steps)
-        print(f"\n[Train Epoch MEAN], result: loss={result_train[0]}, "
-              f"trj_err={result_train[1]}, rot_err={result_train[2]}")
+        result_train, depth_train = train_an_epoch_graph(model, dataset_train, optimizer, train_steps)
+        print(f"\n[Train Epoch MEAN], result: loss={result_train[0]:1.4f}, "
+              f"trj_err={result_train[1]:1.4f}, rot_err={result_train[2]:1.4f}")
 
-        result_val = validate_an_epoch_graph(model, dataset_val, val_steps)
-        print(f"\n[Validation Epoch MEAN], result: loss={result_val[0]}, "
-              f"trj_err={result_val[1]}, rot_err={result_val[2]}")
+        result_val, depth_val = validate_an_epoch_graph(model, dataset_val, val_steps)
+        print(f"\n[Validation Epoch MEAN], result: loss={result_val[0]:1.4f}, "
+              f"trj_err={result_val[1]:1.4f}, rot_err={result_val[2]:1.4f}")
 
         # if epoch % 10 == 0:
         #     print("save intermediate results ...")
         #     log.save_reconstruction_samples(model, dataset_val, epoch)
         #     log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
         # save_model(model, result_val[0])
-        log.save_log(epoch, result_train, result_val)
+        log.save_log(epoch, result_train, result_val, depth_train, depth_val)
 
 
 def set_configs():
@@ -112,6 +112,7 @@ def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
 # Eager training is slow ...
 def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
     results = []
+    depths = []
     compute_loss = loss_factory()
     # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     for step, features in enumerate(dataset):
@@ -125,35 +126,40 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
         loss_mean = tf.reduce_mean(loss_batch).numpy()
         loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
 
-        trjerr, roterr = get_metric_pose(preds, features)
-        batch_result = [loss_mean, trjerr, roterr] + loss_by_type.numpy().tolist()
+        batch_result, log_msg, mean_depths = merge_results(features, preds, loss_mean, loss_by_type)
+        uf.print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, {log_msg}, "
+                                 f"time={time.time() - start:1.4f} ...")
         results.append(batch_result)
-        uf.print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_mean:1.4f}, "
-                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+        depths.append(mean_depths)
 
+    # mean_res: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
     mean_res = np.array(results).mean(axis=0)
-    return mean_res
+    depths = np.concatenate(depths, axis=0)
+    return mean_res, depths
 
 
 # Graph training is faster than eager training TWO TIMES!!
 def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
     results = []
-
+    depths = []
     compute_loss = loss_factory()
     # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     for step, features in enumerate(dataset):
         start = time.time()
         preds, loss, loss_by_type = train_a_batch(model, features, optimizer, compute_loss)
-
-        trjerr, roterr = get_metric_pose(preds, features)
-        batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
+        batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type)
+        uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, {log_msg}, "
+                                 f"time={time.time() - start:1.4f} {mean_depths.shape}...")
         results.append(batch_result)
-        uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={loss.numpy():1.4f}, "
-                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+        depths.append(mean_depths)
 
-    # mean_res: mean of [all losses, [each type of weighted losses], trj_err, rot_err]
-    mean_res = np.stack(results, axis=0).mean(axis=0)
-    return mean_res
+    print("")
+    # mean_res: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
+    mean_res = np.array(results).mean(axis=0)
+    depths = np.concatenate(depths, axis=1)
+    stride = depths.shape[1] // 10
+    depths = depths[:, 0:-1:stride]
+    return mean_res, depths
 
 
 @tf.function
@@ -177,6 +183,7 @@ def train_a_batch(model, features, optimizer, compute_loss):
 
 def validate_an_epoch_eager(model, dataset, steps_per_epoch):
     results = []
+    depths = []
     compute_loss = loss_factory()
     # tf.data.Dataset 객체는 한번 쓴 후에도 다시 iteration 가능, test_reuse_dataset() 참조
     for step, features in enumerate(dataset):
@@ -187,32 +194,38 @@ def validate_an_epoch_eager(model, dataset, steps_per_epoch):
         loss_mean = tf.reduce_mean(loss_batch).numpy()
         loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
 
-        trjerr, roterr = get_metric_pose(preds, features)
-        batch_result = [loss_mean, trjerr, roterr] + loss_by_type.numpy().tolist()
+        batch_result, log_msg, mean_depths = merge_results(features, preds, loss_mean, loss_by_type)
+        uf.print_progress_status(f"\tValidating (eager) {step}/{steps_per_epoch} steps, {log_msg}, "
+                                 f"time={time.time() - start:1.4f} ...")
         results.append(batch_result)
-        uf.print_progress_status(f"\tValidating (eager) {step}/{steps_per_epoch} steps, loss={loss_mean:1.4f}, "
-                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+        depths.append(mean_depths)
 
+    # mean_res: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
     mean_res = np.array(results).mean(axis=0)
-    return mean_res
+    depths = np.concatenate(depths, axis=0)
+    return mean_res, depths
 
 
 def validate_an_epoch_graph(model, dataset, steps_per_epoch):
     results = []
+    depths = []
     compute_loss = loss_factory()
     for step, features in enumerate(dataset):
         start = time.time()
         preds, loss, loss_by_type = validate_a_batch(model, features, compute_loss)
-
-        trjerr, roterr = get_metric_pose(preds, features)
-        batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
+        batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type)
+        uf.print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, {log_msg}, "
+                                 f"time={time.time() - start:1.4f} {mean_depths.shape}...")
         results.append(batch_result)
-        uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={loss.numpy():1.4f}, "
-                                 f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
+        depths.append(mean_depths)
 
-    # mean_res: mean of [all losses, [each type of weighted losses], trj_err, rot_err]
-    mean_res = np.stack(results, axis=0).mean(axis=0)
-    return mean_res
+    print("")
+    # mean_res: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
+    mean_res = np.array(results).mean(axis=0)
+    depths = np.concatenate(depths, axis=1)
+    stride = depths.shape[1] // 10
+    depths = depths[:, 0:-1:stride]
+    return mean_res, depths
 
 
 @tf.function
@@ -222,6 +235,35 @@ def validate_a_batch(model, features, compute_loss):
     loss_mean = tf.reduce_mean(loss_batch)
     loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
     return preds, loss_mean, loss_by_type
+
+
+def merge_results(features, preds, loss, loss_by_type):
+    mean_depths = get_center_depths(features, preds)
+    trjerr, roterr = get_metric_pose(preds, features)
+    batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
+    log_msg = f"loss = {loss.numpy():1.4f}, metric={trjerr:1.4f}, {roterr:1.4f}"
+    return batch_result, log_msg, mean_depths
+
+
+def get_center_depths(features, preds):
+    depth_true = features["depth_gt"].numpy()
+    pred_disp_ms = preds["disp_ms"]
+    pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
+    depth_pred = pred_depth_ms[0].numpy()
+    batch, height, width, _ = depth_true.shape
+    xs, xe = width // 2 - 10, width // 2 + 10
+    ys, ye = height // 4 * 3 - 10, height // 4 * 3 + 10
+
+    depth_true = depth_true[:, ys:ye, xs:xe, :]
+    mean_true = []
+    for depth in depth_true:
+        mean_d = depth[depth > 0].mean()
+        mean_true.append(mean_d)
+    mean_true = np.array(mean_true)
+    depth_pred = depth_pred[:, ys:ye, xs:xe, :]
+    mean_pred = depth_pred.mean(axis=(1, 2, 3))
+    mean_depths = np.stack([mean_true, mean_pred], axis=0)
+    return mean_depths
 
 
 def get_metric_pose(preds, features):

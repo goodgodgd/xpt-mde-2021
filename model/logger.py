@@ -12,7 +12,7 @@ import model.loss_and_metric.losses as lm
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 
 
-def save_log(epoch, results_train, results_val):
+def save_log(epoch, results_train, results_val, depth_train, depth_val):
     """
     :param epoch: current epoch
     :param results_train: (loss, metric_trj, metric_rot, (losses from various loss types))
@@ -20,6 +20,7 @@ def save_log(epoch, results_train, results_val):
     """
     results = save_results(epoch, results_train[:3], results_val[:3], ["loss", "trj_err", "rot_err"], "history.txt")
     _ = save_results(epoch, results_train[3:], results_val[3:], list(opts.LOSS_WEIGHTS.keys()), "losses.txt")
+    save_depths(depth_train, depth_val, "depths.txt")
     draw_and_save_plot(results, "history.png")
 
 
@@ -47,6 +48,20 @@ def save_results(epoch, results_train, results_val, columns, filename):
     # write to a file
     results.to_csv(filepath, encoding='utf-8', index=False, float_format='%.4f')
     return results
+
+
+def save_depths(depth_train, depth_val, filename):
+    """
+    depth_xxx: mean depths from a epoch, true depths in row 0, predicted depths in row 1
+    """
+    depths = np.concatenate([depth_train, [[-1], [-2]], depth_val], axis=1)
+    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
+    # if the file existed, append only row 1 to it
+    if op.isfile(filepath):
+        existing = np.loadtxt(filepath)
+        depths = np.concatenate([existing, [depths[1]]], axis=0)
+    # write to a file
+    np.savetxt(filepath, depths, fmt="%8.4f")
 
 
 def draw_and_save_plot(results, filename):
