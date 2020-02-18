@@ -27,6 +27,8 @@ class TotalLoss:
         :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
             image: stacked image [batch, height*snippet_len, width, 3]
             intrinsic: camera projection matrix [batch, 3, 3]
+        :return loss_batch: final loss of frames in batch [batch]
+                losses: list of losses computed from calc_losses
         """
         augm_data = self.augment_data(features, predictions)
         if self.stereo:
@@ -38,8 +40,8 @@ class TotalLoss:
             loss = calc_loss(features, predictions, augm_data)
             losses.append(loss * weight)
 
-        total_loss = layers.Lambda(lambda values: tf.reduce_sum(values, axis=0), name="total_loss")(losses)
-        return total_loss
+        loss_batch = layers.Lambda(lambda values: tf.reduce_sum(values, axis=0), name="losses")(losses)
+        return loss_batch, losses
 
     def augment_data(self, features, predictions, suffix=""):
         """
@@ -119,7 +121,6 @@ def photometric_loss_l1(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :param depth: scalar or [batch, height/scale, width/scale, 1]
     :return: photo_loss [batch, num_src]
     """
     orig_target = tf.expand_dims(orig_target, axis=1)
@@ -132,6 +133,7 @@ def photometric_loss_l1(synt_target, orig_target):
     # photo_error: [batch, num_src, height/scale, width/scale, 3]
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
+    # average over image dimensions (h, w, c)
     photo_loss = tf.reduce_mean(photo_error, axis=[2, 3, 4])
     return photo_loss
 
@@ -141,7 +143,6 @@ def photometric_loss_ssim(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :param depth: scalar or [batch, height/scale, width/scale, 1]
     :return: photo_loss [batch, num_src]
     """
     num_src = synt_target.get_shape().as_list()[1]
@@ -169,6 +170,7 @@ def photometric_loss_ssim(synt_target, orig_target):
     ssim = ssim_n / ssim_d
     ssim = tf.clip_by_value((1 - ssim) / 2, 0, 1)
     ssim = tf.where(error_mask, tf.constant(0, dtype=tf.float32), ssim)
+    # average over image dimensions (h, w, c)
     ssim = tf.reduce_mean(ssim, axis=[2, 3, 4])
     return ssim
 

@@ -15,29 +15,45 @@ from model.synthesize.synthesize_base import SynthesizeMultiScale
 def save_log(epoch, results_train, results_val):
     """
     :param epoch: current epoch
-    :param results_train: (loss, metric_trj, metric_rot) from train data
-    :param results_val: (loss, metric_trj, metric_rot) from validation data
+    :param results_train: (loss, metric_trj, metric_rot, (losses from various loss types))
+    :param results_val: (loss, metric_trj, metric_rot, (losses from various loss types))
     """
+    results = save_results(epoch, results_train[:3], results_val[:3], ["loss", "trj_err", "rot_err"], "history.txt")
+    _ = save_results(epoch, results_train[3:], results_val[3:], list(opts.LOSS_WEIGHTS.keys()), "losses.txt")
+    draw_and_save_plot(results, "history.png")
+
+
+def save_results(epoch, results_train, results_val, columns, filename):
     results = np.concatenate([[epoch], results_train, results_val], axis=0)
     results = np.expand_dims(results, 0)
-    columns = ['epoch', 'train_loss', 'train_metric_trj', 'train_metric_rot', 'val_loss', 'val_metric_trj', 'val_metric_rot']
-    results = pd.DataFrame(data=results, columns=columns)
+
+    train_columns = ["train_" + col for col in columns]
+    val_columns = ["val_" + col for col in columns]
+    total_columns = ["epoch"] + train_columns + val_columns
+    # create single row dataframe
+    results = pd.DataFrame(data=results, columns=total_columns)
+    results["|"] = "|"
+    total_columns = ["epoch"] + train_columns + ["|"] + val_columns
+    results = results[total_columns]
     results['epoch'] = results['epoch'].astype(int)
 
-    filename = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'history.txt')
+    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
     # if the file existed, append new data to it
-    if op.isfile(filename):
-        existing = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
+    if op.isfile(filepath):
+        existing = pd.read_csv(filepath, encoding='utf-8', converters={'epoch': lambda c: int(c)})
         results = pd.concat([existing, results], axis=0, ignore_index=True)
         results = results.drop_duplicates(subset='epoch', keep='last')
         results = results.sort_values(by=['epoch'])
     # write to a file
-    results.to_csv(filename, encoding='utf-8', index=False, float_format='%.4f')
+    results.to_csv(filepath, encoding='utf-8', index=False, float_format='%.4f')
+    return results
 
+
+def draw_and_save_plot(results, filename):
     # plot graphs of loss and metrics
     fig, axes = plt.subplots(3, 1)
     fig.set_size_inches(7, 7)
-    for i, ax, colname, title in zip(range(3), axes, ['loss', 'metric_trj', 'metric_rot'], ['Loss', 'Trajectory Error', 'Rotation Error']):
+    for i, ax, colname, title in zip(range(3), axes, ['loss', 'trj_err', 'rot_err'], ['Loss', 'Trajectory Error', 'Rotation Error']):
         ax.plot(results['epoch'], results['train_' + colname], label='train_' + colname)
         ax.plot(results['epoch'], results['val_' + colname], label='val_' + colname)
         ax.set_xlabel('epoch')
@@ -46,8 +62,8 @@ def save_log(epoch, results_train, results_val):
         ax.legend()
     fig.tight_layout()
     # save graph as a file
-    filename = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'history.png')
-    fig.savefig(filename, dpi=100)
+    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
+    fig.savefig(filepath, dpi=100)
     plt.close("all")
 
 

@@ -56,18 +56,18 @@ def train():
         print(f"========== Start epoch: {epoch}/{opts.EPOCHS} ==========")
 
         result_train = train_an_epoch_graph(model, dataset_train, optimizer, train_steps)
-        print(f"\n[Train Epoch MEAN], loss={result_train[0]:1.4f}, "
-              f"metric={result_train[1]:1.4f}, {result_train[2]:1.4f}")
+        print(f"\n[Train Epoch MEAN], result: loss={result_train[0]}, "
+              f"trj_err={result_train[1]}, rot_err={result_train[2]}")
 
         result_val = validate_an_epoch_graph(model, dataset_val, val_steps)
-        print(f"\n[Val Epoch MEAN],   loss={result_val[0]:1.4f}, "
-              f"metric={result_val[1]:1.4f}, {result_val[2]:1.4f}")
+        print(f"\n[Validation Epoch MEAN], result: loss={result_val[0]}, "
+              f"trj_err={result_val[1]}, rot_err={result_val[2]}")
 
-        if epoch % 10 == 0:
-            print("save intermediate results ...")
-            log.save_reconstruction_samples(model, dataset_val, epoch)
-            log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
-        save_model(model, result_val[0])
+        # if epoch % 10 == 0:
+        #     print("save intermediate results ...")
+        #     log.save_reconstruction_samples(model, dataset_val, epoch)
+        #     log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
+        # save_model(model, result_val[0])
         log.save_log(epoch, result_train, result_val)
 
 
@@ -118,15 +118,17 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
         start = time.time()
         with tf.GradientTape() as tape:
             preds = model(features['image'])
-            loss = compute_loss(preds, features)
+            loss_batch, loss_by_type = compute_loss(preds, features)
 
-        grads = tape.gradient(loss, model.trainable_weights)
-        optimizer.apply_gradients(zip(grads, model.trainable_weights))
+        grads = tape.gradient(loss_batch, model.trainable_weights())
+        optimizer.apply_gradients(zip(grads, model.trainable_weights()))
+        loss_mean = tf.reduce_mean(loss_batch).numpy()
+        loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
 
-        loss_num = loss.numpy().mean()
         trjerr, roterr = get_metric_pose(preds, features)
-        results.append((loss_num, trjerr, roterr))
-        uf.print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+        batch_result = [loss_mean, trjerr, roterr] + loss_by_type.numpy().tolist()
+        results.append(batch_result)
+        uf.print_progress_status(f"\tTraining (eager) {step}/{steps_per_epoch} steps, loss={loss_mean:1.4f}, "
                                  f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
@@ -136,19 +138,21 @@ def train_an_epoch_eager(model, dataset, optimizer, steps_per_epoch):
 # Graph training is faster than eager training TWO TIMES!!
 def train_an_epoch_graph(model, dataset, optimizer, steps_per_epoch):
     results = []
+
     compute_loss = loss_factory()
     # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     for step, features in enumerate(dataset):
         start = time.time()
-        preds, loss = train_a_batch(model, features, optimizer, compute_loss)
+        preds, loss, loss_by_type = train_a_batch(model, features, optimizer, compute_loss)
 
         trjerr, roterr = get_metric_pose(preds, features)
-        results.append((loss.numpy(), trjerr, roterr))
+        batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
+        results.append(batch_result)
         uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={loss.numpy():1.4f}, "
                                  f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
-    results = np.stack(results, axis=0)
-    mean_res = results.mean(axis=0)
+    # mean_res: mean of [all losses, [each type of weighted losses], trj_err, rot_err]
+    mean_res = np.stack(results, axis=0).mean(axis=0)
     return mean_res
 
 
@@ -157,12 +161,18 @@ def train_a_batch(model, features, optimizer, compute_loss):
     with tf.GradientTape() as tape:
         # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
         preds = model(features)
-        loss = compute_loss(preds, features)
+        loss_batch, loss_by_type = compute_loss(preds, features)
 
-    grads = tape.gradient(loss, model.trainable_weights())
+    grads = tape.gradient(loss_batch, model.trainable_weights())
     optimizer.apply_gradients(zip(grads, model.trainable_weights()))
-    loss_mean = tf.reduce_mean(loss)
-    return preds, loss_mean
+    loss_mean = tf.reduce_mean(loss_batch)
+    loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
+    """
+    preds: {"pose": ..., "disp_ms":, ...}
+    loss_mean: loss scalar that is averaged over all this epoch  
+    loss_by_type: loss [loss types]
+    """
+    return preds, loss_mean, loss_by_type
 
 
 def validate_an_epoch_eager(model, dataset, steps_per_epoch):
@@ -172,12 +182,15 @@ def validate_an_epoch_eager(model, dataset, steps_per_epoch):
     for step, features in enumerate(dataset):
         start = time.time()
         preds = model(features)
-        loss = compute_loss(preds, features)
 
-        loss_num = loss.numpy().mean()
+        loss_batch, loss_by_type = compute_loss(preds, features)
+        loss_mean = tf.reduce_mean(loss_batch).numpy()
+        loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
+
         trjerr, roterr = get_metric_pose(preds, features)
-        results.append((loss_num, trjerr, roterr))
-        uf.print_progress_status(f"\tValidating (eager) {step}/{steps_per_epoch} steps, loss={loss_num:1.4f}, "
+        batch_result = [loss_mean, trjerr, roterr] + loss_by_type.numpy().tolist()
+        results.append(batch_result)
+        uf.print_progress_status(f"\tValidating (eager) {step}/{steps_per_epoch} steps, loss={loss_mean:1.4f}, "
                                  f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
     mean_res = np.array(results).mean(axis=0)
@@ -189,24 +202,26 @@ def validate_an_epoch_graph(model, dataset, steps_per_epoch):
     compute_loss = loss_factory()
     for step, features in enumerate(dataset):
         start = time.time()
-        preds, loss = validate_a_batch(model, features, compute_loss)
+        preds, loss, loss_by_type = validate_a_batch(model, features, compute_loss)
 
         trjerr, roterr = get_metric_pose(preds, features)
-        results.append((loss.numpy(), trjerr, roterr))
-        uf.print_progress_status(f"\tValidating (graph) {step}/{steps_per_epoch} steps, loss={loss.numpy():1.4f}, "
+        batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
+        results.append(batch_result)
+        uf.print_progress_status(f"\tTraining (graph) {step}/{steps_per_epoch} steps, loss={loss.numpy():1.4f}, "
                                  f"metric={trjerr:1.4f}, {roterr:1.4f}, time={time.time() - start:1.4f} ...")
 
-    results = np.stack(results, axis=0)
-    mean_res = results.mean(axis=0)
+    # mean_res: mean of [all losses, [each type of weighted losses], trj_err, rot_err]
+    mean_res = np.stack(results, axis=0).mean(axis=0)
     return mean_res
 
 
 @tf.function
 def validate_a_batch(model, features, compute_loss):
     preds = model(features)
-    loss = compute_loss(preds, features)
-    loss_mean = tf.reduce_mean(loss)
-    return preds, loss_mean
+    loss_batch, loss_by_type = compute_loss(preds, features)
+    loss_mean = tf.reduce_mean(loss_batch)
+    loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
+    return preds, loss_mean, loss_by_type
 
 
 def get_metric_pose(preds, features):

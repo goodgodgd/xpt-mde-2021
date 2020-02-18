@@ -200,7 +200,7 @@ def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcid
     center = (int(dsize[0]/2), int(dsize[1]/2))
     if verbose:
         print("predicted depths\n", depth[center[0]:center[0]+50:10, center[0]-50:center[0]+50:20, 0])
-    dpthim = tf.clip_by_value(dpthim, 0., 10.) / 10.
+    dpthim = tf.clip_by_value(dpthim, 0., 30.) / 30.
     dpthim = tf.image.convert_image_dtype(dpthim, dtype=tf.uint8).numpy()
     dpthim = cv2.cvtColor(dpthim, cv2.COLOR_GRAY2BGR)
     cv2.putText(dpthim, 'predicted target depth', location, font, font_scale, color, thickness)

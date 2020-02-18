@@ -31,11 +31,6 @@ def test_photometric_loss_quality(suffix=""):
         depth_gt = features["depth_gt" + suffix]
         pose_gt = features["pose_gt" + suffix]
 
-        target_ms = []
-        for i, disp in enumerate(disp_ms):
-            target = layers.Lambda(lambda dis: 1. / dis, name=f"todepth_{i}")(disp)
-            target_ms.append(target)
-
         # identity pose results in NaN data
         pose_gt_np = pose_gt.numpy()
         for pose_seq in pose_gt_np:
@@ -264,6 +259,9 @@ def test_stereo_loss():
         depth1 = augm_data["depth_ms"][0]
         depth1 = tf.clip_by_value(depth1, 0, 20)[0].numpy()
         cv2.imshow("depth1", depth1)
+        pose_err = np.zeros((8, 4, 4))
+        pose_err[:, 0, 3] -= 0.
+        features["stereo_T_LR"] = features["stereo_T_LR"] + tf.constant(pose_err, tf.float32)
         print("stereo_T_LR\n", features["stereo_T_LR"][0].numpy())
 
         loss_left, synth_left_ms = \
@@ -313,7 +311,7 @@ def tu_show_synthesize_result(synth_target_ms, target, source, suffix):
 
 
 def test():
-    # test_photometric_loss_quality("_R")
+    test_photometric_loss_quality("_R")
     # test_photometric_loss_quantity("_R")
     # test_smootheness_loss_quantity()
     test_stereo_loss()
