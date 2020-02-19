@@ -56,12 +56,7 @@ def train():
         print(f"========== Start epoch: {epoch}/{opts.EPOCHS} ==========")
 
         result_train, depth_train = trainer_graph.run_an_epoch(model, dataset_train)
-        print(f"[Train Epoch MEAN], result: loss={result_train[0]:1.4f}, "
-              f"trj_err={result_train[1]:1.4f}, rot_err={result_train[2]:1.4f}")
-
         result_val, depth_val = validater_graph.run_an_epoch(model, dataset_val)
-        print(f"[Validation Epoch MEAN], result: loss={result_val[0]:1.4f}, "
-              f"trj_err={result_val[1]:1.4f}, rot_err={result_val[2]:1.4f}")
 
         if epoch % 10 == 0:
             print("save intermediate results ...")

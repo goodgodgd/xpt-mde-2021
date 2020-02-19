@@ -82,6 +82,12 @@ class DepthNetNoResize(DepthNetBasic):
         upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
         return upconv
 
+    def get_disp_vgg(self, x, dst_height, dst_width, scope):
+        disp = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
+        disp = layers.Lambda(lambda x: (tf.nn.elu(x) + 1.) * 0.1, name=scope + "_scale")(disp)
+        disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
+        return disp, disp_up
+
 
 class PoseNet:
     def __call__(self, snippet_image, input_shape):

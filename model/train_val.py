@@ -22,18 +22,21 @@ class TrainValBase:
             start = time.time()
             preds, loss, loss_by_type = self.run_a_batch(model, features, compute_loss, self.optimizer)
             batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type)
-            uf.print_progress_status(f"\t{self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
-                                     f"time={time.time() - start:1.4f} {mean_depths.shape}...")
+            uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
+                                     f"time={time.time() - start:1.4f}...")
             results.append(batch_result)
             depths.append(mean_depths)
 
         print("")
-        # mean_res: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
-        mean_res = np.array(results).mean(axis=0)
+        # mean_result: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
+        mean_result = np.array(results).mean(axis=0)
         depths = np.concatenate(depths, axis=1)
         stride = depths.shape[1] // 10
         depths = depths[:, 0:-1:stride]
-        return mean_res, depths
+
+        print(f"[{self.train_val_name} Epoch MEAN], result: loss={mean_result[0]:1.4f}, "
+              f"trj_err={mean_result[1]:1.4f}, rot_err={mean_result[2]:1.4f}")
+        return mean_result, depths
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
         raise NotImplementedError()
@@ -132,8 +135,7 @@ def get_center_depths(features, preds):
         mean_d = depth[depth > 0].mean()
         mean_true.append(mean_d)
     mean_true = np.array(mean_true)
-    depth_pred = depth_pred[:, ys:ye, xs:xe, :]
-    mean_pred = depth_pred.mean(axis=(1, 2, 3))
+    mean_pred = np.mean(depth_pred[:, ys:ye, xs:xe, :], axis=(1, 2, 3))
     mean_depths = np.stack([mean_true, mean_pred], axis=0)
     return mean_depths
 
