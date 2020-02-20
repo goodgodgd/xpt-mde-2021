@@ -8,7 +8,7 @@ from model.loss_and_metric.metric import compute_metric_pose
 
 
 class TrainValBase:
-    def __init__(self, train_val_name, steps_per_epoch, stereo, optimizer):
+    def __init__(self, train_val_name, steps_per_epoch, stereo, optimizer=None):
         self.train_val_name = train_val_name
         self.steps_per_epoch = steps_per_epoch
         self.optimizer = optimizer
@@ -25,6 +25,7 @@ class TrainValBase:
             batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type, self.stereo)
             uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
                                      f"time={time.time() - start:1.4f}...")
+            inspect_model(preds, step, self.steps_per_epoch)
             results.append(batch_result)
             depths.append(mean_depths)
 
@@ -44,7 +45,7 @@ class TrainValBase:
 
 
 class ModelTrainerGraph(TrainValBase):
-    def __init__(self, steps_per_epoch, stereo, optimizer=None):
+    def __init__(self, steps_per_epoch, stereo, optimizer):
         super().__init__("Train (graph)", steps_per_epoch, stereo, optimizer)
 
     @tf.function
@@ -67,7 +68,7 @@ class ModelTrainerGraph(TrainValBase):
 
 
 class ModelTrainerEager(TrainValBase):
-    def __init__(self, steps_per_epoch, stereo, optimizer=None):
+    def __init__(self, steps_per_epoch, stereo, optimizer):
         super().__init__("Train (eager)", steps_per_epoch, stereo, optimizer)
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
@@ -89,10 +90,10 @@ class ModelTrainerEager(TrainValBase):
 
 
 class ModelValidaterGraph(TrainValBase):
-    def __init__(self, steps_per_epoch, stereo, optimizer=None):
-        super().__init__("Validate (graph)", steps_per_epoch, stereo, optimizer)
+    def __init__(self, steps_per_epoch, stereo):
+        super().__init__("Validate (graph)", steps_per_epoch, stereo)
 
-    @tf.function
+    # @tf.function
     def run_a_batch(self, model, features, compute_loss, optimizer):
         preds = model(features)
         loss_batch, loss_by_type = compute_loss(preds, features)
@@ -102,8 +103,8 @@ class ModelValidaterGraph(TrainValBase):
 
 
 class ModelValidaterEager(TrainValBase):
-    def __init__(self, steps_per_epoch, stereo, optimizer=None):
-        super().__init__("Validate (eager)", steps_per_epoch, stereo, optimizer)
+    def __init__(self, steps_per_epoch, stereo):
+        super().__init__("Validate (eager)", steps_per_epoch, stereo)
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
         preds = model(features)
@@ -147,3 +148,17 @@ def get_metric_pose(preds, features, stereo):
         return trjerr.numpy(), roterr.numpy()
     else:
         return 0, 0
+
+
+def inspect_model(preds, step, steps_per_epoch):
+    stride = steps_per_epoch // 10
+    if step % stride > 0:
+        return
+
+    print("")
+    conv0 = preds["dp_internal"][0].numpy()
+    conv3 = preds["dp_internal"][3].numpy()
+    disp = preds["disp_ms"][0].numpy()
+    print("conv0 quantile:", np.quantile(conv0, np.arange(0.1, 1., 0.1)))
+    print("conv3 quantile:", np.quantile(conv3, np.arange(0.1, 1., 0.1)))
+    print("disp quantile:", np.quantile(disp, np.arange(0.1, 1., 0.1)))

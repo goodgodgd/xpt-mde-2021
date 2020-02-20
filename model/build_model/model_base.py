@@ -39,15 +39,15 @@ class DepthNetBasic:
         upconv5 = self.upconv_with_skip_connection(upconv6, conv5, 512, "dp_up5")   # 1/32
         upconv4 = self.upconv_with_skip_connection(upconv5, conv4, 256, "dp_up4")   # 1/16
         upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")   # 1/8
-        disp3, disp2_up = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")
+        disp3, disp2_up, dpconv3 = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")
         upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", disp2_up)  # 1/4
-        disp2, disp1_up = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")
+        disp2, disp1_up, dpconv2 = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")
         upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", disp1_up)  # 1/2
-        disp1, disp0_up = self.get_disp_vgg(upconv1, height, width, "dp_disp1")
+        disp1, disp0_up, dpconv1 = self.get_disp_vgg(upconv1, height, width, "dp_disp1")
         upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
-        disp0, disp_n1_up = self.get_disp_vgg(upconv0, height, width, "dp_disp0")
+        disp0, disp_n1_up, dpconv0 = self.get_disp_vgg(upconv0, height, width, "dp_disp0")
 
-        return [disp0, disp1, disp2, disp3]
+        return [disp0, disp1, disp2, disp3], [dpconv0, dpconv1, dpconv2, dpconv3]
 
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
         upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
@@ -61,10 +61,10 @@ class DepthNetBasic:
         return upconv
 
     def get_disp_vgg(self, x, dst_height, dst_width, scope):
-        disp = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
-        disp = layers.Lambda(lambda x: DISP_SCALING_VGG * x + 0.01, name=scope + "_scale")(disp)
+        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
+        disp = layers.Lambda(lambda x: DISP_SCALING_VGG * x + 0.01, name=scope + "_scale")(conv)
         disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
-        return disp, disp_up
+        return disp, disp_up, conv
 
 
 class DepthNetNoResize(DepthNetBasic):
@@ -83,10 +83,10 @@ class DepthNetNoResize(DepthNetBasic):
         return upconv
 
     def get_disp_vgg(self, x, dst_height, dst_width, scope):
-        disp = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
-        disp = layers.Lambda(lambda x: (tf.nn.elu(x) + 1.) * 0.1, name=scope + "_scale")(disp)
+        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
+        disp = layers.Lambda(lambda x: (tf.nn.elu(x) + 1.) * 0.1, name=scope + "_scale")(conv)
         disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
-        return disp, disp_up
+        return disp, disp_up, conv
 
 
 class PoseNet:

@@ -27,11 +27,11 @@ def main():
         from tfrecords.create_tfrecords_main import convert_to_tfrecords
         convert_to_tfrecords()
     elif task_id == 3:
-        from model.model_main import train_by_user_interaction
-        train_by_user_interaction()
+        from model.model_main import train
+        train()
     elif task_id == 4:
-        from model.model_main import predict_by_user_interaction
-        predict_by_user_interaction()
+        from model.model_main import predict
+        predict()
     elif task_id == 5:
         from evaluate.evaluate_main import evaluate_by_user_interaction
         evaluate_by_user_interaction()

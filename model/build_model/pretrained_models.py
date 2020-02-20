@@ -117,15 +117,15 @@ class DecoderForPretrained(DepthNetNoResize):
         # decoder by upsampling
         upconv4 = self.upconv_with_skip_connection(conv5, conv4, 256, "dp_up4")             # 1/16
         upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")           # 1/8
-        disp3, disp2_up = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")   # 1/8
+        disp3, disp2_up, dpconv3 = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")   # 1/8
         upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", disp2_up)  # 1/4
-        disp2, disp1_up = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")   # 1/4
+        disp2, disp1_up, dpconv2 = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")   # 1/4
         upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", disp1_up)  # 1/2
-        disp1, disp0_up = self.get_disp_vgg(upconv1, height, width, "dp_disp1")             # 1/2
+        disp1, disp0_up, dpconv1 = self.get_disp_vgg(upconv1, height, width, "dp_disp1")             # 1/2
         upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
-        disp0, disp_n1_up = self.get_disp_vgg(upconv0, height, width, "dp_disp0")           # 1
+        disp0, disp_n1_up, dpconv0 = self.get_disp_vgg(upconv0, height, width, "dp_disp0")           # 1
 
-        return [disp0, disp1, disp2, disp3]
+        return [disp0, disp1, disp2, disp3], [dpconv0, dpconv1, dpconv2, dpconv3]
 
 
 # ==================================================

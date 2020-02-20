@@ -10,28 +10,8 @@ import utils.util_funcs as uf
 from model.build_model.model_factory import ModelFactory
 from model.optimizers import optimizer_factory
 import model.logger as log
-from model.train_val import ModelTrainerGraph, ModelValidaterGraph
+import model.train_val as tv
 import gc
-
-
-def train_by_user_interaction():
-    options = {"dataset_name": opts.DATASET,
-               "model_name": opts.NET_NAMES,
-               "ckpt_name": opts.CKPT_NAME,
-               "learning_rate": opts.LEARNING_RATE,
-               "final_epoch": opts.EPOCHS,
-               }
-
-    print(f"Check training options:")
-    for key, value in options.items():
-        print(f"\t{key} = {value}")
-    print("\nIf you are happy with the options, please press enter")
-    print("Otherwise, press 'q', edit config.py and retry training")
-    select = input()
-    if select == 'q':
-        return
-
-    train()
 
 
 def train():
@@ -45,13 +25,14 @@ def train():
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model, opts.CKPT_NAME)
+    model.compile(optimizer='sgd', loss='mean_absolute_error')
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
     dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
     dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
-    trainer_graph = ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
-    validater_graph = ModelValidaterGraph(val_steps, opts.STEREO)
+    trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
+    validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, opts.EPOCHS):
@@ -126,33 +107,6 @@ def save_model_weights(model, weights_name):
         os.makedirs(model_dir_path, exist_ok=True)
     model_file_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, weights_name)
     model.save_weights(model_file_path)
-
-
-def predict_by_user_interaction():
-    options = {"dataset_name": opts.DATASET,
-               "model_name": opts.NET_NAMES,
-               "ckpt_name": opts.CKPT_NAME,
-               "weight_name": "latest.h5"
-               }
-
-    print(f"Check prediction options:")
-    for key, value in options.items():
-        print(f"\t{key} = {value}")
-    print("\nIf you are happy with the options, please press enter")
-    print("To change the first three options, press 'q', edit config.py and retry training")
-    print("To chnage 'weight_name' option, press any other key")
-    select = input()
-
-    if select == "":
-        print(f"You selected default options.")
-    elif select == "q":
-        return
-    else:
-        print("Type weights_name: best.h5 or latest.h5 for the best or latest model repectively")
-        options["weight_name"] = input()
-        print("Prediction options:", options)
-
-    predict(options["weight_name"])
 
 
 def predict(weight_name="latest.h5"):

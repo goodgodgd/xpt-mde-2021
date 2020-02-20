@@ -49,15 +49,15 @@ class ModelFactory:
 
     def depth_net_factory(self, target_image, net_name):
         if net_name == "DepthNetBasic":
-            disp_ms = DepthNetBasic()(target_image, self.input_shape)
+            disp_ms, conv_ms = DepthNetBasic()(target_image, self.input_shape)
         elif net_name == "DepthNetNoResize":
-            disp_ms = DepthNetNoResize()(target_image, self.input_shape)
+            disp_ms, conv_ms = DepthNetNoResize()(target_image, self.input_shape)
         elif net_name in PRETRAINED_MODELS:
             features_ms = PretrainedModel()(target_image, self.input_shape, net_name, self.pretrained_weight)
-            disp_ms = DecoderForPretrained()(features_ms, self.input_shape)
+            disp_ms, conv_ms = DecoderForPretrained()(features_ms, self.input_shape)
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
-        return {"disp_ms": disp_ms}
+        return {"disp_ms": disp_ms, "dp_internal": conv_ms}
 
     def camera_net_factory(self, net_name, snippet_image):
         if net_name == "PoseNet":
@@ -110,6 +110,9 @@ class ModelWrapper:
 
     def trainable_weights(self):
         return self.model.trainable_weights
+
+    def layers(self):
+        return self.model.layers
 
     def save_weights(self, ckpt_path):
         self.model.save_weights(ckpt_path)
