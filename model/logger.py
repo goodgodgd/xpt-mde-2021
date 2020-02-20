@@ -96,7 +96,14 @@ def save_reconstruction_samples(model, dataset, epoch):
 
 def make_reconstructed_views(model, dataset):
     recon_views = []
+    next_idx = 0
+    stride = 10
     for i, features in enumerate(dataset):
+        if i < next_idx:
+            continue
+        if i // stride > 5:
+            stride *= 10
+        next_idx += stride
         predictions = model(features)
         pred_disp_ms = predictions['disp_ms']
         pred_pose = predictions['pose']
@@ -116,8 +123,6 @@ def make_reconstructed_views(model, dataset):
                              pred_depth_ms[sclidx], source_image,
                              batidx=0, srcidx=0, verbose=False)
         recon_views.append(view1)
-        if i >= 10:
-            break
 
     return recon_views
 

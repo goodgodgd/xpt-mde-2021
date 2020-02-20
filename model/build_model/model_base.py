@@ -84,7 +84,7 @@ class DepthNetNoResize(DepthNetBasic):
 
     def get_disp_vgg(self, x, dst_height, dst_width, scope):
         conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
-        disp = layers.Lambda(lambda x: (tf.nn.elu(x) + 1.) * 0.1, name=scope + "_scale")(conv)
+        disp = layers.Lambda(lambda x: DISP_SCALING_VGG * x + 0.01, name=scope + "_scale")(conv)
         disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
         return disp, disp_up, conv
 

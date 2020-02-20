@@ -11,7 +11,7 @@ from model.build_model.model_factory import ModelFactory
 from model.optimizers import optimizer_factory
 import model.logger as log
 import model.train_val as tv
-import gc
+#import gc
 
 
 def train():
@@ -28,8 +28,8 @@ def train():
     model.compile(optimizer='sgd', loss='mean_absolute_error')
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
-    dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
-    dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
+    dataset_train, train_steps = get_dataset(opts.DATASET, "train", True)
+    dataset_val, val_steps = get_dataset(opts.DATASET, "val", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
     trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
     validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
@@ -41,7 +41,7 @@ def train():
         result_train, depth_train = trainer_graph.run_an_epoch(model, dataset_train)
         result_val, depth_val = validater_graph.run_an_epoch(model, dataset_val)
 
-        if epoch % 10 == 0:
+        if epoch % 5 == 0:
             print("save intermediate results ...")
             log.save_reconstruction_samples(model, dataset_val, epoch)
             log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
@@ -211,6 +211,6 @@ if __name__ == "__main__":
     for epoch in range(0, 60, 15):
         opts.EPOCHS = epoch
         train()
-        gc.collect()
+        # gc.collect()
     # predict()
     # test_model_wrapper_output()

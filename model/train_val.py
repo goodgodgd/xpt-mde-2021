@@ -93,7 +93,7 @@ class ModelValidaterGraph(TrainValBase):
     def __init__(self, steps_per_epoch, stereo):
         super().__init__("Validate (graph)", steps_per_epoch, stereo)
 
-    # @tf.function
+    @tf.function
     def run_a_batch(self, model, features, compute_loss, optimizer):
         preds = model(features)
         loss_batch, loss_by_type = compute_loss(preds, features)
@@ -151,7 +151,7 @@ def get_metric_pose(preds, features, stereo):
 
 
 def inspect_model(preds, step, steps_per_epoch):
-    stride = steps_per_epoch // 10
+    stride = steps_per_epoch // 5
     if step % stride > 0:
         return
 
