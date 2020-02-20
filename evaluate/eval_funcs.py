@@ -102,17 +102,19 @@ def calc_rotational_error(pose_pred_mat, pose_true_mat):
 
 
 @shape_check
-def calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat):
+def calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat, abs_scale=False):
     """
     :param pose_pred_mat: predicted snippet pose matrices, [batch, num_src, 4, 4]
     :param pose_true_mat: ground truth snippet pose matrices, [batch, num_src, 4, 4]
+    :param abs_scale: if true, trajectory is evaluated in abolute scale
     :return: trajectory error in meter [batch, num_src]
     """
     xyz_pred = pose_pred_mat[:, :, :3, 3]
     xyz_true = pose_true_mat[:, :, :3, 3]
     # adjust the trajectory scaling due to ignorance of abolute scale
     scale = tf.reduce_sum(xyz_true * xyz_pred, axis=2) / tf.reduce_sum(xyz_pred ** 2, axis=2)
-    traj_error = xyz_true - xyz_pred * tf.expand_dims(scale, -1)
+    traj_error = tf.cond(abs_scale, lambda: xyz_true - xyz_pred,
+                         lambda: xyz_true - xyz_pred * tf.expand_dims(scale, -1))
     traj_error = tf.sqrt(tf.reduce_sum(traj_error ** 2, axis=2))
     return traj_error
 

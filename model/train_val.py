@@ -8,10 +8,11 @@ from model.loss_and_metric.metric import compute_metric_pose
 
 
 class TrainValBase:
-    def __init__(self, train_val_name, steps_per_epoch, optimizer):
+    def __init__(self, train_val_name, steps_per_epoch, stereo, optimizer):
         self.train_val_name = train_val_name
         self.steps_per_epoch = steps_per_epoch
         self.optimizer = optimizer
+        self.stereo = stereo
 
     def run_an_epoch(self, model, dataset):
         results = []
@@ -21,7 +22,7 @@ class TrainValBase:
         for step, features in enumerate(dataset):
             start = time.time()
             preds, loss, loss_by_type = self.run_a_batch(model, features, compute_loss, self.optimizer)
-            batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type)
+            batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type, self.stereo)
             uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
                                      f"time={time.time() - start:1.4f}...")
             results.append(batch_result)
@@ -43,8 +44,8 @@ class TrainValBase:
 
 
 class ModelTrainerGraph(TrainValBase):
-    def __init__(self, steps_per_epoch, optimizer=None):
-        super().__init__("Train (graph)", steps_per_epoch, optimizer)
+    def __init__(self, steps_per_epoch, stereo, optimizer=None):
+        super().__init__("Train (graph)", steps_per_epoch, stereo, optimizer)
 
     @tf.function
     def run_a_batch(self, model, features, compute_loss, optimizer):
@@ -66,8 +67,8 @@ class ModelTrainerGraph(TrainValBase):
 
 
 class ModelTrainerEager(TrainValBase):
-    def __init__(self, steps_per_epoch, optimizer=None):
-        super().__init__("Train (eager)", steps_per_epoch, optimizer)
+    def __init__(self, steps_per_epoch, stereo, optimizer=None):
+        super().__init__("Train (eager)", steps_per_epoch, stereo, optimizer)
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
         with tf.GradientTape() as tape:
@@ -88,8 +89,8 @@ class ModelTrainerEager(TrainValBase):
 
 
 class ModelValidaterGraph(TrainValBase):
-    def __init__(self, steps_per_epoch, optimizer=None):
-        super().__init__("Validate (graph)", steps_per_epoch, optimizer)
+    def __init__(self, steps_per_epoch, stereo, optimizer=None):
+        super().__init__("Validate (graph)", steps_per_epoch, stereo, optimizer)
 
     @tf.function
     def run_a_batch(self, model, features, compute_loss, optimizer):
@@ -101,8 +102,8 @@ class ModelValidaterGraph(TrainValBase):
 
 
 class ModelValidaterEager(TrainValBase):
-    def __init__(self, steps_per_epoch, optimizer=None):
-        super().__init__("Validate (eager)", steps_per_epoch, optimizer)
+    def __init__(self, steps_per_epoch, stereo, optimizer=None):
+        super().__init__("Validate (eager)", steps_per_epoch, stereo, optimizer)
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
         preds = model(features)
@@ -112,9 +113,9 @@ class ModelValidaterEager(TrainValBase):
         return preds, loss_mean, loss_by_type
 
 
-def merge_results(features, preds, loss, loss_by_type):
+def merge_results(features, preds, loss, loss_by_type, stereo):
     mean_depths = get_center_depths(features, preds)
-    trjerr, roterr = get_metric_pose(preds, features)
+    trjerr, roterr = get_metric_pose(preds, features, stereo)
     batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
     log_msg = f"loss = {loss.numpy():1.4f}, metric={trjerr:1.4f}, {roterr:1.4f}"
     return batch_result, log_msg, mean_depths
@@ -140,9 +141,9 @@ def get_center_depths(features, preds):
     return mean_depths
 
 
-def get_metric_pose(preds, features):
+def get_metric_pose(preds, features, stereo):
     if "pose_gt" in features:
-        trjerr, roterr = compute_metric_pose(preds['pose'], features['pose_gt'])
+        trjerr, roterr = compute_metric_pose(preds['pose'], features['pose_gt'], stereo)
         return trjerr.numpy(), roterr.numpy()
     else:
         return 0, 0

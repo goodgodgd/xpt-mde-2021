@@ -7,7 +7,6 @@ import settings
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
-from utils.util_class import TrainException
 from model.build_model.model_factory import ModelFactory
 from model.optimizers import optimizer_factory
 import model.logger as log
@@ -51,8 +50,8 @@ def train():
     dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
     dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
-    trainer_graph = ModelTrainerGraph(train_steps, optimizer)
-    validater_graph = ModelValidaterGraph(val_steps)
+    trainer_graph = ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
+    validater_graph = ModelValidaterGraph(val_steps, opts.STEREO)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, opts.EPOCHS):
