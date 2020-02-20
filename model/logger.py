@@ -5,6 +5,8 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
 import tensorflow as tf
+import importlib
+import shutil
 
 from config import opts
 import utils.util_funcs as uf
@@ -170,3 +172,36 @@ def save_loss_to_file(losses):
             f.write(f"\tloss quantile={np.quantile(loss, np.arange(0, 1, 0.1))}\n")
         f.write("\n\n")
         print("loss_scale.txt written !!")
+
+
+def copy_or_check_same():
+    saved_conf_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "saved_config.py")
+    if not op.isfile(saved_conf_path):
+        shutil.copyfile(op.join(opts.PROJECT_ROOT, "config.py"), saved_conf_path)
+        return
+
+    import sys
+    if opts.DATAPATH_CKP not in sys.path:
+        sys.path.append(opts.DATAPATH_CKP)
+    print(sys.path)
+    class_path = opts.CKPT_NAME + ".saved_config" + ".VodeOptions"
+    module_name, class_name = class_path.rsplit('.', 1)
+    module_obj = importlib.import_module(module_name)
+    SavedOptions = getattr(module_obj, class_name)
+    from config import VodeOptions as CurrOptions
+
+    saved_opts = {attr: SavedOptions.__dict__[attr] for attr in SavedOptions.__dict__ if
+                  not callable(getattr(SavedOptions, attr)) and not attr.startswith('__')}
+    curr_opts = {attr: CurrOptions.__dict__[attr] for attr in CurrOptions.__dict__ if
+                 not callable(getattr(CurrOptions, attr)) and not attr.startswith('__')}
+
+    dont_care_opts = ["BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "ENABLE_SHAPE_DECOR",
+                      "CKPT_NAME", "LOG_LOSS", "PROJECT_ROOT"]
+
+    for key, saved_val in saved_opts.items():
+        if key in dont_care_opts:
+            continue
+        curr_val = curr_opts[key]
+        assert saved_val == curr_val, f"key: {key}, {curr_val} != {saved_val}"
+
+    print("!! config comparison passed !!")
