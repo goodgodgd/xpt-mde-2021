@@ -12,6 +12,7 @@ from model.build_model.model_factory import ModelFactory
 from model.optimizers import optimizer_factory
 import model.logger as log
 from model.train_val import ModelTrainerGraph, ModelValidaterGraph
+import gc
 
 
 def train_by_user_interaction():
@@ -37,9 +38,11 @@ def train_by_user_interaction():
 def train():
     initial_epoch = uf.read_previous_epoch(opts.CKPT_NAME)
     if opts.EPOCHS <= initial_epoch:
-        raise TrainException("!! final_epoch <= initial_epoch, no need to train")
+        print(f"!! final_epoch {opts.EPOCHS} <= initial_epoch {initial_epoch}, no need to train")
+        return
 
     set_configs()
+    log.copy_or_check_same()
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model, opts.CKPT_NAME)
@@ -252,6 +255,9 @@ def check_disparity(ckpt_name, test_dir_name):
 
 
 if __name__ == "__main__":
-    train()
+    for epoch in range(0, 60, 15):
+        opts.EPOCHS = epoch
+        train()
+        gc.collect()
     # predict()
     # test_model_wrapper_output()
