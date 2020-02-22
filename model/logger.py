@@ -12,14 +12,15 @@ from config import opts
 import utils.util_funcs as uf
 import model.loss_and_metric.losses as lm
 from model.synthesize.synthesize_base import SynthesizeMultiScale
-import utils.convert_pose as cp
 
 
 def save_log(epoch, results_train, results_val, depth_train, depth_val):
     """
     :param epoch: current epoch
-    :param results_train: (loss, metric_trj, metric_rot, (losses from various loss types))
-    :param results_val: (loss, metric_trj, metric_rot, (losses from various loss types))
+    :param results_train: [loss, metric_trj, metric_rot, [losses from various loss types]]
+    :param results_val: [loss, metric_trj, metric_rot, [losses from various loss types)]
+    :param depth_train: mean depths of train data, [2, samples] (gt for row0, pred for row1)
+    :param depth_val: mean depths of validation data, [2, samples] (gt for row0, pred for row1)
     """
     results = save_results(epoch, results_train[:3], results_val[:3], ["loss", "trj_err", "rot_err"], "history.txt")
     _ = save_results(epoch, results_train[3:], results_val[3:], list(opts.LOSS_WEIGHTS.keys()), "losses.txt")
@@ -131,37 +132,16 @@ def make_reconstructed_views(model, dataset):
         view_names = ["left_target", "target_depth", f"source_{srcidx}", f"synthesized_from_src{srcidx}"]
 
         if opts.STEREO:
-            depths_ms = []
-            for dep in augm_data["depth_ms"]:
-                depth = dep + 0.
-                depths_ms.append(depth)
-
-            batch_loss = stereo_loss(features, predictions, augm_data)
-
             loss_left, synth_left_ms = \
                 stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
                                                    target_ms=augm_data["target_ms"],
-                                                   target_depth_ms=depths_ms,
+                                                   target_depth_ms=augm_data["depth_ms"],
                                                    pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                    intrinsic=features["intrinsic"])
 
-            loss_again = []
-            for k, (synth_img_sc, target_img_sc) in enumerate(zip(synth_left_ms, augm_data["target_ms"])):
-                loss = lm.photometric_loss_l1(synth_img_sc, target_img_sc)
-                loss_again.append(loss)
-                synt_target_gray = tf.reduce_mean(synth_img_sc, axis=-1, keepdims=True)
-                error_mask = tf.equal(synt_target_gray, 0)
-                print("mask invalid count", k, tf.size(error_mask), tf.reduce_sum(tf.cast(error_mask, tf.int32)).numpy())
-
-            print("batch loss", batch_loss)
-            print("synth size", tf.size(synth_left_ms[scaleidx]), synth_left_ms[scaleidx].get_shape().as_list())
-            print("synth zero count", tf.reduce_sum(tf.cast(tf.math.equal(synth_left_ms[scaleidx], 0.), tf.int32)).numpy())
-            print("loss left", loss_left[0], "\n", loss_left[1])
-            print("loss again", loss_again[0], "\n", loss_again[1])
-
-            # print("depths:", depths_ms[0][0, 50:100:10, 100:300:30, 0])
-            # print("pose:", tf.linalg.inv(features["stereo_T_LR"])[0])
-            # print("intrinsic:", features["intrinsic"][0])
+            print("stereo synth size", tf.size(synth_left_ms[scaleidx]).numpy())
+            print("stereo synth zero count", tf.reduce_sum(tf.cast(tf.math.equal(synth_left_ms[scaleidx], 0.), tf.int32)).numpy())
+            print("stereo loss left", tf.squeeze(loss_left[0]))
             view_imgs.append(augm_data["target_R"][batchidx])
             view_imgs.append(synth_left_ms[scaleidx][batchidx, srcidx])
             view_names.append("right_source")
