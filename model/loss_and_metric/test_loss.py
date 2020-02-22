@@ -255,6 +255,7 @@ def test_stereo_loss():
         augm_data = total_loss.augment_data(features, predictions)
         augm_data_rig = total_loss.augment_data(features, predictions, "_R")
         augm_data.update(augm_data_rig)
+        print("depths:\n", augm_data["depth_ms"][0].get_shape().as_list(), augm_data["depth_ms"][0][0, 10:100:20, 100:300:30, 0])
 
         depth1 = augm_data["depth_ms"][0]
         depth1 = tf.clip_by_value(depth1, 0, 20)[0].numpy()
@@ -262,18 +263,18 @@ def test_stereo_loss():
         pose_err = np.zeros((8, 4, 4))
         pose_err[:, 0, 3] -= 0.
         features["stereo_T_LR"] = features["stereo_T_LR"] + tf.constant(pose_err, tf.float32)
-        print("stereo_T_LR\n", features["stereo_T_LR"][0].numpy())
+        print("stereo_T_LR\n", features["stereo_T_LR"].get_shape().as_list(), "\n", features["stereo_T_LR"][0].numpy())
 
         loss_left, synth_left_ms = \
             stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
                                                target_ms=augm_data["target_ms"],
-                                               disp_tgt_ms=predictions["disp_ms"],
+                                               target_depth_ms=augm_data["depth_ms"],
                                                pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                intrinsic=features["intrinsic"])
         loss_right, synth_right_ms = \
             stereo_loss.stereo_synthesize_loss(source_img=augm_data["target"],
                                                target_ms=augm_data["target_ms_R"],
-                                               disp_tgt_ms=predictions["disp_ms_R"],
+                                               target_depth_ms=augm_data["depth_ms_R"],
                                                pose_t2s=features["stereo_T_LR"],
                                                intrinsic=features["intrinsic_R"],
                                                suffix="_R")
@@ -290,6 +291,7 @@ def test_stereo_loss():
 
 def tu_make_prediction(features, suffix=""):
     depth = features["depth_gt" + suffix]
+    # depth = tf.constant(100, tf.float32, shape=depth.get_shape().as_list())
     depth_ms = uf.multi_scale_depths(depth, [1, 2, 4, 8])
     disp_ms = tu_depth_to_disp(depth_ms)
     poses = features["pose_gt" + suffix]
@@ -311,7 +313,7 @@ def tu_show_synthesize_result(synth_target_ms, target, source, suffix):
 
 
 def test():
-    test_photometric_loss_quality("_R")
+    # test_photometric_loss_quality("_R")
     # test_photometric_loss_quantity("_R")
     # test_smootheness_loss_quantity()
     test_stereo_loss()

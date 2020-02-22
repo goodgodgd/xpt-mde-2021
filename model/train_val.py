@@ -28,6 +28,8 @@ class TrainValBase:
             inspect_model(preds, step, self.steps_per_epoch)
             results.append(batch_result)
             depths.append(mean_depths)
+            if step > 50:
+                break
 
         print("")
         # mean_result: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]

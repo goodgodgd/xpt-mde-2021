@@ -28,8 +28,8 @@ def train():
     model.compile(optimizer='sgd', loss='mean_absolute_error')
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
-    dataset_train, train_steps = get_dataset(opts.DATASET, "train", True)
-    dataset_val, val_steps = get_dataset(opts.DATASET, "val", False)
+    dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
+    dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
     trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
     validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
@@ -208,7 +208,7 @@ def check_disparity(ckpt_name, test_dir_name):
 
 
 if __name__ == "__main__":
-    for epoch in range(0, 60, 15):
+    for epoch in range(0, 21, 15):
         opts.EPOCHS = epoch
         train()
         # gc.collect()

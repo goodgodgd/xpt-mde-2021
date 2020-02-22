@@ -210,5 +210,26 @@ def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcid
     return view
 
 
+def make_view2(view_imgs, view_names):
+    dsize = (opts.IM_HEIGHT, opts.IM_WIDTH)
+    location = (20, 20)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    font_scale = 0.5
+    color = (0, 0, 255)
+    thickness = 1
+    view = []
+
+    for flimage, name in zip(view_imgs, view_names):
+        flimage_rsz = tf.image.resize(flimage, size=dsize, method="nearest")
+        u8image = to_uint8_image(flimage_rsz).numpy()
+        if u8image.shape[-1] == 1:
+            u8image = cv2.cvtColor(u8image, cv2.COLOR_GRAY2BGR)
+        cv2.putText(u8image, name, location, font, font_scale, color, thickness)
+        view.append(u8image)
+
+    view = np.concatenate(view, axis=0)
+    return view
+
+
 def count_nan(tensor):
     return tf.reduce_sum(tf.cast(tf.math.is_nan(tensor), tf.int32)).numpy()
