@@ -58,6 +58,9 @@ def save_depths(depth_train, depth_val, filename):
     """
     depth_xxx: mean depths from a epoch, true depths in row 0, predicted depths in row 1
     """
+    stride = depth_train.shape[1] // 8
+    depth_train = depth_train[:, 0:-1:stride]
+    depth_val = depth_val[:, 0:-1:stride]
     depths = np.concatenate([depth_train, [[-1], [-2]], depth_val], axis=1)
     filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
     # if the file existed, append only row 1 to it

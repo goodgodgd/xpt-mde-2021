@@ -17,9 +17,9 @@ class VodeOptions:
     """
     BATCH_SIZE = 8
     EPOCHS = 51
-    LEARNING_RATE = 0.0002
+    LEARNING_RATE = 0.0001
     ENABLE_SHAPE_DECOR = False
-    CKPT_NAME = "vode1"
+    CKPT_NAME = "vode2"
     LOG_LOSS = True
 
     """
@@ -38,10 +38,11 @@ class VodeOptions:
     """
     model options: network architecture, loss wegihts, ...
     """
+    STEREO_EXTRINSIC = True
     SSIM_RATIO = 0.8
     LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO)*1., "SSIM": SSIM_RATIO*0.5, "smoothe": 1.,
                     "L1_R": (1. - SSIM_RATIO)*1., "SSIM_R": SSIM_RATIO*0.5, "smoothe_R": 1.,
-                    "stereo": 1.}
+                    "stereo_L1": 0.04, "stereo_pose": 0.5}
     DATASET = "kitti_raw"
     NET_NAMES = {"depth": "NASNetMobile", "camera": "PoseNet"}
     SYNTHESIZER = "SynthesizeMultiScale"
@@ -71,3 +72,7 @@ def get_raw_data_path(dataset_name):
         return dataset_path
     else:
         raise WrongDatasetException(f"Unavailable dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}")
+
+
+import numpy as np
+np.set_printoptions(precision=4, suppress=True, linewidth=100)

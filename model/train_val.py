@@ -23,7 +23,8 @@ class TrainValBase:
         for step, features in enumerate(dataset):
             start = time.time()
             preds, loss, loss_by_type = self.run_a_batch(model, features, compute_loss, self.optimizer)
-            batch_result, log_msg, mean_depths = merge_results(features, preds, loss, loss_by_type, self.stereo)
+            batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
+            mean_depths = get_center_depths(features, preds)
             uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
                                      f"time={time.time() - start:1.4f}...")
             inspect_model(preds, step, self.steps_per_epoch)
@@ -33,10 +34,8 @@ class TrainValBase:
         print("")
         # mean_result: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
         mean_result = np.array(results).mean(axis=0)
+        # depths: [2, # frames in dataset]
         depths = np.concatenate(depths, axis=1)
-        stride = depths.shape[1] // 8
-        depths = depths[:, 0:-1:stride]
-
         print(f"[{self.train_val_name} Epoch MEAN], result: loss={mean_result[0]:1.4f}, "
               f"trj_err={mean_result[1]:1.4f}, rot_err={mean_result[2]:1.4f}")
         return mean_result, depths
@@ -117,11 +116,10 @@ class ModelValidaterEager(TrainValBase):
 
 
 def merge_results(features, preds, loss, loss_by_type, stereo):
-    mean_depths = get_center_depths(features, preds)
     trjerr, roterr = get_metric_pose(preds, features, stereo)
     batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
     log_msg = f"loss = {loss.numpy():1.4f}, metric={trjerr:1.4f}, {roterr:1.4f}"
-    return batch_result, log_msg, mean_depths
+    return batch_result, log_msg
 
 
 def get_center_depths(features, preds):
@@ -167,3 +165,4 @@ def inspect_model(preds, step, steps_per_epoch):
     print("disp3--", np.quantile(preds["disp_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("dpconv3", np.quantile(preds["debug_out"][2].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv3", np.quantile(preds["debug_out"][3].numpy(), np.arange(0.1, 1, 0.1)))
+    print("pose_LR", preds["pose_LR"][0].numpy())

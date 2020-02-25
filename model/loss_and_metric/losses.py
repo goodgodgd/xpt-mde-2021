@@ -297,7 +297,18 @@ class StereoDepthLoss(LossBase):
 
 class StereoPoseLoss(LossBase):
     def __call__(self, features, predictions, augm_data):
-        pass
+        pose_lr_pred = predictions["pose_LR"]
+        pose_rl_pred = predictions["pose_RL"]
+        pose_lr_true_mat = features["stereo_T_LR"]
+        pose_lr_true_mat = tf.expand_dims(pose_lr_true_mat, axis=1)
+        pose_rl_true_mat = tf.linalg.inv(pose_lr_true_mat)
+        pose_lr_true = cp.pose_matr2rvec_batch(pose_lr_true_mat)
+        pose_rl_true = cp.pose_matr2rvec_batch(pose_rl_true_mat)
+        # loss: [batch, num_src]
+        loss = tf.keras.losses.MSE(pose_lr_true, pose_lr_pred) + tf.keras.losses.MSE(pose_rl_true, pose_rl_pred)
+        # loss: [batch]
+        loss = tf.reduce_mean(loss, axis=1)
+        return loss
 
 
 # ===== TEST FUNCTIONS
