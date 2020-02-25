@@ -246,8 +246,9 @@ def save_worst_views(frame, x, model, sample_inds, save_path, scale=1):
 
     for ind in indices:
         srcidx = sample_inds.loc[ind, 'srcidx']
-        view = uf.make_view(target_image, synth_target_pred_ms[0], depth_pred_ms[0], source_image,
-                            batidx=0, srcidx=srcidx, verbose=False, synth_gt=synth_target_gt_ms[0])
+        view_imgs = {"target": target_image, "synthesized": synth_target_pred_ms[0][0, srcidx],
+                     "depth": depth_pred_ms[0][0, srcidx], "synth_by_gt": synth_target_gt_ms[0][0, srcidx]}
+        view = uf.make_view2(view_imgs)
         filename = op.join(save_path, f"{colname[:3]}_{frame:04d}_{srcidx}.png")
         print("save file:", filename)
         cv2.imwrite(filename, view)

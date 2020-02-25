@@ -13,6 +13,7 @@ class TrainValBase:
         self.steps_per_epoch = steps_per_epoch
         self.optimizer = optimizer
         self.stereo = stereo
+        self.weights = None
 
     def run_an_epoch(self, model, dataset):
         results = []
@@ -81,6 +82,7 @@ class ModelTrainerEager(TrainValBase):
         optimizer.apply_gradients(zip(grads, model.trainable_weights()))
         loss_mean = tf.reduce_mean(loss_batch)
         loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
+        self.grads = grads
         """
         preds: {"pose": ..., "disp_ms":, ...}
         loss_mean: loss scalar that is averaged over all this epoch  
@@ -139,6 +141,9 @@ def get_center_depths(features, preds):
     mean_true = np.array(mean_true)
     mean_pred = np.mean(depth_pred[:, ys:ye, xs:xe, :], axis=(1, 2, 3))
     mean_depths = np.stack([mean_true, mean_pred], axis=0)
+    """
+    mean_depths: [2, batch] mean of true depths (row0) and predicted depths (row1)
+    """
     return mean_depths
 
 
@@ -156,11 +161,9 @@ def inspect_model(preds, step, steps_per_epoch):
         return
 
     print("")
-    conv0 = preds["dp_internal"][0].numpy()
-    conv3 = preds["dp_internal"][3].numpy()
-    disp0 = preds["disp_ms"][0].numpy()
-    disp3 = preds["disp_ms"][3].numpy()
-    print("conv0 quantile:", np.quantile(conv0, np.arange(0.1, 1., 0.1)))
-    print("conv3 quantile:", np.quantile(conv3, np.arange(0.1, 1., 0.1)))
-    print("disp0 quantile:", np.quantile(disp0, np.arange(0.1, 1., 0.1)))
-    print("disp3 quantile:", np.quantile(disp3, np.arange(0.1, 1., 0.1)))
+    print("disp0--", np.quantile(preds["disp_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
+    print("dpconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
+    print("upconv0", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
+    print("disp3--", np.quantile(preds["disp_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
+    print("dpconv3", np.quantile(preds["debug_out"][2].numpy(), np.arange(0.1, 1, 0.1)))
+    print("upconv3", np.quantile(preds["debug_out"][3].numpy(), np.arange(0.1, 1, 0.1)))

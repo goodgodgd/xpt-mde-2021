@@ -57,7 +57,7 @@ class ModelFactory:
             disp_ms, conv_ms = DecoderForPretrained()(features_ms, self.input_shape)
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
-        return {"disp_ms": disp_ms, "dp_internal": conv_ms}
+        return {"disp_ms": disp_ms, "debug_out": conv_ms}
 
     def camera_net_factory(self, net_name, snippet_image):
         if net_name == "PoseNet":

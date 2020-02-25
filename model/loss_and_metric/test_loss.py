@@ -244,54 +244,68 @@ def tu_smootheness_loss(features, predictions, augm_data):
 def test_stereo_loss():
     print("\n===== start test_photometric_loss_quality")
     dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    stereo_loss = ls.StereoDepthLoss("L1")
+    total_loss = ls.TotalLoss()
 
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
-        stereo_loss = ls.StereoDepthLoss("L1")
-        total_loss = ls.TotalLoss()
-        predictions = tu_make_prediction(features)
-        pred_right = tu_make_prediction(features, "_R")
-        predictions.update(pred_right)
-        augm_data = total_loss.augment_data(features, predictions)
-        augm_data_rig = total_loss.augment_data(features, predictions, "_R")
-        augm_data.update(augm_data_rig)
-        print("depths:\n", augm_data["depth_ms"][0].get_shape().as_list(), augm_data["depth_ms"][0][0, 10:100:20, 100:300:30, 0])
-
-        depth1 = augm_data["depth_ms"][0]
-        depth1 = tf.clip_by_value(depth1, 0, 20)[0].numpy()
-        cv2.imshow("depth1", depth1)
-        pose_err = np.zeros((8, 4, 4))
-        pose_err[:, 0, 3] -= 0.
-        features["stereo_T_LR"] = features["stereo_T_LR"] + tf.constant(pose_err, tf.float32)
-        print("stereo_T_LR\n", features["stereo_T_LR"].get_shape().as_list(), "\n", features["stereo_T_LR"][0].numpy())
-
-        loss_left, synth_left_ms = \
-            stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
-                                               target_ms=augm_data["target_ms"],
-                                               target_depth_ms=augm_data["depth_ms"],
-                                               pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
-                                               intrinsic=features["intrinsic"])
-        loss_right, synth_right_ms = \
-            stereo_loss.stereo_synthesize_loss(source_img=augm_data["target"],
-                                               target_ms=augm_data["target_ms_R"],
-                                               target_depth_ms=augm_data["depth_ms_R"],
-                                               pose_t2s=features["stereo_T_LR"],
-                                               intrinsic=features["intrinsic_R"],
-                                               suffix="_R")
-
-        losses = loss_left + loss_right
-        batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
-                                   name="photo_loss_sum")(losses)
-
-        tu_show_synthesize_result(synth_left_ms, augm_data["target"], augm_data["target_R"], "left")
-        tu_show_synthesize_result(synth_right_ms, augm_data["target_R"], augm_data["target"], "right")
-        print("stereo loss:", batch_loss)
+        view_100 = tu_show_stereo_synthesis(features, total_loss, stereo_loss, 100)
+        view_10 = tu_show_stereo_synthesis(features, total_loss, stereo_loss, 0)
+        cv2.imshow("synthesized_left_right_100", view_100)
+        cv2.imshow("synthesized_left_right_10", view_10)
         cv2.waitKey(0)
 
 
-def tu_make_prediction(features, suffix=""):
+def tu_show_stereo_synthesis(features, total_loss, stereo_loss, const_depth=None):
+    print("[tu_show_stereo_synthesis] depth:", const_depth)
+    predictions = tu_make_prediction(features, const_depth=const_depth)
+    pred_right = tu_make_prediction(features, "_R", const_depth=const_depth)
+    predictions.update(pred_right)
+    augm_data = total_loss.augment_data(features, predictions)
+    augm_data_rig = total_loss.augment_data(features, predictions, "_R")
+    augm_data.update(augm_data_rig)
+    # print("depths:\n", augm_data["depth_ms"][0].get_shape().as_list(), augm_data["depth_ms"][0][0, 10:100:20, 100:300:30, 0])
+
+    # depth1 = augm_data["depth_ms"][0]
+    # depth1 = tf.clip_by_value(depth1, 0, 20)[0].numpy()
+    # cv2.imshow("depth1", depth1)
+    pose_err = np.zeros((4, 4, 4))
+    pose_err[:, 0, 3] -= 0.
+    features["stereo_T_LR"] = features["stereo_T_LR"]  # + tf.constant(pose_err, tf.float32)
+    # print("stereo_T_LR\n", features["stereo_T_LR"].get_shape().as_list(), "\n", features["stereo_T_LR"][0].numpy())
+
+    loss_left, synth_left_ms = \
+        stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
+                                           target_ms=augm_data["target_ms"],
+                                           target_depth_ms=augm_data["depth_ms"],
+                                           pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
+                                           intrinsic=features["intrinsic"])
+    loss_right, synth_right_ms = \
+        stereo_loss.stereo_synthesize_loss(source_img=augm_data["target"],
+                                           target_ms=augm_data["target_ms_R"],
+                                           target_depth_ms=augm_data["depth_ms_R"],
+                                           pose_t2s=features["stereo_T_LR"],
+                                           intrinsic=features["intrinsic_R"],
+                                           suffix="_R")
+
+    losses = loss_left + loss_right
+    batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
+                               name="photo_loss_sum")(losses)
+    print("stereo loss:", batch_loss)
+    view1 = tu_show_synthesize_result(synth_left_ms, augm_data["target"], augm_data["target_R"], "left")
+    view2 = tu_show_synthesize_result(synth_right_ms, augm_data["target_R"], augm_data["target"], "right")
+    view = np.concatenate([view1, view2], axis=1)
+    return view
+
+
+def tu_make_prediction(features, suffix="", const_depth=None):
     depth = features["depth_gt" + suffix]
-    # depth = tf.constant(100, tf.float32, shape=depth.get_shape().as_list())
+    if const_depth is not None:
+        if const_depth == 0:
+            const_depth = tf.reduce_mean(depth)
+            print("mean depth", const_depth)
+        depth = tf.constant(const_depth, tf.float32, shape=depth.get_shape().as_list())
+
     depth_ms = uf.multi_scale_depths(depth, [1, 2, 4, 8])
     disp_ms = tu_depth_to_disp(depth_ms)
     poses = features["pose_gt" + suffix]
@@ -301,15 +315,14 @@ def tu_make_prediction(features, suffix=""):
 
 
 def tu_show_synthesize_result(synth_target_ms, target, source, suffix):
-    synth_stacked = [uf.to_uint8_image(target)[0].numpy(), uf.to_uint8_image(source)[0].numpy()]
-    dstsize = (opts.IM_WIDTH, opts.IM_HEIGHT)
-
-    for synth in synth_target_ms:
-        synth_img = uf.to_uint8_image(synth)[0, 0].numpy()
-        synth_img = cv2.resize(synth_img, dstsize, interpolation=cv2.INTER_NEAREST)
-        synth_stacked.append(synth_img)
-    synth_stacked = np.concatenate(synth_stacked, axis=0)
-    cv2.imshow("synthesized_" + suffix, synth_stacked)
+    view_imgs = {"target": target[0], "source": source[0], "synth_target": synth_target_ms[0][0, 0]}
+    view = uf.make_view2(view_imgs)
+    target_np = view[0:128]
+    synthe_np = view[256:384]
+    diff = np.abs(target_np.astype(np.int32) - synthe_np.astype(np.int32)).astype(np.uint8)
+    print(f"{suffix} target - synthe = {np.mean(diff)}")
+    view = np.concatenate([view, diff], axis=0)
+    return view
 
 
 def test():

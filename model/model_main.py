@@ -30,8 +30,8 @@ def train():
     dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
     dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
-    trainer_graph = tv.ModelTrainerEager(train_steps, opts.STEREO, optimizer)
-    validater_graph = tv.ModelValidaterEager(val_steps, opts.STEREO)
+    trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
+    validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, opts.EPOCHS):
@@ -40,10 +40,10 @@ def train():
         result_train, depth_train = trainer_graph.run_an_epoch(model, dataset_train)
         result_val, depth_val = validater_graph.run_an_epoch(model, dataset_val)
 
-        if epoch % 5 == 0:
-            print("save intermediate results ...")
-            log.save_reconstruction_samples(model, dataset_val, epoch)
-            log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
+        # if epoch % 5 == 0:
+        print("save intermediate results ...")
+        log.save_reconstruction_samples(model, dataset_val, epoch)
+        log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
         save_model(model, result_val[0])
         log.save_log(epoch, result_train, result_val, depth_train, depth_val)
 
@@ -207,7 +207,7 @@ def check_disparity(ckpt_name, test_dir_name):
 
 
 if __name__ == "__main__":
-    for epoch in range(0, 21, 15):
+    for epoch in range(0, 51, 15):
         opts.EPOCHS = epoch
         train()
     # predict()

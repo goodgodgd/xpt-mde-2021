@@ -125,11 +125,12 @@ def make_reconstructed_views(model, dataset):
         target_depth = augm_data["depth_ms"][0][batchidx]
         target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
         source_time = augm_data["source"][batchidx, srcidx*opts.IM_HEIGHT:(srcidx + 1)*opts.IM_HEIGHT]
-        view_imgs = [augm_data["target"][0],
-                     target_depth,
-                     source_time,
-                     synth_target_ms[scaleidx][batchidx, srcidx]]
-        view_names = ["left_target", "target_depth", f"source_{srcidx}", f"synthesized_from_src{srcidx}"]
+        view_imgs = {"left_target": augm_data["target"][0],
+                     "target_depth": target_depth,
+                     f"source_{srcidx}": source_time,
+                     f"synthesized_from_src{srcidx}": synth_target_ms[scaleidx][batchidx, srcidx]
+                     }
+        view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
 
         if opts.STEREO:
             loss_left, synth_left_ms = \
@@ -142,12 +143,11 @@ def make_reconstructed_views(model, dataset):
             print("stereo synth size", tf.size(synth_left_ms[scaleidx]).numpy())
             print("stereo synth zero count", tf.reduce_sum(tf.cast(tf.math.equal(synth_left_ms[scaleidx], 0.), tf.int32)).numpy())
             print("stereo loss left", tf.squeeze(loss_left[0]))
-            view_imgs.append(augm_data["target_R"][batchidx])
-            view_imgs.append(synth_left_ms[scaleidx][batchidx, srcidx])
-            view_names.append("right_source")
-            view_names.append("synthesized_from_right")
+            view_imgs["right_source"] = augm_data["target_R"][batchidx]
+            view_imgs["synthesized_from_right"] = synth_left_ms[scaleidx][batchidx, srcidx]
+            view_imgs["stereo_diff"] = tf.abs(view_imgs["right_source"] - view_imgs["synthesized_from_right"])
 
-        view1 = uf.make_view2(view_imgs, view_names)
+        view1 = uf.make_view2(view_imgs)
         recon_views.append(view1)
 
     return recon_views

@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+import numpy as np
 
 import settings
 import model.build_model.model_utils as mu
@@ -47,7 +48,7 @@ class DepthNetBasic:
         upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
         disp0, disp_n1_up, dpconv0 = self.get_disp_vgg(upconv0, height, width, "dp_disp0")
 
-        return [disp0, disp1, disp2, disp3], [dpconv0, dpconv1, dpconv2, dpconv3]
+        return [disp0, disp1, disp2, disp3], [dpconv0, upconv0, dpconv3, upconv3]
 
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
         upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
@@ -83,9 +84,10 @@ class DepthNetNoResize(DepthNetBasic):
         return upconv
 
     def get_disp_vgg(self, x, dst_height, dst_width, scope):
-        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
+        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="linear", name=scope + "_conv")(x)
+        sigmoid = tf.math.sigmoid(conv)
         # disp = layers.Lambda(lambda x: (tf.math.exp(x * 15.) + 0.1) * 0.05, name=scope + "_scale")(conv)
-        disp = layers.Lambda(lambda x: DISP_SCALING_VGG * x + 0.01, name=scope + "_scale")(conv)
+        disp = layers.Lambda(lambda x: x + 0.01, name=scope + "_scale")(sigmoid)
         disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
         return disp, disp_up, conv
 
