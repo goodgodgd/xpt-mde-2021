@@ -34,7 +34,7 @@ class TrainValBase:
         # mean_result: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
         mean_result = np.array(results).mean(axis=0)
         depths = np.concatenate(depths, axis=1)
-        stride = depths.shape[1] // 10
+        stride = depths.shape[1] // 8
         depths = depths[:, 0:-1:stride]
 
         print(f"[{self.train_val_name} Epoch MEAN], result: loss={mean_result[0]:1.4f}, "

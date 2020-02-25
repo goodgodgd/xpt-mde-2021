@@ -295,6 +295,13 @@ class StereoDepthLoss(LossBase):
         return losses, synth_target_ms
 
 
+class StereoPoseLoss(LossBase):
+    def __call__(self, features, predictions, augm_data):
+        pass
+
+
+# ===== TEST FUNCTIONS
+
 import numpy as np
 
 
@@ -318,8 +325,6 @@ def test_average_pool_3d():
 
     print("!!! test_average_pool_3d passed")
 
-
-# ===== TEST FUNCTIONS
 
 # in this function, "tf.nn.avg_pool()" works fine with gradient tape in eager mode
 def test_gradient_tape():

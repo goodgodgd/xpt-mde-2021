@@ -11,7 +11,8 @@ def loss_factory(loss_weights=opts.LOSS_WEIGHTS, stereo=opts.STEREO):
                 "SSIM_R": lm.PhotometricLossMultiScale("SSIM", key_suffix="_R"),
                 "smoothe": lm.SmoothenessLossMultiScale(),
                 "smoothe_R": lm.SmoothenessLossMultiScale(key_suffix="_R"),
-                "stereo": lm.StereoDepthLoss("L1"),
+                "stereo_L1": lm.StereoDepthLoss("L1"),
+                "stereo_pose": lm.StereoPoseLoss(),
                 }
 
     for name, loss_w in loss_weights.items():

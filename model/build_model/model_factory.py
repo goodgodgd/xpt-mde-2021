@@ -7,19 +7,20 @@ from config import opts
 import utils.util_funcs as uf
 from model.build_model.model_base import DepthNetBasic, DepthNetNoResize, PoseNet
 from utils.util_class import WrongInputException
-from model.build_model.pretrained_models import PretrainedModel, DecoderForPretrained
+from model.build_model.pretrained_models import PretrainedModel
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
 
 
 class ModelFactory:
-    def __init__(self, input_shape=None, net_names=None, pretrained_weight=None, stereo=None):
+    def __init__(self, input_shape=None, net_names=None, pretrained_weight=None, stereo=None, stereo_extrinsic=None):
         # set defualt values from config
         default_shape = (opts.BATCH_SIZE, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
         self.input_shape = default_shape if input_shape is None else input_shape
         self.net_names = opts.NET_NAMES if net_names is None else net_names
         self.pretrained_weight = opts.PRETRAINED_WEIGHT if pretrained_weight is None else pretrained_weight
         self.stereo = opts.STEREO if stereo is None else stereo
+        self.stereo_extrinsic = opts.STEREO_EXTRINSIC if stereo_extrinsic is None else stereo_extrinsic
 
     def get_model(self):
         # prepare input tensor
@@ -30,41 +31,62 @@ class ModelFactory:
                                                    name="split_stacked_image")(stacked_image)
         # build prediction models
         outputs = dict()
+        other_image = None
+
         if "depth" in self.net_names:
-            depth_ms = self.depth_net_factory(target_image, self.net_names["depth"])
-            outputs.update(depth_ms)
+            depthnet = self.depth_net_factory(self.net_names["depth"])
+            disp_out = depthnet(target_image)
+            outputs.update(disp_out)
+
         if "camera" in self.net_names:
             # TODO: add intrinsic output
-            camera = self.camera_net_factory(self.net_names["camera"], stacked_image)
-            outputs.update(camera)
+            posenet = self.camera_net_factory(self.net_names["camera"])
+            pose_out = posenet(stacked_image)
+            outputs.update(pose_out)
+            if self.stereo_extrinsic:
+                # concatenate this target and other target (as source image)
+                # and predict pose that transforms points in other frame to this frame
+                other_image = layers.Input(shape=raw_image_shape, batch_size=batch, name="other_image")
+                other_source_image, other_target_image = layers.Lambda(lambda image:
+                    uf.split_into_source_and_target(image), name="split_stacked_image")(other_image)
+                other_input = layers.concatenate([other_target_image]*(snippet - 1) + [target_image], axis=0)
+                pose_other = posenet(other_input)
+                stereo_pose = {"stereo_pose": pose_other["pose"]}
+                outputs.update(stereo_pose)
         # TODO: add optical flow factory
 
         # create model
-        model = tf.keras.Model(inputs=stacked_image, outputs=outputs)
         if self.stereo:
-            model_wrapper = StereoModelWrapper(model)
+            if other_image:
+                model = tf.keras.Model(inputs=[stacked_image, other_image], outputs=outputs)
+                model_wrapper = StereoPoseModelWrapper(model)
+            else:
+                model = tf.keras.Model(inputs=stacked_image, outputs=outputs)
+                model_wrapper = StereoModelWrapper(model)
         else:
+            model = tf.keras.Model(inputs=stacked_image, outputs=outputs)
             model_wrapper = ModelWrapper(model)
         return model_wrapper
 
-    def depth_net_factory(self, target_image, net_name):
+    def depth_net_factory(self, net_name):
         if net_name == "DepthNetBasic":
-            disp_ms, conv_ms = DepthNetBasic()(target_image, self.input_shape)
+            depth_net = DepthNetBasic()(self.input_shape)
         elif net_name == "DepthNetNoResize":
-            disp_ms, conv_ms = DepthNetNoResize()(target_image, self.input_shape)
+            depth_net = DepthNetNoResize()(self.input_shape)
         elif net_name in PRETRAINED_MODELS:
-            features_ms = PretrainedModel()(target_image, self.input_shape, net_name, self.pretrained_weight)
-            disp_ms, conv_ms = DecoderForPretrained()(features_ms, self.input_shape)
+            depth_net = PretrainedModel()(self.input_shape, net_name, self.pretrained_weight)
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
-        return {"disp_ms": disp_ms, "debug_out": conv_ms}
+        return depth_net
+        # return {"disp_ms": disp_ms, "debug_out": debug_out}
 
-    def camera_net_factory(self, net_name, snippet_image):
+    def camera_net_factory(self, net_name):
         if net_name == "PoseNet":
-            pose = PoseNet()(snippet_image, self.input_shape)
+            posenet = PoseNet()(self.input_shape)
         else:
             raise WrongInputException("[camera_net_factory] wrong pose net name: " + net_name)
-        return {"pose": pose}
+        return posenet
+        # return {"pose": pose}
 
 
 class ModelWrapper:
@@ -98,6 +120,7 @@ class ModelWrapper:
 
         predictions["disp"] = np.concatenate(predictions["disp"], axis=0)
         disp = predictions["disp"]
+        # TODO: use util function to convert disp to depth
         mask = (disp > 0)
         depth = np.zeros(disp.shape, dtype=np.float)
         depth[mask] = 1. / disp[mask]
@@ -123,7 +146,7 @@ class ModelWrapper:
 
 class StereoModelWrapper(ModelWrapper):
     def __init__(self, model):
-        super(StereoModelWrapper, self).__init__(model)
+        super().__init__(model)
 
     def __call__(self, features):
         preds = self.model(features["image"])
@@ -139,6 +162,50 @@ class StereoModelWrapper(ModelWrapper):
         preds["depth_R"] = preds_rig["depth"]
         preds["pose_R"] = preds_rig["pose"]
         return preds
+
+
+class StereoPoseModelWrapper(ModelWrapper):
+    def __init__(self, model):
+        super().__init__(model)
+
+    def __call__(self, features):
+        preds = self.model([features["image"], features["image_R"]])
+        preds_rig = self.model([features["image_R"], features["image"]])
+        preds["disp_ms_R"] = preds_rig["disp_ms"]
+        preds["stereo_pose_R"] = preds_rig["stereo_pose"]
+        preds["pose_R"] = preds_rig["pose"]
+        return preds
+
+    def predict(self, dataset, total_steps):
+        preds = self.predict_oneside(dataset, ("image", "image_R"), total_steps)
+        preds_rig = self.predict_oneside(dataset, ("image_R", "image"), total_steps)
+        preds["disp_R"] = preds_rig["disp"]
+        preds["depth_R"] = preds_rig["depth"]
+        preds["pose_R"] = preds_rig["pose"]
+        return preds
+
+    def predict_oneside(self, dataset, image_key, total_steps):
+        one_key, other_key = image_key
+        print(f"===== start prediction from [{one_key}] key")
+        predictions = {"disp": [], "pose": [], "stereo_pose": []}
+        for step, features in enumerate(dataset):
+            pred = self.model.predict([features[one_key], features[other_key]])
+            predictions["disp"].append(pred[0])
+            predictions["pose"].append(pred[4])
+            predictions["stereo_pose"].append(pred[5])
+            uf.print_progress_status(f"Progress: {step} / {total_steps}")
+        print("")
+
+        predictions["disp"] = np.concatenate(predictions["disp"], axis=0)
+        disp = predictions["disp"]
+        # TODO: use util function to convert disp to depth
+        mask = (disp > 0)
+        depth = np.zeros(disp.shape, dtype=np.float)
+        depth[mask] = 1. / disp[mask]
+        predictions["depth"] = depth
+        predictions["pose"] = np.concatenate(predictions["pose"], axis=0)
+        predictions["stereo_pose"] = np.concatenate(predictions["stereo_pose"], axis=0)
+        return predictions
 
 
 # ==================================================
@@ -227,7 +294,28 @@ def test_name_scope():
     model.summary()
 
 
+def test_hierarchy_model():
+    input1 = layers.Input(shape=(100, 100, 3), batch_size=8, name="input1")
+    conv1 = mu.convolution(input1, 32, 5, strides=1, name="conv1a")
+    conv1 = mu.convolution(conv1, 32, 5, strides=2, name="conv1b")
+    conv1 = mu.convolution(conv1, 64, 5, strides=1, name="conv1c")
+    model1 = tf.keras.Model(inputs=input1, outputs=conv1, name="model1")
+
+    input2 = layers.Input(shape=(100, 100, 3), batch_size=8, name="input2")
+    conv2 = mu.convolution(input2, 32, 5, strides=1, name="conv2a")
+    conv2 = mu.convolution(conv2, 64, 5, strides=2, name="conv2b")
+    conv2 = mu.convolution(conv2, 32, 5, strides=1, name="conv2c")
+    model2 = tf.keras.Model(inputs=input2, outputs=conv2, name="model2")
+
+    input3 = layers.Input(shape=(100, 100, 3), batch_size=8, name="input3")
+    output1 = model1(input3)
+    output2 = model2(input3)
+    model = tf.keras.Model(inputs=input3, outputs={"out1": output1, "out2": output2}, name="higher_model")
+    model.summary()
+
+
 if __name__ == "__main__":
-    # test_build_model()
+    test_build_model()
     # test_model_dict_inout()
-    test_name_scope()
+    # test_name_scope()
+    # test_hierarchy_model()
