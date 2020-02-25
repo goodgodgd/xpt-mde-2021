@@ -45,11 +45,11 @@ class ModelFactory:
             outputs.update(pose_out)
             if self.stereo_extrinsic:
                 # concatenate this target and other target (as source image)
-                # and predict pose that transforms points in other frame to this frame
+                # and predict pose that transforms points in other target frame to this target frame
                 other_image = layers.Input(shape=raw_image_shape, batch_size=batch, name="other_image")
                 other_source_image, other_target_image = layers.Lambda(lambda image:
-                    uf.split_into_source_and_target(image), name="split_stacked_image")(other_image)
-                other_input = layers.concatenate([other_target_image]*(snippet - 1) + [target_image], axis=0)
+                    uf.split_into_source_and_target(image), name="split_stacked_other_image")(other_image)
+                other_input = layers.concatenate([other_target_image]*(snippet - 1) + [target_image], axis=1)
                 pose_other = posenet(other_input)
                 stereo_pose = {"stereo_pose": pose_other["pose"]}
                 outputs.update(stereo_pose)
@@ -57,7 +57,7 @@ class ModelFactory:
 
         # create model
         if self.stereo:
-            if other_image:
+            if self.stereo_extrinsic:
                 model = tf.keras.Model(inputs=[stacked_image, other_image], outputs=outputs)
                 model_wrapper = StereoPoseModelWrapper(model)
             else:
@@ -215,15 +215,20 @@ import model.build_model.model_utils as mu
 
 
 def test_build_model():
-    model = ModelFactory(stereo=True).get_model()
+    vode_model = ModelFactory(stereo=True).get_model()
+    model = vode_model.model
     model.summary()
+    print("model input shapes:")
+    for i, input_tensor in enumerate(model.input):
+        print("input", i, input_tensor.name, input_tensor.get_shape())
+
     print("model output shapes:")
     for name, output in model.output.items():
         if isinstance(output, list):
             for out in output:
-                print(name, out.name, out.get_shape().as_list())
+                print(name, out.name, out.get_shape())
         else:
-            print(name, output.name, output.get_shape().as_list())
+            print(name, output.name, output.get_shape())
 
     # record model architecture into text and image files
     plot_model(model, to_file=op.join(opts.PROJECT_ROOT, "../model.png"), show_shapes=True)
