@@ -11,7 +11,6 @@ from model.build_model.model_factory import ModelFactory
 from model.optimizers import optimizer_factory
 import model.logger as log
 import model.train_val as tv
-#import gc
 
 
 def train():
@@ -31,8 +30,8 @@ def train():
     dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
     dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
-    trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
-    validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
+    trainer_graph = tv.ModelTrainerEager(train_steps, opts.STEREO, optimizer)
+    validater_graph = tv.ModelValidaterEager(val_steps, opts.STEREO)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, opts.EPOCHS):
@@ -211,6 +210,5 @@ if __name__ == "__main__":
     for epoch in range(0, 21, 15):
         opts.EPOCHS = epoch
         train()
-        # gc.collect()
     # predict()
     # test_model_wrapper_output()

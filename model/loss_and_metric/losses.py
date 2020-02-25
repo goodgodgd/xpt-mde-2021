@@ -157,13 +157,22 @@ def photometric_loss_ssim(synt_target, orig_target):
     c1 = 0.01 ** 2
     c2 = 0.03 ** 2
     ksize = [1, 3, 3]
-    # mu_x, mu_y: [batch, num_src, height/scale, width/scale, 3]
-    mu_x = tf.nn.avg_pool(x, ksize=ksize, strides=1, padding='SAME')
-    mu_y = tf.nn.avg_pool(y, ksize=ksize, strides=1, padding='SAME')
 
-    sigma_x = tf.nn.avg_pool(x ** 2, ksize, 1, 'SAME') - mu_x ** 2
-    sigma_y = tf.nn.avg_pool(y ** 2, ksize, 1, 'SAME') - mu_y ** 2
-    sigma_xy = tf.nn.avg_pool(x * y, ksize, 1, 'SAME') - mu_x * mu_y
+    # TODO IMPORTANT!
+    #   tf.nn.avg_pool results in error like ['NoneType' object has no attribute 'decode']
+    #   when training model with gradient tape in eager mode,
+    #   but no error in graph mode by @tf.function
+    #   Instead, tf.keras.layers.AveragePooling3D results in NO error in BOTH modes
+    # mu_x, mu_y: [batch, num_src, height/scale, width/scale, 3]
+    average_pool = tf.keras.layers.AveragePooling3D(pool_size=ksize, strides=1, padding="SAME")
+    mu_x = average_pool(x)
+    mu_y = average_pool(y)
+    # mu_x = tf.nn.avg_pool(x, ksize=ksize, strides=1, padding='SAME')
+    # mu_y = tf.nn.avg_pool(y, ksize=ksize, strides=1, padding='SAME')
+
+    sigma_x = average_pool(x ** 2) - mu_x ** 2
+    sigma_y = average_pool(y ** 2) - mu_y ** 2
+    sigma_xy = average_pool(x * y) - mu_x * mu_y
 
     ssim_n = (2 * mu_x * mu_y + c1) * (2 * sigma_xy + c2)
     ssim_d = (mu_x ** 2 + mu_y ** 2 + c1) * (sigma_x + sigma_y + c2)
@@ -284,3 +293,67 @@ class StereoDepthLoss(LossBase):
                                  name=f"photo_loss_{i}" + suffix)([synth_img_sc, target_img_sc])
             losses.append(loss)
         return losses, synth_target_ms
+
+
+import numpy as np
+
+
+def test_average_pool_3d():
+    print("\n===== start test_average_pool_3d")
+    ksize = [1, 3, 3]
+    average_pool = tf.keras.layers.AveragePooling3D(pool_size=ksize, strides=1, padding="SAME")
+    for i in range(10):
+        x = tf.random.normal((8, 4, 100, 100, 3))
+        y = tf.random.normal((8, 4, 100, 100, 3))
+        mu_x = average_pool(x)
+        mu_y = average_pool(y)
+        npx = x.numpy()
+        npy = y.numpy()
+        npmux = mu_x.numpy()
+        npmuy = mu_y.numpy()
+        print(i, "mean x", npx[0, 0, 10:13, 10:13, 1].mean(), npmux[0, 0, 11, 11, 1],
+              "mean y", npy[0, 0, 10:13, 10:13, 1].mean(), npmuy[0, 0, 11, 11, 1])
+        assert np.isclose(npx[0, 0, 10:13, 10:13, 1].mean(), npmux[0, 0, 11, 11, 1])
+        assert np.isclose(npy[0, 0, 10:13, 10:13, 1].mean(), npmuy[0, 0, 11, 11, 1])
+
+    print("!!! test_average_pool_3d passed")
+
+
+# ===== TEST FUNCTIONS
+
+# in this function, "tf.nn.avg_pool()" works fine with gradient tape in eager mode
+def test_gradient_tape():
+    print("\n===== start test_gradient_tape")
+    out_dim = 10
+    x = tf.cast(np.random.uniform(0, 1, (200, 100, 100, 3)), tf.float32)
+    y = tf.cast(np.random.uniform(0, 1, (200, out_dim)), tf.float32)
+    dataset = tf.data.Dataset.from_tensor_slices((x, y))
+    dataset = dataset.shuffle(100).batch(8)
+
+    input_layer = tf.keras.layers.Input(shape=(100, 100, 3))
+    z = tf.keras.layers.Conv2D(64, 3)(input_layer)
+    z = tf.keras.layers.Conv2D(out_dim, 3)(z)
+
+    # EXECUTE
+    z = tf.nn.avg_pool(z, ksize=[3, 3], strides=[1, 1], padding="SAME")
+    z = tf.keras.layers.GlobalAveragePooling2D()(z)
+    model = tf.keras.Model(inputs=input_layer, outputs=z)
+    optimizer = tf.keras.optimizers.SGD()
+
+    for i, (xi, yi) in enumerate(dataset):
+        train_model(model, optimizer, xi, yi)
+        uf.print_progress_status(f"optimizing... {i}")
+
+
+def train_model(model, optimizer, xi, yi):
+    with tf.GradientTape() as tape:
+        yi_hat = model(xi)
+        loss = tf.keras.losses.MeanSquaredError()(yi, yi_hat)
+
+    grad = tape.gradient(loss, model.trainable_weights)
+    optimizer.apply_gradients(zip(grad, model.trainable_weights))
+
+
+if __name__ == "__main__":
+    test_average_pool_3d()
+    test_gradient_tape()
