@@ -92,11 +92,11 @@ def save_model(model, val_loss):
     :param val_loss: current validation loss
     """
     # save the latest model
-    save_model_weights(model, 'latest.h5')
+    save_model_weights(model, 'latest')
     # save the best model (function static variable)
     save_model.best = getattr(save_model, 'best', 10000)
     if val_loss < save_model.best:
-        save_model_weights(model, 'best.h5')
+        save_model_weights(model, 'best')
         save_model.best = val_loss
 
 
@@ -104,8 +104,7 @@ def save_model_weights(model, weights_name):
     model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME)
     if not op.isdir(model_dir_path):
         os.makedirs(model_dir_path, exist_ok=True)
-    model_file_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, weights_name)
-    model.save_weights(model_file_path)
+    model.save_weights(model_dir_path, weights_name)
 
 
 def predict(weight_name="latest.h5"):

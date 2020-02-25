@@ -1,6 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-import numpy as np
+import utils.util_funcs as uf
 
 import settings
 import model.build_model.model_utils as mu
@@ -19,10 +19,12 @@ class DepthNetBasic:
         conv'n' implies that it is scaled by 1/2^n
         """
         batch, snippet, height, width, channel = total_shape
-        input_shape = (height, width, channel)
+        input_shape = (height*snippet, width, channel)
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
+                                                   name="depthnet_split_image")(input_tensor)
 
-        conv0 = mu.convolution(input_tensor, 32, 7, strides=1, name="dp_conv0b")
+        conv0 = mu.convolution(target_image, 32, 7, strides=1, name="dp_conv0b")
         conv1 = mu.convolution(conv0, 32, 7, strides=2, name="dp_conv1a")
         conv1 = mu.convolution(conv1, 64, 5, strides=1, name="dp_conv1b")
         conv2 = mu.convolution(conv1, 64, 5, strides=2, name="dp_conv2a")

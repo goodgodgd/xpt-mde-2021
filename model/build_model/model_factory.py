@@ -1,6 +1,7 @@
 import numpy as np
 import tensorflow as tf
 from tensorflow.keras import layers
+import glob
 
 import settings
 from config import opts
@@ -33,39 +34,24 @@ class ModelFactory:
         outputs = dict()
         other_image = None
 
+        models = dict()
         if "depth" in self.net_names:
             depthnet = self.depth_net_factory(self.net_names["depth"])
-            disp_out = depthnet(target_image)
-            outputs.update(disp_out)
+            models["depthnet"] = depthnet
 
         if "camera" in self.net_names:
             # TODO: add intrinsic output
             posenet = self.camera_net_factory(self.net_names["camera"])
-            pose_out = posenet(stacked_image)
-            outputs.update(pose_out)
-            if self.stereo_extrinsic:
-                # concatenate this target and other target (as source image)
-                # and predict pose that transforms points in other target frame to this target frame
-                other_image = layers.Input(shape=raw_image_shape, batch_size=batch, name="other_image")
-                other_source_image, other_target_image = layers.Lambda(lambda image:
-                    uf.split_into_source_and_target(image), name="split_stacked_other_image")(other_image)
-                other_input = layers.concatenate([other_target_image]*(snippet - 1) + [target_image], axis=1)
-                pose_other = posenet(other_input)
-                stereo_pose = {"stereo_pose": pose_other["pose"]}
-                outputs.update(stereo_pose)
+            models["posenet"] = posenet
         # TODO: add optical flow factory
 
-        # create model
-        if self.stereo:
-            if self.stereo_extrinsic:
-                model = tf.keras.Model(inputs=[stacked_image, other_image], outputs=outputs)
-                model_wrapper = StereoPoseModelWrapper(model)
-            else:
-                model = tf.keras.Model(inputs=stacked_image, outputs=outputs)
-                model_wrapper = StereoModelWrapper(model)
+        if self.stereo_extrinsic:
+            model_wrapper = StereoPoseModelWrapper(models)
+        elif self.stereo:
+            model_wrapper = StereoModelWrapper(models)
         else:
-            model = tf.keras.Model(inputs=stacked_image, outputs=outputs)
-            model_wrapper = ModelWrapper(model)
+            model_wrapper = ModelWrapper(models)
+
         return model_wrapper
 
     def depth_net_factory(self, net_name):
@@ -98,12 +84,15 @@ class ModelWrapper:
     2) preds = model.predict(image_tensor) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
     3) preds = model.predict({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
     """
-    def __init__(self, model):
-        self.model = model
+    def __init__(self, models):
+        self.models = models
 
     def __call__(self, features):
-        preds = self.model(features["image"])
-        return preds
+        predictions = dict()
+        for netname, model in self.models.items():
+            pred = model(features["image"])
+            predictions.update(pred)
+        return predictions
 
     def predict(self, dataset, total_steps):
         return self.predict_oneside(dataset, "image", total_steps)
@@ -112,15 +101,15 @@ class ModelWrapper:
         print(f"===== start prediction from [{image_key}] key")
         predictions = {"disp": [], "pose": []}
         for step, features in enumerate(dataset):
-            pred = self.model.predict(features[image_key])
-            predictions["disp"].append(pred[0])
-            predictions["pose"].append(pred[4])
+            disp_ms = self.models["depthnet"](features[image_key])
+            predictions["disp"].append(disp_ms[0])
+            pose = self.models["posenet"](features[image_key])
+            predictions["pose"].append(pose)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
-        print("")
 
-        predictions["disp"] = np.concatenate(predictions["disp"], axis=0)
-        disp = predictions["disp"]
-        # TODO: use util function to convert disp to depth
+        print("")
+        disp = np.concatenate(predictions["disp"], axis=0)
+        predictions["disp"] = disp
         mask = (disp > 0)
         depth = np.zeros(disp.shape, dtype=np.float)
         depth[mask] = 1. / disp[mask]
@@ -129,19 +118,44 @@ class ModelWrapper:
         return predictions
 
     def compile(self, optimizer="sgd", loss="mean_absolute_error"):
-        self.model.compile(optimizer=optimizer, loss=loss)
+        for model in self.models.values():
+            model.compile(optimizer=optimizer, loss=loss)
 
     def trainable_weights(self):
-        return self.model.trainable_weights
+        train_weights = []
+        for model in self.models.values():
+            train_weights.extend(model.trainable_weights)
+        return train_weights
 
-    def layers(self):
-        return self.model.layers
+    def save_weights(self, ckpt_dir_path, suffix):
+        for netname, model in self.models.items():
+            save_path = op.join(ckpt_dir_path, f"{netname}_{suffix}.h5")
+            model.save_weights(save_path)
 
-    def save_weights(self, ckpt_path):
-        self.model.save_weights(ckpt_path)
+    def load_weights(self, ckpt_dir_path):
+        pattern = op.join(ckpt_dir_path, "*.h5")
+        files = glob.glob(pattern)
+        for ckpt_file in files:
+            filename = op.basename(ckpt_file)
+            netname = filename.split("_")[0]
+            self.models[netname].load_weights(ckpt_file)
 
-    def load_weights(self, ckpt_path):
-        self.model.load_weights(ckpt_path)
+    def summary(self, **kwargs):
+        for model in self.models.values():
+            model.summary(**kwargs)
+
+    def inputs(self):
+        return [model.input for model in self.models.values()]
+
+    def outputs(self):
+        output_dict = dict()
+        for model in self.models.values():
+            output_dict.update(model.output)
+        return output_dict
+
+    def plot_model(self, dir_path):
+        for netname, model in self.models.items():
+            plot_model(model, to_file=op.join(dir_path, netname + ".png"), show_shapes=True)
 
 
 class StereoModelWrapper(ModelWrapper):
@@ -149,19 +163,21 @@ class StereoModelWrapper(ModelWrapper):
         super().__init__(model)
 
     def __call__(self, features):
-        preds = self.model(features["image"])
-        preds_rig = self.model(features["image_R"])
-        preds["disp_ms_R"] = preds_rig["disp_ms"]
-        preds["pose_R"] = preds_rig["pose"]
-        return preds
+        predictions = dict()
+        for netname, model in self.models.items():
+            pred = model(features["image"])
+            predictions.update(pred)
+            preds_right = model(features["image_R"])
+            preds_right = {key + "_R": value for key, value in preds_right.items()}
+            predictions.update(preds_right)
+        return predictions
 
     def predict(self, dataset, total_steps):
-        preds = self.predict_oneside(dataset, "image", total_steps)
-        preds_rig = self.predict_oneside(dataset, "image_R", total_steps)
-        preds["disp_R"] = preds_rig["disp"]
-        preds["depth_R"] = preds_rig["depth"]
-        preds["pose_R"] = preds_rig["pose"]
-        return preds
+        predictions = self.predict_oneside(dataset, "image", total_steps)
+        preds_right = self.predict_oneside(dataset, "image_R", total_steps)
+        preds_right = {key + "_R": value for key, value in preds_right.items()}
+        predictions.update(preds_right)
+        return predictions
 
 
 class StereoPoseModelWrapper(ModelWrapper):
@@ -169,42 +185,29 @@ class StereoPoseModelWrapper(ModelWrapper):
         super().__init__(model)
 
     def __call__(self, features):
-        preds = self.model([features["image"], features["image_R"]])
-        preds_rig = self.model([features["image_R"], features["image"]])
-        preds["disp_ms_R"] = preds_rig["disp_ms"]
-        preds["stereo_pose_R"] = preds_rig["stereo_pose"]
-        preds["pose_R"] = preds_rig["pose"]
-        return preds
+        predictions = dict()
+        for netname, model in self.models.items():
+            pred = model(features["image"])
+            predictions.update(pred)
+            preds_right = model(features["image_R"])
+            preds_right = {key + "_R": value for key, value in preds_right.items()}
+            predictions.update(preds_right)
 
-    def predict(self, dataset, total_steps):
-        preds = self.predict_oneside(dataset, ("image", "image_R"), total_steps)
-        preds_rig = self.predict_oneside(dataset, ("image_R", "image"), total_steps)
-        preds["disp_R"] = preds_rig["disp"]
-        preds["depth_R"] = preds_rig["depth"]
-        preds["pose_R"] = preds_rig["pose"]
-        return preds
+        # predicts stereo extrinsic in both directions: left to right, right to left
+        if "posenet" in self.models:
+            posenet = self.models["posenet"]
+            left_source, left_target = uf.split_into_source_and_target(features["image"])
+            right_source, right_target = uf.split_into_source_and_target(features["image_R"])
+            num_src = opts.SNIPPET_LEN - 1
+            lr_input = layers.concatenate([right_target] * num_src + [left_target], axis=1)
+            rl_input = layers.concatenate([left_target] * num_src + [right_target], axis=1)
+            # pose that transforms points from right to left (T_LR)
+            pose_lr = posenet(lr_input)
+            # pose that transforms points from left to right (T_RL)
+            pose_rl = posenet(rl_input)
+            predictions["pose_LR"] = pose_lr["pose"]
+            predictions["pose_RL"] = pose_rl["pose"]
 
-    def predict_oneside(self, dataset, image_key, total_steps):
-        one_key, other_key = image_key
-        print(f"===== start prediction from [{one_key}] key")
-        predictions = {"disp": [], "pose": [], "stereo_pose": []}
-        for step, features in enumerate(dataset):
-            pred = self.model.predict([features[one_key], features[other_key]])
-            predictions["disp"].append(pred[0])
-            predictions["pose"].append(pred[4])
-            predictions["stereo_pose"].append(pred[5])
-            uf.print_progress_status(f"Progress: {step} / {total_steps}")
-        print("")
-
-        predictions["disp"] = np.concatenate(predictions["disp"], axis=0)
-        disp = predictions["disp"]
-        # TODO: use util function to convert disp to depth
-        mask = (disp > 0)
-        depth = np.zeros(disp.shape, dtype=np.float)
-        depth[mask] = 1. / disp[mask]
-        predictions["depth"] = depth
-        predictions["pose"] = np.concatenate(predictions["pose"], axis=0)
-        predictions["stereo_pose"] = np.concatenate(predictions["stereo_pose"], axis=0)
         return predictions
 
 
@@ -216,14 +219,13 @@ import model.build_model.model_utils as mu
 
 def test_build_model():
     vode_model = ModelFactory(stereo=True).get_model()
-    model = vode_model.model
-    model.summary()
+    vode_model.summary()
     print("model input shapes:")
-    for i, input_tensor in enumerate(model.input):
+    for i, input_tensor in enumerate(vode_model.inputs()):
         print("input", i, input_tensor.name, input_tensor.get_shape())
 
     print("model output shapes:")
-    for name, output in model.output.items():
+    for name, output in vode_model.outputs().items():
         if isinstance(output, list):
             for out in output:
                 print(name, out.name, out.get_shape())
@@ -231,10 +233,12 @@ def test_build_model():
             print(name, output.name, output.get_shape())
 
     # record model architecture into text and image files
-    plot_model(model, to_file=op.join(opts.PROJECT_ROOT, "../model.png"), show_shapes=True)
+    vode_model.plot_model(op.dirname(opts.PROJECT_ROOT))
     summary_file = op.join(opts.PROJECT_ROOT, "../summary.txt")
     with open(summary_file, 'w') as fh:
-        model.summary(print_fn=lambda x: fh.write(x + '\n'))
+        vode_model.summary(print_fn=lambda x: fh.write(x + '\n'))
+
+    print("trainable weights", type(vode_model.trainable_weights()), len(vode_model.trainable_weights()))
 
 
 def test_model_dict_inout():

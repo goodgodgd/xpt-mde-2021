@@ -22,8 +22,11 @@ class PretrainedModel:
         :return:
         """
         batch, snippet, height, width, channel = total_shape
-        input_shape = (height, width, channel)
+        input_shape = (height*snippet, width, channel)
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
+                                                   name="depthnet_split_image")(input_tensor)
+
         weights = "imagenet" if pretrained_weight else None
         jsonfile = op.join(opts.PROJECT_ROOT, "model", "build_model", "scaled_layers.json")
         output_layers = self.read_output_layers(jsonfile)
@@ -31,7 +34,7 @@ class PretrainedModel:
 
         if net_name == "MobileNetV2":
             from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_mobilenet")(input_tensor)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_mobilenet")(target_image)
             ptmodel = tfapp.MobileNetV2(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "NASNetMobile":
@@ -42,17 +45,17 @@ class PretrainedModel:
                 x = preprocess_input(x)
                 x = tf.image.resize(x, size=NASNET_SHAPE[:2], method="bilinear")
                 return x
-            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(input_tensor)
+            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(target_image)
             ptmodel = tfapp.NASNetMobile(input_shape=NASNET_SHAPE, include_top=False, weights=weights)
 
         elif net_name == "DenseNet121":
             from tensorflow.keras.applications.densenet import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_densenet")(input_tensor)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_densenet")(target_image)
             ptmodel = tfapp.DenseNet121(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "VGG16":
             from tensorflow.keras.applications.vgg16 import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_vgg16")(input_tensor)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_vgg16")(target_image)
             ptmodel = tfapp.VGG16(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "Xception":
@@ -63,12 +66,12 @@ class PretrainedModel:
                 x = preprocess_input(x)
                 x = tf.image.resize(x, size=XCEPTION_SHAPE[:2], method="bilinear")
                 return x
-            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_xception")(input_tensor)
+            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_xception")(target_image)
             ptmodel = tfapp.Xception(input_shape=XCEPTION_SHAPE, include_top=False, weights=weights)
 
         elif net_name == "ResNet50V2":
             from tensorflow.keras.applications.resnet import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_resnet")(input_tensor)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_resnet")(target_image)
             ptmodel = tfapp.ResNet50V2(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "NASNetLarge":
@@ -79,7 +82,7 @@ class PretrainedModel:
                 x = preprocess_input(x)
                 x = tf.image.resize(x, size=NASNET_SHAPE[:2], method="bilinear")
                 return x
-            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(input_tensor)
+            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(target_image)
             ptmodel = tfapp.NASNetLarge(input_shape=NASNET_SHAPE, include_top=False, weights=weights)
         else:
             raise WrongInputException("Wrong pretrained model name: " + net_name)
