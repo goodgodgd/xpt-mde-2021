@@ -256,7 +256,7 @@ def tu_show_stereo_synthesis(features, total_loss, stereo_loss, const_depth, suf
     # cv2.imshow("depth1", depth1)
     pose_err = np.zeros((4, 4, 4))
     pose_err[:, 0, 3] -= 0.
-    features["stereo_T_LR"] = features["stereo_T_LR"]  # + tf.constant(pose_err, tf.float32)
+    features["stereo_T_LR"] = features["stereo_T_LR"] + tf.constant(pose_err, tf.float32)
     # print("stereo_T_LR\n", features["stereo_T_LR"].get_shape().as_list(), "\n", features["stereo_T_LR"][0].numpy())
 
     loss_left, synth_left_ms = \
