@@ -143,9 +143,10 @@ def make_reconstructed_views(model, dataset):
                                                    pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                    intrinsic=features["intrinsic"])
 
-            print("stereo synth size", tf.size(synth_left_ms[scaleidx]).numpy())
-            print("stereo synth zero count", tf.reduce_sum(tf.cast(tf.math.equal(synth_left_ms[scaleidx], 0.), tf.int32)).numpy())
-            print("stereo loss left", tf.squeeze(loss_left[0]))
+            # print("stereo synth size", tf.size(synth_left_ms[scaleidx]).numpy())
+            # zeromask = tf.cast(tf.math.equal(synth_left_ms[scaleidx], 0.), tf.int32)
+            # print("stereo synth zero count", tf.reduce_sum(zeromask).numpy())
+            print(f"saving synthesized image {i}, stereo loss R2L:", tf.squeeze(loss_left[0]).numpy())
             view_imgs["right_source"] = augm_data["target_R"][batchidx]
             view_imgs["synthesized_from_right"] = synth_left_ms[scaleidx][batchidx, srcidx]
             view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])

@@ -1,7 +1,6 @@
 import numpy as np
+import tensorflow as tf
 from tensorflow.keras import layers
-from tensorflow.keras.utils import plot_model
-import glob
 import os.path as op
 
 from config import opts
@@ -62,14 +61,15 @@ class ModelWrapper:
             save_path = op.join(ckpt_dir_path, f"{netname}_{suffix}.h5")
             model.save_weights(save_path)
 
-    def load_weights(self, ckpt_dir_path):
-        pattern = op.join(ckpt_dir_path, "*.h5")
-        files = glob.glob(pattern)
-        for ckpt_file in files:
-            filename = op.basename(ckpt_file)
-            netname = filename.split("_")[0]
-            self.models[netname].load_weights(ckpt_file)
-            print(f"!!! {netname} weights loaded from", ckpt_file)
+    def load_weights(self, ckpt_dir_path, suffix):
+        for netname in self.models.keys():
+            ckpt_file = op.join(ckpt_dir_path, f"{netname}_{suffix}.h5")
+            if op.isfile(ckpt_file):
+                self.models[netname].load_weights(ckpt_file)
+                print(f"===== {netname} weights loaded from", ckpt_file)
+            else:
+                print(f"===== Failed to load weights of {netname}, train from scratch ...")
+                print(f"      tried to load file:", ckpt_file)
 
     def summary(self, **kwargs):
         for model in self.models.values():
@@ -86,7 +86,7 @@ class ModelWrapper:
 
     def plot_model(self, dir_path):
         for netname, model in self.models.items():
-            plot_model(model, to_file=op.join(dir_path, netname + ".png"), show_shapes=True)
+            tf.keras.utils.plot_model(model, to_file=op.join(dir_path, netname + ".png"), show_shapes=True)
 
 
 class StereoModelWrapper(ModelWrapper):
