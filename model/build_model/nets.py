@@ -12,13 +12,20 @@ class DepthNetBasic:
     """
     Basic DepthNet model used in sfmlearner and geonet
     """
-    def __call__(self, total_shape):
+    def __init__(self, total_shape, activation):
         """
         :param total_shape: explicit shape (batch, snippet, height, width, channel)
+        :param activation: depth activation function or functor
+        """
+        self.total_shape = total_shape
+        self.activate_depth = activation
+
+    def __call__(self):
+        """
         In the code below, the 'n' in conv'n' or upconv'n' represents scale of the feature map
         conv'n' implies that it is scaled by 1/2^n
         """
-        batch, snippet, height, width, channel = total_shape
+        batch, snippet, height, width, channel = self.total_shape
         input_shape = (height*snippet, width, channel)
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
         source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
@@ -67,17 +74,18 @@ class DepthNetBasic:
         upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
         return upconv
 
-    def get_scaled_depth(self, x, dst_height, dst_width, scope):
-        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="linear", name=scope + "_conv")(x)
-        # activation
-        disp = layers.Lambda(lambda x: tf.math.sigmoid(x) + 0.01, name=scope + "_scale")(conv)
-        depth = uf.safe_reciprocal_number(disp)
-        #
+    def get_scaled_depth(self, src, dst_height, dst_width, scope):
+        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="linear", name=scope + "_conv")(src)
+        depth = layers.Lambda(lambda x: self.activate_depth(x), name=scope + "_acti")(conv)
+        # disp = layers.Lambda(lambda x: tf.math.sigmoid(x) + 0.01, name=scope + "_acti")(conv)
+        # depth = uf.safe_reciprocal_number(disp)
         conv_up = mu.resize_image(conv, dst_height, dst_width, scope)
         return depth, conv_up, conv
 
 
 class DepthNetNoResize(DepthNetBasic):
+    def __init__(self, total_shape, activation):
+        super().__init__(total_shape, activation)
     """
     Modified BasicModel to remove resizing features in decoding layers
     Width and height of input image must be integer multiple of 128

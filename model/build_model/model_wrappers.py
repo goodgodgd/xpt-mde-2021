@@ -1,6 +1,8 @@
 import numpy as np
 from tensorflow.keras import layers
+from tensorflow.keras.utils import plot_model
 import glob
+import os.path as op
 
 from config import opts
 import utils.util_funcs as uf
@@ -67,6 +69,7 @@ class ModelWrapper:
             filename = op.basename(ckpt_file)
             netname = filename.split("_")[0]
             self.models[netname].load_weights(ckpt_file)
+            print(f"!!! {netname} weights loaded from", ckpt_file)
 
     def summary(self, **kwargs):
         for model in self.models.values():

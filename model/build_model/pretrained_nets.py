@@ -7,18 +7,19 @@ import json
 import settings
 from config import opts
 from utils.util_class import WrongInputException
-from model.build_model.model_base import DepthNetNoResize
+from model.build_model.nets import DepthNetNoResize
 
 NASNET_SHAPE = (130, 386, 3)
 XCEPTION_SHAPE = (134, 390, 3)
 
 
 class PretrainedModel:
-    def __call__(self, total_shape, net_name, pretrained_weight):
+    def __call__(self, total_shape, net_name, pretrained_weight, activation):
         """
         :param total_shape: (batch, snippet, height, width, channel)
         :param net_name: pretrained model name
         :param pretrained_weight: whether use pretrained weights
+        :param activation: activation function to output depth
         :return:
         """
         batch, snippet, height, width, channel = total_shape
@@ -97,7 +98,7 @@ class PretrainedModel:
         # create model with multi scale outputs
         multi_scale_model = tf.keras.Model(ptmodel.input, outputs, name=net_name + "_base")
         multi_scale_features = multi_scale_model(pproc_img)
-        outputs = DecoderForPretrained().decode(multi_scale_features, total_shape)
+        outputs = DecoderForPretrained(total_shape, activation).decode(multi_scale_features)
         depthnet = tf.keras.Model(inputs=input_tensor, outputs=outputs, name=net_name + "_base")
         return depthnet
 
@@ -108,16 +109,17 @@ class PretrainedModel:
 
 
 class DecoderForPretrained(DepthNetNoResize):
-    def decode(self, features_ms, input_shape):
+    def __init__(self, total_shape, activation):
+        super().__init__(total_shape, activation)
+
+    def decode(self, features_ms):
         """
         :param features_ms: [conv_s1, conv_s2, conv_s3, conv_s4]
                 conv'n' denotes convolutional feature map spatially scaled by 1/2^n
                 if input height is 128, heights of features are (64, 32, 16, 8, 4) repectively
-        :param input_shape: input tensor size (batch, snippet, height, width, channel)
-        :return:
         """
         conv1, conv2, conv3, conv4, conv5 = features_ms
-        batch, snippet, height, width, channel = input_shape
+        batch, snippet, height, width, channel = self.total_shape
 
         # decoder by upsampling
         upconv4 = self.upconv_with_skip_connection(conv5, conv4, 256, "dp_up4")             # 1/16

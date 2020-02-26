@@ -1,28 +1,38 @@
+import tensorflow as tf
+
 import settings
 from config import opts
 from utils.util_class import WrongInputException
+import utils.util_funcs as uf
 import model.build_model.nets as nets
 from model.build_model.pretrained_nets import PretrainedModel
 import model.build_model.model_wrappers as mw
 
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
+DEFAULT_SHAPE = (opts.BATCH_SIZE, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
 
 
 class ModelFactory:
-    def __init__(self, input_shape=None, net_names=None, pretrained_weight=None, stereo=None, stereo_extrinsic=None):
-        # set defualt values from config
-        default_shape = (opts.BATCH_SIZE, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-        self.input_shape = default_shape if input_shape is None else input_shape
-        self.net_names = opts.NET_NAMES if net_names is None else net_names
-        self.pretrained_weight = opts.PRETRAINED_WEIGHT if pretrained_weight is None else pretrained_weight
-        self.stereo = opts.STEREO if stereo is None else stereo
-        self.stereo_extrinsic = opts.STEREO_EXTRINSIC if stereo_extrinsic is None else stereo_extrinsic
+    def __init__(self, input_shape=DEFAULT_SHAPE,
+                 net_names=opts.NET_NAMES,
+                 depth_activation=opts.DEPTH_ACTIVATION,
+                 pretrained_weight=opts.PRETRAINED_WEIGHT,
+                 stereo=opts.STEREO,
+                 stereo_extrinsic=opts.STEREO_EXTRINSIC):
+        self.input_shape = input_shape
+        self.net_names = net_names
+        self.activation = depth_activation
+        self.pretrained_weight = pretrained_weight
+        self.stereo = stereo
+        self.stereo_extrinsic = stereo_extrinsic
 
     def get_model(self):
         models = dict()
+        depth_activation = self.activation_factory(self.activation)
+
         if "depth" in self.net_names:
-            depthnet = self.depth_net_factory(self.net_names["depth"])
+            depthnet = self.depth_net_factory(self.net_names["depth"], depth_activation)
             models["depthnet"] = depthnet
 
         if "camera" in self.net_names:
@@ -40,13 +50,21 @@ class ModelFactory:
 
         return model_wrapper
 
-    def depth_net_factory(self, net_name):
+    def activation_factory(self, activ_name):
+        if activ_name == "InverseSigmoid":
+            return InverseSigmoidActivation()
+        elif activ_name == "Exponential":
+            return ExponentialActivation()
+        else:
+            WrongInputException("[activation_factory] wrong activation name: " + activ_name)
+
+    def depth_net_factory(self, net_name, activation):
         if net_name == "DepthNetBasic":
-            depth_net = nets.DepthNetBasic()(self.input_shape)
+            depth_net = nets.DepthNetBasic(self.input_shape, activation)()
         elif net_name == "DepthNetNoResize":
-            depth_net = nets.DepthNetNoResize()(self.input_shape)
+            depth_net = nets.DepthNetNoResize(self.input_shape, activation)()
         elif net_name in PRETRAINED_MODELS:
-            depth_net = PretrainedModel()(self.input_shape, net_name, self.pretrained_weight)
+            depth_net = PretrainedModel()(self.input_shape, net_name, self.pretrained_weight, activation)
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
         return depth_net
@@ -57,6 +75,19 @@ class ModelFactory:
         else:
             raise WrongInputException("[camera_net_factory] wrong pose net name: " + net_name)
         return posenet
+
+
+class InverseSigmoidActivation:
+    def __call__(self, x):
+        y = tf.math.sigmoid(x) + 0.01
+        y = uf.safe_reciprocal_number(y)
+        return y
+
+
+class ExponentialActivation:
+    def __call__(self, x):
+        y = tf.exp(x*15)
+        return y
 
 
 # ==================================================
