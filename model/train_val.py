@@ -51,7 +51,7 @@ class ModelTrainerGraph(TrainValBase):
     @tf.function
     def run_a_batch(self, model, features, compute_loss, optimizer):
         with tf.GradientTape() as tape:
-            # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
+            # NOTE! preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = model(features)
             loss_batch, loss_by_type = compute_loss(preds, features)
 
@@ -60,7 +60,7 @@ class ModelTrainerGraph(TrainValBase):
         loss_mean = tf.reduce_mean(loss_batch)
         loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
         """
-        preds: {"pose": ..., "disp_ms":, ...}
+        preds: {"pose": ..., "depth_ms":, ...}
         loss_mean: loss scalar that is averaged over all this epoch  
         loss_by_type: loss [loss types]
         """
@@ -73,7 +73,7 @@ class ModelTrainerEager(TrainValBase):
 
     def run_a_batch(self, model, features, compute_loss, optimizer):
         with tf.GradientTape() as tape:
-            # NOTE! preds = {"disp_ms": ..., "pose": ...} = model(image)
+            # NOTE! preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = model(features)
             loss_batch, loss_by_type = compute_loss(preds, features)
 
@@ -83,7 +83,7 @@ class ModelTrainerEager(TrainValBase):
         loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
         self.grads = grads
         """
-        preds: {"pose": ..., "disp_ms":, ...}
+        preds: {"pose": ..., "depth_ms":, ...}
         loss_mean: loss scalar that is averaged over all this epoch  
         loss_by_type: loss [loss types]
         """
@@ -124,8 +124,7 @@ def merge_results(features, preds, loss, loss_by_type, stereo):
 
 def get_center_depths(features, preds):
     depth_true = features["depth_gt"].numpy()
-    pred_disp_ms = preds["disp_ms"]
-    pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
+    pred_depth_ms = preds["depth_ms"]
     depth_pred = pred_depth_ms[0].numpy()
     batch, height, width, _ = depth_true.shape
     xs, xe = width // 2 - 10, width // 2 + 10
@@ -159,10 +158,10 @@ def inspect_model(preds, step, steps_per_epoch):
         return
 
     print("")
-    print("disp0--", np.quantile(preds["disp_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
+    print("depth0--", np.quantile(preds["depth_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
     print("dpconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv0", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
-    print("disp3--", np.quantile(preds["disp_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
+    print("depth3--", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("dpconv3", np.quantile(preds["debug_out"][2].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv3", np.quantile(preds["debug_out"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("pose_LR", preds["pose_LR"][0].numpy())

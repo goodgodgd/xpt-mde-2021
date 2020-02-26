@@ -141,17 +141,21 @@ def read_previous_epoch(model_name):
         return 0
 
 
-def disp_to_depth_tensor(disp_ms):
+def safe_reciprocal_number_ms(src_ms):
     """
-    :param disp_ms: list of [batch, height/scale, width/scale, 1]
-    :return:
+    :param src_ms: list of [batch, height/scale, width/scale, 1]
     """
-    depth_ms = []
-    for i, disp in enumerate(disp_ms):
-        mask = tf.cast(disp > 0.00001, tf.float32)
-        depth = (1. / (disp + 0.00001)) * mask
-        depth_ms.append(depth)
-    return depth_ms
+    dst_ms = []
+    for i, src in enumerate(src_ms):
+        dst = safe_reciprocal_number(src)
+        dst_ms.append(dst)
+    return dst_ms
+
+
+def safe_reciprocal_number(src_tensor):
+    mask = tf.cast(src_tensor > 0.00001, tf.float32)
+    dst_tensor = (1. / src_tensor) * mask
+    return dst_tensor
 
 
 def multi_scale_like(image, disp_ms):
@@ -169,7 +173,7 @@ def multi_scale_like(image, disp_ms):
     return image_ms
 
 
-def make_view2(view_imgs):
+def stack_titled_images(view_imgs):
     dsize = (opts.IM_HEIGHT, opts.IM_WIDTH)
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX

@@ -21,7 +21,7 @@ class TotalLoss:
     @shape_check
     def __call__(self, predictions, features):
         """
-        :param predictions: {"disp_ms": .., "pose": ..}
+        :param predictions: {"depth_ms": .., "disp_ms": .., "pose": ..}
             disp_ms: multi scale disparity, list of [batch, height/scale, width/scale, 1]
             pose: 6-DoF poses [batch, num_src, 6]
         :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
@@ -62,15 +62,13 @@ class TotalLoss:
                                 list of [batch, num_src, height/scale, width/scale, 3]
         """
         augm_data = dict()
-        pred_disp_ms = predictions["disp_ms" + suffix]
+        pred_depth_ms = predictions["depth_ms" + suffix]
         pred_pose = predictions["pose" + suffix]
-        pred_depth_ms = uf.disp_to_depth_tensor(pred_disp_ms)
-        augm_data["depth_ms" + suffix] = pred_depth_ms
 
         stacked_image = features["image" + suffix]
         intrinsic = features["intrinsic" + suffix]
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
-        target_ms = uf.multi_scale_like(target_image, pred_disp_ms)
+        target_ms = uf.multi_scale_like(target_image, pred_depth_ms)
         augm_data["source" + suffix] = source_image
         augm_data["target" + suffix] = target_image
         augm_data["target_ms" + suffix] = target_ms
@@ -257,12 +255,12 @@ class StereoDepthLoss(LossBase):
         # synthesize left image from right image
         loss_left, _ = self.stereo_synthesize_loss(source_img=augm_data["target_R"],
                                                    target_ms=augm_data["target_ms"],
-                                                   target_depth_ms=augm_data["depth_ms"],
+                                                   target_depth_ms=predictions["depth_ms"],
                                                    pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                    intrinsic=features["intrinsic"])
         loss_right, _ = self.stereo_synthesize_loss(source_img=augm_data["target"],
                                                     target_ms=augm_data["target_ms_R"],
-                                                    target_depth_ms=augm_data["depth_ms_R"],
+                                                    target_depth_ms=predictions["depth_ms_R"],
                                                     pose_t2s=features["stereo_T_LR"],
                                                     intrinsic=features["intrinsic_R"],
                                                     suffix="_R")

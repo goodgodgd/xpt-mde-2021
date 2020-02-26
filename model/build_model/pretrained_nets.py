@@ -7,18 +7,19 @@ import json
 import settings
 from config import opts
 from utils.util_class import WrongInputException
-from model.build_model.model_base import DepthNetNoResize
+from model.build_model.nets import DepthNetNoResize
 
 NASNET_SHAPE = (130, 386, 3)
 XCEPTION_SHAPE = (134, 390, 3)
 
 
 class PretrainedModel:
-    def __call__(self, total_shape, net_name, pretrained_weight):
+    def __call__(self, total_shape, net_name, pretrained_weight, activation):
         """
         :param total_shape: (batch, snippet, height, width, channel)
         :param net_name: pretrained model name
         :param pretrained_weight: whether use pretrained weights
+        :param activation: activation function to output depth
         :return:
         """
         batch, snippet, height, width, channel = total_shape
@@ -97,7 +98,7 @@ class PretrainedModel:
         # create model with multi scale outputs
         multi_scale_model = tf.keras.Model(ptmodel.input, outputs, name=net_name + "_base")
         multi_scale_features = multi_scale_model(pproc_img)
-        outputs = DecoderForPretrained().decode(multi_scale_features, total_shape)
+        outputs = DecoderForPretrained(total_shape, activation).decode(multi_scale_features)
         depthnet = tf.keras.Model(inputs=input_tensor, outputs=outputs, name=net_name + "_base")
         return depthnet
 
@@ -108,29 +109,31 @@ class PretrainedModel:
 
 
 class DecoderForPretrained(DepthNetNoResize):
-    def decode(self, features_ms, input_shape):
+    def __init__(self, total_shape, activation):
+        super().__init__(total_shape, activation)
+
+    def decode(self, features_ms):
         """
         :param features_ms: [conv_s1, conv_s2, conv_s3, conv_s4]
                 conv'n' denotes convolutional feature map spatially scaled by 1/2^n
                 if input height is 128, heights of features are (64, 32, 16, 8, 4) repectively
-        :param input_shape: input tensor size (batch, snippet, height, width, channel)
-        :return:
         """
         conv1, conv2, conv3, conv4, conv5 = features_ms
-        batch, snippet, height, width, channel = input_shape
+        batch, snippet, height, width, channel = self.total_shape
 
         # decoder by upsampling
         upconv4 = self.upconv_with_skip_connection(conv5, conv4, 256, "dp_up4")             # 1/16
         upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")           # 1/8
-        disp3, disp2_up, dpconv3 = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")   # 1/8
-        upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", disp2_up)  # 1/4
-        disp2, disp1_up, dpconv2 = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")   # 1/4
-        upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", disp1_up)  # 1/2
-        disp1, disp0_up, dpconv1 = self.get_disp_vgg(upconv1, height, width, "dp_disp1")    # 1/2
-        upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
-        disp0, disp_n1_up, dpconv0 = self.get_disp_vgg(upconv0, height, width, "dp_disp0")  # 1
+        depth3, dpconv2_up, dpconv3 = self.get_scaled_depth(upconv3, height // 4, width // 4, "dp_depth3")   # 1/8
+        upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", dpconv2_up)  # 1/4
+        depth2, dpconv1_up, dpconv2 = self.get_scaled_depth(upconv2, height // 2, width // 2, "dp_depth2")   # 1/4
+        upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", dpconv1_up)  # 1/2
+        depth1, dpconv0_up, dpconv1 = self.get_scaled_depth(upconv1, height, width, "dp_depth1")    # 1/2
+        upconv0 = self.upconv_with_skip_connection(upconv1, dpconv0_up, 16, "dp_up0")         # 1
+        depth0, dpconvn1_up, dpconv0 = self.get_scaled_depth(upconv0, height, width, "dp_depth0")  # 1
 
-        outputs = {"disp_ms": [disp0, disp1, disp2, disp3], "debug_out": [dpconv0, upconv0, dpconv3, upconv3]}
+        outputs = {"depth_ms": [depth0, depth1, depth2, depth3],
+                   "debug_out": [dpconv0, upconv0, dpconv3, upconv3]}
         return outputs
 
 

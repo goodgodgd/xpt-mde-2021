@@ -85,7 +85,7 @@ def evaluate_batch(index, x, model):
     predictions = model(x['image'])
     disp_pred_ms = predictions['disp_ms']
     pose_pred = predictions['pose']
-    depth_pred_ms = uf.disp_to_depth_tensor(disp_pred_ms)
+    depth_pred_ms = uf.safe_reciprocal_number_ms(disp_pred_ms)
 
     # evaluate depth from numpy arrays and take only 'abs_rel' metric
     depth_err, scale = compute_depth_error(depth_pred_ms[0].numpy()[0], depth_true.numpy()[0])
@@ -236,7 +236,7 @@ def save_worst_views(frame, x, model, sample_inds, save_path, scale=1):
     predictions = model(x['image'])
     disp_pred_ms = predictions['disp_ms']
     pose_pred = predictions['pose']
-    depth_pred_ms = uf.disp_to_depth_tensor(disp_pred_ms)
+    depth_pred_ms = uf.safe_reciprocal_number_ms(disp_pred_ms)
 
     depth_pred_ms = [depth*scale for depth in depth_pred_ms]
 
@@ -248,7 +248,7 @@ def save_worst_views(frame, x, model, sample_inds, save_path, scale=1):
         srcidx = sample_inds.loc[ind, 'srcidx']
         view_imgs = {"target": target_image, "synthesized": synth_target_pred_ms[0][0, srcidx],
                      "depth": depth_pred_ms[0][0, srcidx], "synth_by_gt": synth_target_gt_ms[0][0, srcidx]}
-        view = uf.make_view2(view_imgs)
+        view = uf.stack_titled_images(view_imgs)
         filename = op.join(save_path, f"{colname[:3]}_{frame:04d}_{srcidx}.png")
         print("save file:", filename)
         cv2.imwrite(filename, view)
