@@ -1,5 +1,12 @@
 import os.path as op
 
+# TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
+RAW_DATA_PATHS = {
+    "kitti_raw": "/media/ian/IanPrivatePP/Datasets/kitti_raw_data",
+    "kitti_odom": "/media/ian/IanPrivatePP/Datasets/kitti_odometry",
+}
+RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384_stereo_clip"
+
 
 class VodeOptions:
     """
@@ -15,17 +22,17 @@ class VodeOptions:
     """
     training options
     """
-    BATCH_SIZE = 8
+    BATCH_SIZE = 4
     EPOCHS = 51
     LEARNING_RATE = 0.0001
     ENABLE_SHAPE_DECOR = False
-    CKPT_NAME = "vode2"
+    CKPT_NAME = "vode5"
     LOG_LOSS = True
 
     """
     path options
     """
-    DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384_stereo_clip"
+    DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
     DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
@@ -47,17 +54,11 @@ class VodeOptions:
     NET_NAMES = {"depth": "NASNetMobile", "camera": "PoseNet"}
     SYNTHESIZER = "SynthesizeMultiScale"
     OPTIMIZER = "adam_constant"
+    DEPTH_ACTIVATION = "InverseSigmoid"
     PRETRAINED_WEIGHT = True
 
 
 opts = VodeOptions()
-
-
-# TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
-RAW_DATA_PATHS = {
-    "kitti_raw": "/media/ian/IanPrivatePP/Datasets/kitti_raw_data",
-    "kitti_odom": "/media/ian/IanPrivatePP/Datasets/kitti_odometry",
-}
 
 
 class WrongDatasetException(Exception):
