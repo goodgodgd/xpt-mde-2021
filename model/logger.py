@@ -119,18 +119,18 @@ def make_reconstructed_views(model, dataset):
             augm_data_rig = total_loss.augment_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
 
-        synth_target_ms = SynthesizeMultiScale()(src_img_stacked=augm_data['source'],
-                                                 intrinsic=features['intrinsic'],
-                                                 pred_depth_ms=augm_data['depth_ms'],
-                                                 pred_pose=predictions['pose'])
+        synth_target_ms = SynthesizeMultiScale()(src_img_stacked=augm_data["source"],
+                                                 intrinsic=features["intrinsic"],
+                                                 pred_depth_ms=predictions["depth_ms"],
+                                                 pred_pose=predictions["pose"])
 
         scaleidx, batchidx, srcidx = 0, 0, 0
-        target_depth = augm_data["depth_ms"][0][batchidx]
+        target_depth = predictions["depth_ms"][0][batchidx]
         target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
-        source_time = augm_data["source"][batchidx, srcidx*opts.IM_HEIGHT:(srcidx + 1)*opts.IM_HEIGHT]
+        time_source = augm_data["source"][batchidx, srcidx*opts.IM_HEIGHT:(srcidx + 1)*opts.IM_HEIGHT]
         view_imgs = {"left_target": augm_data["target"][0],
                      "target_depth": target_depth,
-                     f"source_{srcidx}": source_time,
+                     f"source_{srcidx}": time_source,
                      f"synthesized_from_src{srcidx}": synth_target_ms[scaleidx][batchidx, srcidx]
                      }
         view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
@@ -139,7 +139,7 @@ def make_reconstructed_views(model, dataset):
             loss_left, synth_left_ms = \
                 stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
                                                    target_ms=augm_data["target_ms"],
-                                                   target_depth_ms=augm_data["depth_ms"],
+                                                   target_depth_ms=predictions["depth_ms"],
                                                    pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                    intrinsic=features["intrinsic"])
 
@@ -148,9 +148,9 @@ def make_reconstructed_views(model, dataset):
             print("stereo loss left", tf.squeeze(loss_left[0]))
             view_imgs["right_source"] = augm_data["target_R"][batchidx]
             view_imgs["synthesized_from_right"] = synth_left_ms[scaleidx][batchidx, srcidx]
-            view_imgs["stereo_diff"] = tf.abs(view_imgs["right_source"] - view_imgs["synthesized_from_right"])
+            view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
 
-        view1 = uf.make_view2(view_imgs)
+        view1 = uf.stack_titled_images(view_imgs)
         recon_views.append(view1)
 
     return recon_views

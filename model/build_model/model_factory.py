@@ -64,7 +64,7 @@ class ModelFactory:
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
         return depth_net
-        # return {"disp_ms": disp_ms, "debug_out": debug_out}
+        # return {"depth_ms": disp_ms, "debug_out": debug_out}
 
     def camera_net_factory(self, net_name):
         if net_name == "PoseNet":
@@ -92,6 +92,8 @@ class ModelWrapper:
         for netname, model in self.models.items():
             pred = model(features["image"])
             predictions.update(pred)
+        if "depth_ms" in predictions:
+            predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
         return predictions
 
     def predict(self, dataset, total_steps):
@@ -99,21 +101,16 @@ class ModelWrapper:
 
     def predict_oneside(self, dataset, image_key, total_steps):
         print(f"===== start prediction from [{image_key}] key")
-        predictions = {"disp": [], "pose": []}
+        predictions = {"depth": [], "pose": []}
         for step, features in enumerate(dataset):
-            disp_ms = self.models["depthnet"](features[image_key])
-            predictions["disp"].append(disp_ms[0])
+            depth_ms = self.models["depthnet"](features[image_key])
+            predictions["depth"].append(depth_ms[0])
             pose = self.models["posenet"](features[image_key])
             predictions["pose"].append(pose)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
 
         print("")
-        disp = np.concatenate(predictions["disp"], axis=0)
-        predictions["disp"] = disp
-        mask = (disp > 0)
-        depth = np.zeros(disp.shape, dtype=np.float)
-        depth[mask] = 1. / disp[mask]
-        predictions["depth"] = depth
+        predictions["depth"] = np.concatenate(predictions["depth"], axis=0)
         predictions["pose"] = np.concatenate(predictions["pose"], axis=0)
         return predictions
 
@@ -170,6 +167,10 @@ class StereoModelWrapper(ModelWrapper):
             preds_right = model(features["image_R"])
             preds_right = {key + "_R": value for key, value in preds_right.items()}
             predictions.update(preds_right)
+        if "depth_ms" in predictions:
+            predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
+        if "depth_ms_R" in predictions:
+            predictions["disp_ms_R"] = uf.safe_reciprocal_number_ms(predictions["depth_ms_R"])
         return predictions
 
     def predict(self, dataset, total_steps):
@@ -192,6 +193,10 @@ class StereoPoseModelWrapper(ModelWrapper):
             preds_right = model(features["image_R"])
             preds_right = {key + "_R": value for key, value in preds_right.items()}
             predictions.update(preds_right)
+        if "depth_ms" in predictions:
+            predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
+        if "depth_ms_R" in predictions:
+            predictions["disp_ms_R"] = uf.safe_reciprocal_number_ms(predictions["depth_ms_R"])
 
         # predicts stereo extrinsic in both directions: left to right, right to left
         if "posenet" in self.models:
