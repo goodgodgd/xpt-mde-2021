@@ -1,5 +1,6 @@
 import tensorflow as tf
 from tensorflow.keras import layers
+import utils.util_funcs as uf
 
 import settings
 import model.build_model.model_utils as mu
@@ -11,16 +12,19 @@ class DepthNetBasic:
     """
     Basic DepthNet model used in sfmlearner and geonet
     """
-    def __call__(self, input_tensor, input_shape):
+    def __call__(self, total_shape):
         """
-        :param input_tensor: input image with size: [batch, height, width, channel]
-        :param input_shape: explicit shape (batch, snippet, height, width, channel)
+        :param total_shape: explicit shape (batch, snippet, height, width, channel)
         In the code below, the 'n' in conv'n' or upconv'n' represents scale of the feature map
         conv'n' implies that it is scaled by 1/2^n
         """
-        batch, snippet, height, width, channel = input_shape
+        batch, snippet, height, width, channel = total_shape
+        input_shape = (height*snippet, width, channel)
+        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
+                                                   name="depthnet_split_image")(input_tensor)
 
-        conv0 = mu.convolution(input_tensor, 32, 7, strides=1, name="dp_conv0b")
+        conv0 = mu.convolution(target_image, 32, 7, strides=1, name="dp_conv0b")
         conv1 = mu.convolution(conv0, 32, 7, strides=2, name="dp_conv1a")
         conv1 = mu.convolution(conv1, 64, 5, strides=1, name="dp_conv1b")
         conv2 = mu.convolution(conv1, 64, 5, strides=2, name="dp_conv2a")
@@ -39,15 +43,17 @@ class DepthNetBasic:
         upconv5 = self.upconv_with_skip_connection(upconv6, conv5, 512, "dp_up5")   # 1/32
         upconv4 = self.upconv_with_skip_connection(upconv5, conv4, 256, "dp_up4")   # 1/16
         upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")   # 1/8
-        disp3, disp2_up = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")
+        disp3, disp2_up, dpconv3 = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")
         upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", disp2_up)  # 1/4
-        disp2, disp1_up = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")
+        disp2, disp1_up, dpconv2 = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")
         upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", disp1_up)  # 1/2
-        disp1, disp0_up = self.get_disp_vgg(upconv1, height, width, "dp_disp1")
+        disp1, disp0_up, dpconv1 = self.get_disp_vgg(upconv1, height, width, "dp_disp1")
         upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
-        disp0, disp_n1_up = self.get_disp_vgg(upconv0, height, width, "dp_disp0")
+        disp0, disp_n1_up, dpconv0 = self.get_disp_vgg(upconv0, height, width, "dp_disp0")
 
-        return [disp0, disp1, disp2, disp3]
+        outputs = {"disp_ms": [disp0, disp1, disp2, disp3], "debug_out": [dpconv0, upconv0, dpconv3, upconv3]}
+        depthnet = tf.keras.Model(inputs=input_tensor, outputs=outputs, name="depthnet")
+        return depthnet
 
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
         upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
@@ -61,10 +67,10 @@ class DepthNetBasic:
         return upconv
 
     def get_disp_vgg(self, x, dst_height, dst_width, scope):
-        disp = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
-        disp = layers.Lambda(lambda x: DISP_SCALING_VGG * x + 0.01, name=scope + "_scale")(disp)
+        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="sigmoid", name=scope + "_conv")(x)
+        disp = layers.Lambda(lambda x: DISP_SCALING_VGG * x + 0.01, name=scope + "_scale")(conv)
         disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
-        return disp, disp_up
+        return disp, disp_up, conv
 
 
 class DepthNetNoResize(DepthNetBasic):
@@ -82,10 +88,20 @@ class DepthNetNoResize(DepthNetBasic):
         upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
         return upconv
 
+    def get_disp_vgg(self, x, dst_height, dst_width, scope):
+        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="linear", name=scope + "_conv")(x)
+        sigmoid = tf.math.sigmoid(conv)
+        # disp = layers.Lambda(lambda x: (tf.math.exp(x * 15.) + 0.1) * 0.05, name=scope + "_scale")(conv)
+        disp = layers.Lambda(lambda x: x + 0.01, name=scope + "_scale")(sigmoid)
+        disp_up = mu.resize_image(disp, dst_height, dst_width, scope)
+        return disp, disp_up, conv
+
 
 class PoseNet:
-    def __call__(self, snippet_image, input_shape):
+    def __call__(self, input_shape):
         batch, snippet, height, width, channel = input_shape
+        stacked_image_shape = (snippet*height, width, channel)
+        snippet_image = layers.Input(shape=stacked_image_shape, batch_size=batch, name="posenet_input")
         channel_stack_image = layers.Lambda(lambda image: mu.restack_on_channels(image, snippet),
                                             name="channel_stack")(snippet_image)
         print("[PoseNet] channel stacked image shape=", channel_stack_image.get_shape())
@@ -103,4 +119,5 @@ class PoseNet:
                                        activation=None, name="vo_conv8")(conv7)
         poses = tf.keras.layers.GlobalAveragePooling2D("channels_last", name="vo_pred")(poses)
         poses = tf.keras.layers.Reshape((num_sources, 6), name="vo_reshape")(poses)
-        return poses
+        posenet = tf.keras.Model(inputs=snippet_image, outputs={"pose": poses}, name="posenet")
+        return posenet

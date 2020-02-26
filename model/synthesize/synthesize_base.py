@@ -11,10 +11,11 @@ class SynthesizeMultiScale:
     @shape_check
     def __call__(self, src_img_stacked, intrinsic, pred_depth_ms, pred_pose):
         """
-        :param src_img_stacked: [batch, height*num_src, width, 3]
+        :param src_img_stacked: source images stacked vertically [batch, height*num_src, width, 3]
         :param intrinsic: [batch, 3, 3]
-        :param pred_depth_ms: predicted depth in multi scale, list of [batch, height/scale, width/scale, 1]}
-        :param pred_pose: predicted source pose in twist form [batch, num_src, 6]
+        :param pred_depth_ms: predicted target depth in multi scale, list of [batch, height/scale, width/scale, 1]}
+        :param pred_pose: predicted source pose in twist vector for each source frame [batch, num_src, 6]
+                        it transforms target points to source frame
         :return: reconstructed target view in multi scale, list of [batch, num_src, height/scale, width/scale, 3]}
         """
         # convert pose vector to transformation matrix

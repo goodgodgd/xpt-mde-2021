@@ -27,6 +27,8 @@ class TotalLoss:
         :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
             image: stacked image [batch, height*snippet_len, width, 3]
             intrinsic: camera projection matrix [batch, 3, 3]
+        :return loss_batch: final loss of frames in batch [batch]
+                losses: list of losses computed from calc_losses
         """
         augm_data = self.augment_data(features, predictions)
         if self.stereo:
@@ -38,8 +40,8 @@ class TotalLoss:
             loss = calc_loss(features, predictions, augm_data)
             losses.append(loss * weight)
 
-        total_loss = layers.Lambda(lambda values: tf.reduce_sum(values, axis=0), name="total_loss")(losses)
-        return total_loss
+        loss_batch = layers.Lambda(lambda values: tf.reduce_sum(values, axis=0), name="losses")(losses)
+        return loss_batch, losses
 
     def augment_data(self, features, predictions, suffix=""):
         """
@@ -108,7 +110,7 @@ class PhotometricLossMultiScale(LossBase):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
                                  name=f"photo_loss_{i}")([synt_target, orig_target])
             losses.append(loss)
-        # sum over sources x scales, after stack over scales: [batch, num_src, num_scales]
+        # losses: list of [batch, num_src] -> after stack: [batch, num_src, num_scale] -> after sum: [batch]
         batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
                                    name="photo_loss_sum")(losses)
         return batch_loss
@@ -119,7 +121,6 @@ def photometric_loss_l1(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :param depth: scalar or [batch, height/scale, width/scale, 1]
     :return: photo_loss [batch, num_src]
     """
     orig_target = tf.expand_dims(orig_target, axis=1)
@@ -132,6 +133,7 @@ def photometric_loss_l1(synt_target, orig_target):
     # photo_error: [batch, num_src, height/scale, width/scale, 3]
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
+    # average over image dimensions (h, w, c)
     photo_loss = tf.reduce_mean(photo_error, axis=[2, 3, 4])
     return photo_loss
 
@@ -141,7 +143,6 @@ def photometric_loss_ssim(synt_target, orig_target):
     """
     :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :param depth: scalar or [batch, height/scale, width/scale, 1]
     :return: photo_loss [batch, num_src]
     """
     num_src = synt_target.get_shape().as_list()[1]
@@ -156,19 +157,29 @@ def photometric_loss_ssim(synt_target, orig_target):
     c1 = 0.01 ** 2
     c2 = 0.03 ** 2
     ksize = [1, 3, 3]
-    # mu_x, mu_y: [batch, num_src, height/scale, width/scale, 3]
-    mu_x = tf.nn.avg_pool(x, ksize=ksize, strides=1, padding='SAME')
-    mu_y = tf.nn.avg_pool(y, ksize=ksize, strides=1, padding='SAME')
 
-    sigma_x = tf.nn.avg_pool(x ** 2, ksize, 1, 'SAME') - mu_x ** 2
-    sigma_y = tf.nn.avg_pool(y ** 2, ksize, 1, 'SAME') - mu_y ** 2
-    sigma_xy = tf.nn.avg_pool(x * y, ksize, 1, 'SAME') - mu_x * mu_y
+    # TODO IMPORTANT!
+    #   tf.nn.avg_pool results in error like ['NoneType' object has no attribute 'decode']
+    #   when training model with gradient tape in eager mode,
+    #   but no error in graph mode by @tf.function
+    #   Instead, tf.keras.layers.AveragePooling3D results in NO error in BOTH modes
+    # mu_x, mu_y: [batch, num_src, height/scale, width/scale, 3]
+    average_pool = tf.keras.layers.AveragePooling3D(pool_size=ksize, strides=1, padding="SAME")
+    mu_x = average_pool(x)
+    mu_y = average_pool(y)
+    # mu_x = tf.nn.avg_pool(x, ksize=ksize, strides=1, padding='SAME')
+    # mu_y = tf.nn.avg_pool(y, ksize=ksize, strides=1, padding='SAME')
+
+    sigma_x = average_pool(x ** 2) - mu_x ** 2
+    sigma_y = average_pool(y ** 2) - mu_y ** 2
+    sigma_xy = average_pool(x * y) - mu_x * mu_y
 
     ssim_n = (2 * mu_x * mu_y + c1) * (2 * sigma_xy + c2)
     ssim_d = (mu_x ** 2 + mu_y ** 2 + c1) * (sigma_x + sigma_y + c2)
     ssim = ssim_n / ssim_d
     ssim = tf.clip_by_value((1 - ssim) / 2, 0, 1)
     ssim = tf.where(error_mask, tf.constant(0, dtype=tf.float32), ssim)
+    # average over image dimensions (h, w, c)
     ssim = tf.reduce_mean(ssim, axis=[2, 3, 4])
     return ssim
 
@@ -246,40 +257,119 @@ class StereoDepthLoss(LossBase):
         # synthesize left image from right image
         loss_left, _ = self.stereo_synthesize_loss(source_img=augm_data["target_R"],
                                                    target_ms=augm_data["target_ms"],
-                                                   disp_tgt_ms=predictions["disp_ms"],
+                                                   target_depth_ms=augm_data["depth_ms"],
                                                    pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                    intrinsic=features["intrinsic"])
         loss_right, _ = self.stereo_synthesize_loss(source_img=augm_data["target"],
                                                     target_ms=augm_data["target_ms_R"],
-                                                    disp_tgt_ms=predictions["disp_ms_R"],
+                                                    target_depth_ms=augm_data["depth_ms_R"],
                                                     pose_t2s=features["stereo_T_LR"],
                                                     intrinsic=features["intrinsic_R"],
                                                     suffix="_R")
         losses = loss_left + loss_right
 
-        # sum over sources x scales, after stack over scales: [batch, num_src, num_scales]
+        # losses: list of [batch, num_src] -> after stack: [batch, num_src, num_scale] -> after sum: [batch]
         batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
                                    name="photo_loss_sum")(losses)
         return batch_loss
 
-    def stereo_synthesize_loss(self, source_img, target_ms, disp_tgt_ms, pose_t2s, intrinsic, suffix=""):
+    def stereo_synthesize_loss(self, source_img, target_ms, target_depth_ms, pose_t2s, intrinsic, suffix=""):
         """
         synthesize image from source to target
         :param source_img: [batch, num_src*height, width, 3]
-        :param target_ms: [batch, height, width, 3]
-        :param disp_tgt_ms: [batch, height, width, 1]
+        :param target_ms: list of [batch, height/scale, width/scale, 3]
+        :param target_depth_ms: list of [batch, height/scale, width/scale, 1]
         :param pose_t2s: [batch, num_src, 4, 4]
         :param intrinsic: [batch, num_src, 3, 3]
         :param suffix: "" if right to left, else "_R"
         """
-        depth_ms = uf.disp_to_depth_tensor(disp_tgt_ms)
         pose_stereo = cp.pose_matr2rvec_batch(tf.expand_dims(pose_t2s, 1))
 
-        # synth_xxx_ms: list of [batch, 1, height/scale, width/scale, 3]
-        synth_target_ms = SynthesizeMultiScale()(source_img, intrinsic, depth_ms, pose_stereo)
+        # synth_target_ms: list of [batch, 1, height/scale, width/scale, 3]
+        synth_target_ms = SynthesizeMultiScale()(source_img, intrinsic, target_depth_ms, pose_stereo)
         losses = []
-        for i, (synth_image, source_image, depth) in enumerate(zip(synth_target_ms, target_ms, depth_ms)):
+        for i, (synth_img_sc, target_img_sc) in enumerate(zip(synth_target_ms, target_ms)):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
-                                 name=f"photo_loss_{i}" + suffix)([synth_image, source_image])
+                                 name=f"photo_loss_{i}" + suffix)([synth_img_sc, target_img_sc])
             losses.append(loss)
         return losses, synth_target_ms
+
+
+class StereoPoseLoss(LossBase):
+    def __call__(self, features, predictions, augm_data):
+        pose_lr_pred = predictions["pose_LR"]
+        pose_rl_pred = predictions["pose_RL"]
+        pose_lr_true_mat = features["stereo_T_LR"]
+        pose_lr_true_mat = tf.expand_dims(pose_lr_true_mat, axis=1)
+        pose_rl_true_mat = tf.linalg.inv(pose_lr_true_mat)
+        pose_lr_true = cp.pose_matr2rvec_batch(pose_lr_true_mat)
+        pose_rl_true = cp.pose_matr2rvec_batch(pose_rl_true_mat)
+        # loss: [batch, num_src]
+        loss = tf.keras.losses.MSE(pose_lr_true, pose_lr_pred) + tf.keras.losses.MSE(pose_rl_true, pose_rl_pred)
+        # loss: [batch]
+        loss = tf.reduce_mean(loss, axis=1)
+        return loss
+
+
+# ===== TEST FUNCTIONS
+
+import numpy as np
+
+
+def test_average_pool_3d():
+    print("\n===== start test_average_pool_3d")
+    ksize = [1, 3, 3]
+    average_pool = tf.keras.layers.AveragePooling3D(pool_size=ksize, strides=1, padding="SAME")
+    for i in range(10):
+        x = tf.random.normal((8, 4, 100, 100, 3))
+        y = tf.random.normal((8, 4, 100, 100, 3))
+        mu_x = average_pool(x)
+        mu_y = average_pool(y)
+        npx = x.numpy()
+        npy = y.numpy()
+        npmux = mu_x.numpy()
+        npmuy = mu_y.numpy()
+        print(i, "mean x", npx[0, 0, 10:13, 10:13, 1].mean(), npmux[0, 0, 11, 11, 1],
+              "mean y", npy[0, 0, 10:13, 10:13, 1].mean(), npmuy[0, 0, 11, 11, 1])
+        assert np.isclose(npx[0, 0, 10:13, 10:13, 1].mean(), npmux[0, 0, 11, 11, 1])
+        assert np.isclose(npy[0, 0, 10:13, 10:13, 1].mean(), npmuy[0, 0, 11, 11, 1])
+
+    print("!!! test_average_pool_3d passed")
+
+
+# in this function, "tf.nn.avg_pool()" works fine with gradient tape in eager mode
+def test_gradient_tape():
+    print("\n===== start test_gradient_tape")
+    out_dim = 10
+    x = tf.cast(np.random.uniform(0, 1, (200, 100, 100, 3)), tf.float32)
+    y = tf.cast(np.random.uniform(0, 1, (200, out_dim)), tf.float32)
+    dataset = tf.data.Dataset.from_tensor_slices((x, y))
+    dataset = dataset.shuffle(100).batch(8)
+
+    input_layer = tf.keras.layers.Input(shape=(100, 100, 3))
+    z = tf.keras.layers.Conv2D(64, 3)(input_layer)
+    z = tf.keras.layers.Conv2D(out_dim, 3)(z)
+
+    # EXECUTE
+    z = tf.nn.avg_pool(z, ksize=[3, 3], strides=[1, 1], padding="SAME")
+    z = tf.keras.layers.GlobalAveragePooling2D()(z)
+    model = tf.keras.Model(inputs=input_layer, outputs=z)
+    optimizer = tf.keras.optimizers.SGD()
+
+    for i, (xi, yi) in enumerate(dataset):
+        train_model(model, optimizer, xi, yi)
+        uf.print_progress_status(f"optimizing... {i}")
+
+
+def train_model(model, optimizer, xi, yi):
+    with tf.GradientTape() as tape:
+        yi_hat = model(xi)
+        loss = tf.keras.losses.MeanSquaredError()(yi, yi_hat)
+
+    grad = tape.gradient(loss, model.trainable_weights)
+    optimizer.apply_gradients(zip(grad, model.trainable_weights))
+
+
+if __name__ == "__main__":
+    test_average_pool_3d()
+    test_gradient_tape()

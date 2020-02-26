@@ -169,43 +169,23 @@ def multi_scale_like(image, disp_ms):
     return image_ms
 
 
-def make_view(true_target, synth_target, pred_depth, source_image, batidx, srcidx, verbose=True, synth_gt=None):
+def make_view2(view_imgs):
     dsize = (opts.IM_HEIGHT, opts.IM_WIDTH)
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.5
     color = (0, 0, 255)
     thickness = 1
+    view = []
 
-    trueim = tf.image.resize(true_target[batidx], size=dsize, method="nearest")
-    trueim = to_uint8_image(trueim).numpy()
-    cv2.putText(trueim, 'true target image', location, font, font_scale, color, thickness)
+    for name, flimage in view_imgs.items():
+        flimage_rsz = tf.image.resize(flimage, size=dsize, method="nearest")
+        u8image = to_uint8_image(flimage_rsz).numpy()
+        if u8image.shape[-1] == 1:
+            u8image = cv2.cvtColor(u8image, cv2.COLOR_GRAY2BGR)
+        cv2.putText(u8image, name, location, font, font_scale, color, thickness)
+        view.append(u8image)
 
-    predim = tf.image.resize(synth_target[batidx, srcidx], size=dsize, method="nearest")
-    predim = to_uint8_image(predim).numpy()
-    cv2.putText(predim, 'reconstructed target image', location, font, font_scale, color, thickness)
-
-    reconim = None
-    if synth_gt is not None:
-        reconim = tf.image.resize(synth_gt[batidx, srcidx], size=dsize, method="nearest")
-        reconim = to_uint8_image(reconim).numpy()
-        cv2.putText(reconim, 'reconstructed from gt', location, font, font_scale, color, thickness)
-
-    sourim = to_uint8_image(source_image).numpy()
-    sourim = sourim[batidx, opts.IM_HEIGHT * srcidx:opts.IM_HEIGHT * (srcidx + 1)]
-    cv2.putText(sourim, 'source image', location, font, font_scale, color, thickness)
-
-    dpthim = tf.image.resize(pred_depth[batidx], size=dsize, method="nearest")
-    depth = dpthim.numpy()
-    center = (int(dsize[0]/2), int(dsize[1]/2))
-    if verbose:
-        print("predicted depths\n", depth[center[0]:center[0]+50:10, center[0]-50:center[0]+50:20, 0])
-    dpthim = tf.clip_by_value(dpthim, 0., 10.) / 10.
-    dpthim = tf.image.convert_image_dtype(dpthim, dtype=tf.uint8).numpy()
-    dpthim = cv2.cvtColor(dpthim, cv2.COLOR_GRAY2BGR)
-    cv2.putText(dpthim, 'predicted target depth', location, font, font_scale, color, thickness)
-
-    view = [trueim, predim, sourim, dpthim] if reconim is None else [trueim, reconim, predim, sourim, dpthim]
     view = np.concatenate(view, axis=0)
     return view
 

@@ -14,16 +14,19 @@ XCEPTION_SHAPE = (134, 390, 3)
 
 
 class PretrainedModel:
-    def __call__(self, input_tensor, total_shape, net_name, pretrained_weight):
+    def __call__(self, total_shape, net_name, pretrained_weight):
         """
-        :param input_tensor:
-        :param total_shape:
-        :param net_name:
-        :param pretrained_weight:
+        :param total_shape: (batch, snippet, height, width, channel)
+        :param net_name: pretrained model name
+        :param pretrained_weight: whether use pretrained weights
         :return:
         """
         batch, snippet, height, width, channel = total_shape
-        input_shape = (height, width, channel)
+        input_shape = (height*snippet, width, channel)
+        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
+                                                   name="depthnet_split_image")(input_tensor)
+
         weights = "imagenet" if pretrained_weight else None
         jsonfile = op.join(opts.PROJECT_ROOT, "model", "build_model", "scaled_layers.json")
         output_layers = self.read_output_layers(jsonfile)
@@ -31,8 +34,8 @@ class PretrainedModel:
 
         if net_name == "MobileNetV2":
             from tensorflow.keras.applications.mobilenet_v2 import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_mobilenet")(input_tensor)
-            model = tfapp.MobileNetV2(input_shape=input_shape, include_top=False, weights=weights)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_mobilenet")(target_image)
+            ptmodel = tfapp.MobileNetV2(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "NASNetMobile":
             from tensorflow.keras.applications.nasnet import preprocess_input
@@ -42,18 +45,18 @@ class PretrainedModel:
                 x = preprocess_input(x)
                 x = tf.image.resize(x, size=NASNET_SHAPE[:2], method="bilinear")
                 return x
-            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(input_tensor)
-            model = tfapp.NASNetMobile(input_shape=NASNET_SHAPE, include_top=False, weights=weights)
+            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(target_image)
+            ptmodel = tfapp.NASNetMobile(input_shape=NASNET_SHAPE, include_top=False, weights=weights)
 
         elif net_name == "DenseNet121":
             from tensorflow.keras.applications.densenet import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_densenet")(input_tensor)
-            model = tfapp.DenseNet121(input_shape=input_shape, include_top=False, weights=weights)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_densenet")(target_image)
+            ptmodel = tfapp.DenseNet121(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "VGG16":
             from tensorflow.keras.applications.vgg16 import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_vgg16")(input_tensor)
-            model = tfapp.VGG16(input_shape=input_shape, include_top=False, weights=weights)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_vgg16")(target_image)
+            ptmodel = tfapp.VGG16(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "Xception":
             from tensorflow.keras.applications.xception import preprocess_input
@@ -63,13 +66,13 @@ class PretrainedModel:
                 x = preprocess_input(x)
                 x = tf.image.resize(x, size=XCEPTION_SHAPE[:2], method="bilinear")
                 return x
-            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_xception")(input_tensor)
-            model = tfapp.Xception(input_shape=XCEPTION_SHAPE, include_top=False, weights=weights)
+            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_xception")(target_image)
+            ptmodel = tfapp.Xception(input_shape=XCEPTION_SHAPE, include_top=False, weights=weights)
 
         elif net_name == "ResNet50V2":
             from tensorflow.keras.applications.resnet import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_resnet")(input_tensor)
-            model = tfapp.ResNet50V2(input_shape=input_shape, include_top=False, weights=weights)
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_resnet")(target_image)
+            ptmodel = tfapp.ResNet50V2(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "NASNetLarge":
             from tensorflow.keras.applications.nasnet import preprocess_input
@@ -79,22 +82,24 @@ class PretrainedModel:
                 x = preprocess_input(x)
                 x = tf.image.resize(x, size=NASNET_SHAPE[:2], method="bilinear")
                 return x
-            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(input_tensor)
-            model = tfapp.NASNetLarge(input_shape=NASNET_SHAPE, include_top=False, weights=weights)
+            pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(target_image)
+            ptmodel = tfapp.NASNetLarge(input_shape=NASNET_SHAPE, include_top=False, weights=weights)
         else:
             raise WrongInputException("Wrong pretrained model name: " + net_name)
 
         # collect multi scale convolutional outputs
         outputs = []
         for layer_name in out_layer_names:
-            layer = model.get_layer(name=layer_name[1], index=layer_name[0])
+            layer = ptmodel.get_layer(name=layer_name[1], index=layer_name[0])
             # print("extract feature layers:", layer.name, layer.get_input_shape_at(0), layer.get_output_shape_at(0))
             outputs.append(layer.output)
 
         # create model with multi scale outputs
-        multi_scale_model = tf.keras.Model(model.input, outputs, name=net_name + "_base")
+        multi_scale_model = tf.keras.Model(ptmodel.input, outputs, name=net_name + "_base")
         multi_scale_features = multi_scale_model(pproc_img)
-        return multi_scale_features
+        outputs = DecoderForPretrained().decode(multi_scale_features, total_shape)
+        depthnet = tf.keras.Model(inputs=input_tensor, outputs=outputs, name=net_name + "_base")
+        return depthnet
 
     def read_output_layers(self, filepath):
         with open(filepath, 'r') as fp:
@@ -103,7 +108,7 @@ class PretrainedModel:
 
 
 class DecoderForPretrained(DepthNetNoResize):
-    def __call__(self, features_ms, input_shape):
+    def decode(self, features_ms, input_shape):
         """
         :param features_ms: [conv_s1, conv_s2, conv_s3, conv_s4]
                 conv'n' denotes convolutional feature map spatially scaled by 1/2^n
@@ -117,15 +122,16 @@ class DecoderForPretrained(DepthNetNoResize):
         # decoder by upsampling
         upconv4 = self.upconv_with_skip_connection(conv5, conv4, 256, "dp_up4")             # 1/16
         upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")           # 1/8
-        disp3, disp2_up = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")   # 1/8
+        disp3, disp2_up, dpconv3 = self.get_disp_vgg(upconv3, height // 4, width // 4, "dp_disp3")   # 1/8
         upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", disp2_up)  # 1/4
-        disp2, disp1_up = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")   # 1/4
+        disp2, disp1_up, dpconv2 = self.get_disp_vgg(upconv2, height // 2, width // 2, "dp_disp2")   # 1/4
         upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", disp1_up)  # 1/2
-        disp1, disp0_up = self.get_disp_vgg(upconv1, height, width, "dp_disp1")             # 1/2
+        disp1, disp0_up, dpconv1 = self.get_disp_vgg(upconv1, height, width, "dp_disp1")    # 1/2
         upconv0 = self.upconv_with_skip_connection(upconv1, disp0_up, 16, "dp_up0")         # 1
-        disp0, disp_n1_up = self.get_disp_vgg(upconv0, height, width, "dp_disp0")           # 1
+        disp0, disp_n1_up, dpconv0 = self.get_disp_vgg(upconv0, height, width, "dp_disp0")  # 1
 
-        return [disp0, disp1, disp2, disp3]
+        outputs = {"disp_ms": [disp0, disp1, disp2, disp3], "debug_out": [dpconv0, upconv0, dpconv3, upconv3]}
+        return outputs
 
 
 # ==================================================

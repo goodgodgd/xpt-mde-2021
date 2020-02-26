@@ -3,13 +3,14 @@ import utils.convert_pose as cp
 import evaluate.eval_funcs as ef
 
 
-def compute_metric_pose(pose_pred, pose_true_mat):
+def compute_metric_pose(pose_pred, pose_true_mat, stereo=False):
     """
     :param pose_pred: 6-DoF poses [batch, num_src, 6]
     :param pose_true_mat: 4x4 transformation matrix [batch, num_src, 4, 4]
+    :param stereo: if stereo true, metric is evaluated in ABSOLUTE scale
     """
     pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
-    trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat)
+    trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat, stereo)
     rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
     return tf.reduce_mean(trj_err), tf.reduce_mean(rot_err)
 
