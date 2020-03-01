@@ -3,6 +3,7 @@ import os.path as op
 import cv2
 import numpy as np
 import shutil
+import glob
 
 import settings
 from config import opts, get_raw_data_path
@@ -13,13 +14,14 @@ from utils.util_class import PathManager
 
 def prepare_kitti_data(dataset_in=None, split_in=None):
     datasets = ["kitti_raw", "kitti_odom"] if dataset_in is None else [dataset_in]
-    splits = ["test", "train"] if split_in is None else [split_in]
+    splits = ["test", "train", "val"] if split_in is None else [split_in]
     for dataset in datasets:
         for split in splits:
-            loader = kitti_loader_factory(get_raw_data_path(dataset), dataset, split)
-            prepare_and_save_snippets(loader, dataset, split)
-            if split == "test":
-                create_validation_set(dataset)
+            if split == "val":
+                create_validation_set(dataset, "test")
+            else:
+                loader = kitti_loader_factory(get_raw_data_path(dataset), dataset, split)
+                prepare_and_save_snippets(loader, dataset, split)
 
 
 def prepare_and_save_snippets(loader, dataset, split):
@@ -100,24 +102,58 @@ def get_destination_paths(dstpath, dataset, drive, pose_avail, depth_avail):
     return drive_path, pose_path, depth_path
 
 
-def create_validation_set(dataset):
-    srcpath = op.join(opts.DATAPATH_SRC, f"{dataset}_test")
+def create_validation_set(dataset, src_split):
+    srcpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{src_split}")
     dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_val")
+    assert op.isdir(srcpath), f"[create_validation_set] src path does NOT exist {srcpath}"
 
-    if dataset == "kitti_raw":
-        if os.path.exists(dstpath):
-            os.unlink(dstpath)
-        os.symlink(srcpath, dstpath)
-    elif dataset == "kitti_odom":
-        os.makedirs(dstpath, exist_ok=True)
-        for drive in ["09", "10"]:
-            if os.path.isdir(os.path.join(dstpath, drive)):
-                shutil.rmtree(os.path.join(dstpath, drive))
-            shutil.copytree(os.path.join(srcpath, drive), os.path.join(dstpath, drive))
+    srcpattern = op.join(srcpath, "*", "*.png")
+    srcfiles = glob.glob(srcpattern)
+    # if files are too many, select frames
+    if len(srcfiles) >= opts.VALIDATION_FRAMES:
+        selinds = np.arange(0, opts.VALIDATION_FRAMES, 1) / opts.VALIDATION_FRAMES * len(srcfiles)
+        selinds = selinds.astype(int)
+        selected_files = [srcfiles[ind] for ind in selinds]
+        srcfiles = selected_files
 
-    print(f"\n### create validation split for {dataset}")
+    num_files = len(srcfiles)
+    print(f"num files: {num_files}, start creating validation set")
+    for ind, srcimg in enumerate(srcfiles):
+        imres = copy_file(srcimg, srcpath, dstpath)
+        pores = copy_file(srcimg, srcpath, dstpath, "pose", "txt")
+        deres = copy_file(srcimg, srcpath, dstpath, "depth", "txt")
+        inres = copy_text(srcimg, srcpath, dstpath, "intrinsic.txt")
+        stres = copy_text(srcimg, srcpath, dstpath, "stereo_T_LR.txt")
+        print_progress_status(f"[create_validation_set] copy: {ind}/{num_files}, "
+                              f"{srcimg.replace(opts.DATAPATH_SRC, '')}, "
+                              f"{imres, pores, deres, inres, stres}")
+
+
+def copy_file(imgfile, srcpath, dstpath, dirname=None, extension=None):
+    srcfile = imgfile
+    if dirname:
+        srcfile = op.join(op.dirname(imgfile), dirname, op.basename(imgfile))
+    if extension:
+        srcfile = srcfile[:-3] + extension
+    dstfile = srcfile.replace(srcpath, dstpath)
+    if not op.isfile(srcfile):
+        return 0
+
+    if not op.isdir(op.dirname(dstfile)):
+        os.makedirs(op.dirname(dstfile))
+    shutil.copy(srcfile, dstfile)
+    return 1
+
+
+def copy_text(imgfile, srcpath, dstpath, filename):
+    srcfile = op.join(op.dirname(imgfile), filename)
+    dstfile = srcfile.replace(srcpath, dstpath)
+    if not op.isfile(srcfile) or op.isfile(dstfile):
+        return 0
+    shutil.copy(srcfile, dstfile)
+    return 1
 
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_kitti_data("kitti_raw", "test")
+    prepare_kitti_data("kitti_odom", "val")
