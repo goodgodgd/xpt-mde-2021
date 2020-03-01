@@ -27,8 +27,8 @@ def train(final_epoch=opts.EPOCHS):
     model.compile(optimizer='sgd', loss='mean_absolute_error')
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
-    dataset_train, train_steps = get_dataset(opts.DATASET, "test", True)
-    dataset_val, val_steps = get_dataset(opts.DATASET, "test", False)
+    dataset_train, train_steps = get_dataset(opts.DATASET, "train", True)
+    dataset_val, val_steps = get_dataset(opts.DATASET, "val", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
     trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
     validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
@@ -40,7 +40,6 @@ def train(final_epoch=opts.EPOCHS):
         result_train, depth_train = trainer_graph.run_an_epoch(model, dataset_train)
         result_val, depth_val = validater_graph.run_an_epoch(model, dataset_val)
 
-        # if epoch % 5 == 0:
         print("save intermediate results ...")
         log.save_reconstruction_samples(model, dataset_val, epoch)
         # log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)

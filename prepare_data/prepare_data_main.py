@@ -127,6 +127,8 @@ def create_validation_set(dataset, src_split):
         print_progress_status(f"[create_validation_set] copy: {ind}/{num_files}, "
                               f"{srcimg.replace(opts.DATAPATH_SRC, '')}, "
                               f"{imres, pores, deres, inres, stres}")
+    print("")
+    print(f"Data preparation of {dataset}_val is done")
 
 
 def copy_file(imgfile, srcpath, dstpath, dirname=None, extension=None):

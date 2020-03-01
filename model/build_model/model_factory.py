@@ -86,7 +86,8 @@ class InverseSigmoidActivation:
 
 class ExponentialActivation:
     def __call__(self, x):
-        y = tf.exp(x*15)
+        y = tf.math.sigmoid(x + 1.)*10. - 5.
+        y = tf.exp(y)
         return y
 
 

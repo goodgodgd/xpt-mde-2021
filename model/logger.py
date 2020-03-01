@@ -231,7 +231,7 @@ def copy_or_check_same():
                  not callable(getattr(CurrOptions, attr)) and not attr.startswith('__')}
 
     dont_care_opts = ["BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "ENABLE_SHAPE_DECOR",
-                      "CKPT_NAME", "LOG_LOSS", "PROJECT_ROOT"]
+                      "CKPT_NAME", "LOG_LOSS", "PROJECT_ROOT", "DATASET"]
 
     for key, saved_val in saved_opts.items():
         if key in dont_care_opts:

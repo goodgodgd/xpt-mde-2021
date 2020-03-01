@@ -123,10 +123,13 @@ def merge_results(features, preds, loss, loss_by_type, stereo):
 
 
 def get_center_depths(features, preds):
-    depth_true = features["depth_gt"].numpy()
     pred_depth_ms = preds["depth_ms"]
     depth_pred = pred_depth_ms[0].numpy()
-    batch, height, width, _ = depth_true.shape
+    batch, height, width, _ = depth_pred.shape
+    if "depth_gt" in features:
+        depth_true = features["depth_gt"].numpy()
+    else:
+        depth_true = np.zeros((batch, height, width, 1), np.float)
     xs, xe = width // 2 - 10, width // 2 + 10
     ys, ye = height // 4 * 3 - 10, height // 4 * 3 + 10
 

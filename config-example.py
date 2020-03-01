@@ -5,7 +5,7 @@ RAW_DATA_PATHS = {
     "kitti_raw": "/media/ian/IanPrivatePP/Datasets/kitti_raw_data",
     "kitti_odom": "/media/ian/IanPrivatePP/Datasets/kitti_odometry",
 }
-RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384_stereo_clip"
+RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
 
 
 class VodeOptions:
@@ -18,6 +18,7 @@ class VodeOptions:
     IM_HEIGHT = 128
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
+    VALIDATION_FRAMES = 500
 
     """
     training options
@@ -26,7 +27,7 @@ class VodeOptions:
     EPOCHS = 51
     LEARNING_RATE = 0.0001
     ENABLE_SHAPE_DECOR = False
-    CKPT_NAME = "vode5"
+    CKPT_NAME = "vode1_exp_acti"
     LOG_LOSS = True
 
     """
