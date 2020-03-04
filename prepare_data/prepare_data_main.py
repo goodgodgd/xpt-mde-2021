@@ -7,7 +7,7 @@ import glob
 
 import settings
 from config import opts, get_raw_data_path
-from prepare_data.kitti_loader import kitti_loader_factory
+from prepare_data.example_maker import dataset_loader_factory
 from utils.util_funcs import print_progress_status
 from utils.util_class import PathManager
 
@@ -20,31 +20,33 @@ def prepare_kitti_data(dataset_in=None, split_in=None):
             if split == "val":
                 create_validation_set(dataset, "test")
             else:
-                loader = kitti_loader_factory(get_raw_data_path(dataset), dataset, split)
-                prepare_and_save_snippets(loader, dataset, split)
+                snippet_maker, data_reader = \
+                    dataset_loader_factory(get_raw_data_path(dataset), dataset, split)
+                prepare_and_save_snippets(snippet_maker, data_reader, dataset, split)
 
 
-def prepare_and_save_snippets(loader, dataset, split):
+def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
     dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
     os.makedirs(dstpath, exist_ok=True)
-    num_drives = len(loader.drive_list)
+    drive_paths = data_reader.list_drive_paths()
+    num_drives = len(drive_paths)
 
-    for i, drive in enumerate(loader.drive_list):
-        pose_avail, depth_avail = loader.kitti_reader.pose_avail, loader.kitti_reader.depth_avail
-        data_paths = get_destination_paths(dstpath, dataset, drive, pose_avail, depth_avail)
-        snippet_path = data_paths[0]
-        if op.isdir(snippet_path):
-            print(f"this drive may have already prepared, check this path completed: {snippet_path}")
-            continue
-
-        print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {snippet_path}")
-        frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
+    for i, drive_path in enumerate(drive_paths):
+        frame_indices = data_reader.init_drive(drive_path)
         num_frames = len(frame_indices)
         assert num_frames > 0
 
+        data_paths = data_reader.make_saving_paths(dstpath, drive_path)
+        image_path = data_paths[0]
+        if op.isdir(image_path):
+            print(f"this drive may have already prepared, check this path completed: {image_path}")
+            continue
+
+        print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {image_path}")
+        snippet_maker.set_reader(data_reader)
         with PathManager(data_paths) as pm:
             for k, index in enumerate(frame_indices):
-                example = loader.example_generator(index, opts.SNIPPET_LEN)
+                example = snippet_maker.get_example(index)
                 mean_depth = save_example(example, index, data_paths)
                 print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, index={index}, {k}/{num_frames}")
             # if set_ok() was NOT excuted, the generated path is removed
@@ -54,9 +56,9 @@ def prepare_and_save_snippets(loader, dataset, split):
 
 
 def save_example(example, index, data_paths):
-    snippet_path, pose_path, depth_path = data_paths
+    image_path, pose_path, depth_path = data_paths
     frames = example["image"]
-    filename = op.join(snippet_path, f"{index:06d}.png")
+    filename = op.join(image_path, f"{index:06d}.png")
     cv2.imwrite(filename, frames)
     center_y, center_x = (opts.IM_HEIGHT // 2, opts.IM_WIDTH // 2)
 
@@ -72,14 +74,14 @@ def save_example(example, index, data_paths):
         np.savetxt(filename, depth, fmt="%3.5f")
         mean_depth = depth[center_y - 10:center_y + 10, center_x - 10:center_x + 10].mean()
 
-    filename = op.join(snippet_path, "intrinsic.txt")
+    filename = op.join(image_path, "intrinsic.txt")
     if not op.isfile(filename):
         intrinsic = example["intrinsic"]
         print("intrinsic parameters\n", intrinsic)
         np.savetxt(filename, intrinsic, fmt="%3.5f")
 
     if "stereo_T_LR" in example:
-        filename = op.join(snippet_path, "stereo_T_LR.txt")
+        filename = op.join(image_path, "stereo_T_LR.txt")
         if not op.isfile(filename):
             extrinsic = example["stereo_T_LR"]
             np.savetxt(filename, extrinsic, fmt="%3.5f")
@@ -87,19 +89,6 @@ def save_example(example, index, data_paths):
     # cv2.imshow("example frames", frames)
     # cv2.waitKey(1)
     return mean_depth
-
-
-def get_destination_paths(dstpath, dataset, drive, pose_avail, depth_avail):
-    if dataset == "kitti_raw":
-        drive_path = op.join(dstpath, f"{drive[0]}_{drive[1]}")
-    elif dataset == "kitti_odom":
-        drive_path = op.join(dstpath, drive)
-    else:
-        raise ValueError()
-
-    pose_path = op.join(drive_path, "pose") if pose_avail else None
-    depth_path = op.join(drive_path, "depth") if depth_avail else None
-    return drive_path, pose_path, depth_path
 
 
 def create_validation_set(dataset, src_split):
@@ -158,4 +147,4 @@ def copy_text(imgfile, srcpath, dstpath, filename):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_kitti_data("kitti_odom", "val")
+    prepare_kitti_data()
