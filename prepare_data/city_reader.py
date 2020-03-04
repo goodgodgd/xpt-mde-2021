@@ -11,7 +11,7 @@ when 'stereo' is True, 'get_xxx' function returns two data
 
 class CityReader:
     def __init__(self, stereo=False):
-        self.static_frames = self.read_static_frames()
+        self.static_frames = self._read_static_frames()
         self.stereo = stereo
         self.drive_loader = None
         self.pose_avail = False
@@ -19,31 +19,31 @@ class CityReader:
         self.T_left_right = None
         self.frame_count = [0, 0]
 
-    def read_static_frames(self):
-        filename = self.static_frame_filename()
+    def _read_static_frames(self):
+        filename = self._static_frame_filename()
         with open(filename, "r") as fr:
             lines = fr.readlines()
             static_frames = [line.strip("\n") for line in lines]
         return static_frames
 
-    def static_frame_filename(self):
+    def _static_frame_filename(self):
         raise NotImplementedError()
 
-    def remove_static_frames(self, frames, drive=""):
+    def _remove_static_frames(self, frames, drive=""):
         valid_frames = [frame for frame in frames if frame not in self.static_frames]
         return valid_frames
 
     def list_drive_paths(self, split, base_path):
         raise NotImplementedError()
 
-    def verify_drives(self, drives, base_path):
+    def _verify_drives(self, drives, base_path):
         # verify drive paths
         verified_drives = []
         for drive in drives:
-            drive_path = self.make_raw_data_path(base_path, drive)
+            drive_path = self._make_raw_data_path(base_path, drive)
             if not op.isdir(drive_path):
                 continue
-            frame_inds = self.find_frame_indices(drive_path, 5)
+            frame_inds = self._find_frame_indices(drive_path, 5)
             if len(frame_inds) == 0:
                 continue
             verified_drives.append(drive)
@@ -52,22 +52,22 @@ class CityReader:
         print("frame counts:", dict(zip(["total", "non-static"], self.frame_count)))
         return verified_drives
 
-    def make_raw_data_path(self, base_path, drive):
+    def _make_raw_data_path(self, base_path, drive):
         raise NotImplementedError()
 
-    def create_drive_loader(self, base_path, drive):
+    def _create_drive_loader(self, base_path, drive):
         raise NotImplementedError()
 
-    def find_frame_indices(self, drive_path, snippet_len):
+    def _find_frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def find_last_index(self, drive_path):
-        frame_files = self.find_frame_files(drive_path)
+    def _find_last_index(self, drive_path):
+        frame_files = self._find_frame_files(drive_path)
         last_file = frame_files[-1]
         last_index = last_file.strip("\n").split("/")[-1][:-4]
         return int(last_index)
 
-    def find_frame_files(self, drive_path):
+    def _find_frame_files(self, drive_path):
         raise NotImplementedError()
 
     def get_image(self, index):
@@ -94,7 +94,7 @@ class CityReader:
     def get_stereo_extrinsic(self):
         return self.T_left_right
 
-    def update_stereo_extrinsic(self):
+    def _update_stereo_extrinsic(self):
         cal = self.drive_loader.calib
         T_cam2_cam3 = np.dot(cal.T_cam2_velo, np.linalg.inv(cal.T_cam3_velo))
         self.T_left_right = T_cam2_cam3
@@ -107,7 +107,7 @@ class CitySequenceReader(CityReader):
         self.pose_avail = False
         self.depth_avail = True
 
-    def static_frame_filename(self):
+    def _static_frame_filename(self):
         return op.join(op.dirname(op.abspath(__file__)), "resources", "city_seq_static_frames.txt")
 
     def list_drive_paths(self, split, base_path):
@@ -116,23 +116,23 @@ class CitySequenceReader(CityReader):
             drives = f.readlines()
             drives.sort()
             drives = [tuple(drive.strip("\n").split()) for drive in drives]
-            drives = self.verify_drives(drives, base_path)
+            drives = self._verify_drives(drives, base_path)
             return drives
 
-    def create_drive_loader(self, base_path, drive):
-        print(f"[create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
+    def _create_drive_loader(self, base_path, drive):
+        print(f"[_create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
 
         date, drive_id = drive
         self.drive_loader = pykitti.raw(base_path, date, drive_id)
 
-    def make_raw_data_path(self, base_path, drive):
+    def _make_raw_data_path(self, base_path, drive):
         drive_path = op.join(base_path, drive[0], f"{drive[0]}_drive_{drive[1]}_sync")
         return drive_path
 
-    def find_frame_indices(self, drive_path, snippet_len):
+    def _find_frame_indices(self, drive_path, snippet_len):
         raise NotImplementedError()
 
-    def find_frame_files(self, drive_path):
+    def _find_frame_files(self, drive_path):
         frame_pattern = op.join(drive_path, "image_02", "data", "*.png")
         frame_files = glob(frame_pattern)
         frame_files.sort()

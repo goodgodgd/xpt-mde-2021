@@ -181,18 +181,20 @@ class ExampleMakerStereo(ExampleMaker):
 def test_kitti_loader():
     np.set_printoptions(precision=3, suppress=True, linewidth=150)
     dataset = "kitti_raw"
-    loader = dataset_loader_factory(get_raw_data_path(dataset), dataset, "train")
+    maker, reader = dataset_loader_factory(get_raw_data_path(dataset), dataset, "train")
     delay = 0
     height, width = opts.IM_HEIGHT, opts.IM_WIDTH
+    drive_paths = reader.list_drive_paths()
 
-    for drive in loader.drive_list:
-        frame_indices = loader.load_drive(drive, opts.SNIPPET_LEN)
-        if frame_indices.size == 0:
+    for drive_path in drive_paths:
+        frame_indices = reader.init_drive(drive_path)
+        maker.set_reader(reader)
+        if len(frame_indices) == 0:
             print("this drive is EMPTY")
             continue
 
         for index in frame_indices:
-            example = loader.get_example(index, opts.SNIPPET_LEN)
+            example = maker.get_example(index)
             index = example["index"]
             frames = example["image"]
             poses = example["pose_gt"]

@@ -7,7 +7,7 @@ import glob
 
 import settings
 from config import opts, get_raw_data_path
-from prepare_data.kitti_loader import dataset_loader_factory
+from prepare_data.example_maker import dataset_loader_factory
 from utils.util_funcs import print_progress_status
 from utils.util_class import PathManager
 
@@ -49,8 +49,6 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
                 example = snippet_maker.get_example(index)
                 mean_depth = save_example(example, index, data_paths)
                 print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, index={index}, {k}/{num_frames}")
-                if k > 5:
-                    break
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
         print("")
@@ -91,20 +89,6 @@ def save_example(example, index, data_paths):
     # cv2.imshow("example frames", frames)
     # cv2.waitKey(1)
     return mean_depth
-
-
-# TODO: 이거 지우고 loader에서 가져와
-def get_destination_paths(dstpath, dataset, drive, pose_avail, depth_avail):
-    if dataset == "kitti_raw":
-        drive_path = op.join(dstpath, f"{drive[0]}_{drive[1]}")
-    elif dataset == "kitti_odom":
-        drive_path = op.join(dstpath, drive)
-    else:
-        raise ValueError()
-
-    pose_path = op.join(drive_path, "pose") if pose_avail else None
-    depth_path = op.join(drive_path, "depth") if depth_avail else None
-    return drive_path, pose_path, depth_path
 
 
 def create_validation_set(dataset, src_split):
