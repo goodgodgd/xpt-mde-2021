@@ -3,7 +3,7 @@ import numpy as np
 
 import settings
 from config import opts, get_raw_data_path
-import prepare_data.kitti_reader as ku
+import prepare_data.readers.kitti_reader as ku
 import utils.convert_pose as cp
 from utils.util_class import WrongInputException
 
@@ -41,6 +41,7 @@ class ExampleMaker:
         self.frame_inds = []
 
     def set_reader(self, reader):
+        assert reader.stereo is False
         self.data_reader = reader
 
     def get_example(self, index):
@@ -52,7 +53,9 @@ class ExampleMaker:
         if self.data_reader.pose_avail:
             example["pose_gt"] = self.load_snippet_poses(indices)
         if self.data_reader.depth_avail:
-            example["depth_gt"] = self.load_frame_depth(indices, self.drive_path, raw_img_shape)
+            example["depth_gt"] = self.load_frame_depth(indices, raw_img_shape)
+        if self.data_reader.stereo:
+            example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
         return example
 
     def make_snippet_indices(self, frame_idx):
@@ -96,9 +99,9 @@ class ExampleMaker:
         tgt_to_src_poses = np.stack(tgt_to_src_poses, axis=0)
         return tgt_to_src_poses
 
-    def load_frame_depth(self, frame_idx, drive_path, raw_img_shape):
+    def load_frame_depth(self, frame_idx, raw_img_shape):
         dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
-        depth_map = self.data_reader.get_depth_map(frame_idx, drive_path, raw_img_shape, dst_shape)
+        depth_map = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         return depth_map
 
     def load_intrinsic(self, raw_img_shape):
@@ -117,21 +120,11 @@ class ExampleMakerStereo(ExampleMaker):
     def __init__(self, base_path, snippet_len):
         super().__init__(base_path, snippet_len)
 
-    def get_example(self, index):
-        indices = self.make_snippet_indices(index)
-        example = dict()
-        example["index"] = index
-        example["image"], raw_img_shape = self.load_snippet_frames_stereo(indices)
-        example["intrinsic"] = self.load_intrinsic_stereo(raw_img_shape)
-        if self.data_reader.pose_avail:
-            example["pose_gt"] = self.load_snippet_poses_stereo(indices)
-        if self.data_reader.depth_avail:
-            example["depth_gt"] = self.load_frame_depth_stereo(index, self.drive_path, raw_img_shape)
-        if self.data_reader.stereo:
-            example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
-        return example
+    def set_reader(self, reader):
+        assert reader.stereo
+        self.data_reader = reader
 
-    def load_snippet_frames_stereo(self, frame_indices):
+    def load_snippet_frames(self, frame_indices):
         frames = []
         raw_img_shape = ()
         for ind in frame_indices:
@@ -147,7 +140,7 @@ class ExampleMakerStereo(ExampleMaker):
         frames = np.concatenate(frames, axis=0)
         return frames, raw_img_shape
 
-    def load_intrinsic_stereo(self, raw_img_shape):
+    def load_intrinsic(self, raw_img_shape):
         intrin_lef, intrin_rig = self.data_reader.get_intrinsic()
         intrinsic = np.concatenate([intrin_lef, intrin_rig], axis=1)
         sx = opts.IM_WIDTH / raw_img_shape[1]
@@ -156,7 +149,7 @@ class ExampleMakerStereo(ExampleMaker):
         intrinsic[1, :] = intrinsic[1, :] * sy
         return intrinsic
 
-    def load_snippet_poses_stereo(self, frame_indices):
+    def load_snippet_poses(self, frame_indices):
         pose_seq_lef = []
         pose_seq_rig = []
         for ind in frame_indices:
@@ -171,9 +164,9 @@ class ExampleMakerStereo(ExampleMaker):
         poses = np.concatenate([pose_seq_lef, pose_seq_rig], axis=1)
         return poses
 
-    def load_frame_depth_stereo(self, frame_idx, drive_path, raw_img_shape):
+    def load_frame_depth(self, frame_idx, raw_img_shape):
         dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
-        depth_lef, depth_rig = self.data_reader.get_depth_map(frame_idx, drive_path, raw_img_shape, dst_shape)
+        depth_lef, depth_rig = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         depth = np.concatenate([depth_lef, depth_rig], axis=1)
         return depth
 
