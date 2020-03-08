@@ -42,7 +42,7 @@ def train(final_epoch=opts.EPOCHS):
 
         print("save intermediate results ...")
         log.save_reconstruction_samples(model, dataset_val, epoch)
-        # log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
+        log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
         save_model(model, result_val[0])
         log.save_log(epoch, result_train, result_val, depth_train, depth_val)
 

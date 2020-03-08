@@ -129,7 +129,7 @@ def get_center_depths(features, preds):
     if "depth_gt" in features:
         depth_true = features["depth_gt"].numpy()
     else:
-        depth_true = np.zeros((batch, height, width, 1), np.float)
+        depth_true = np.ones((batch, height, width, 1), np.float)
     xs, xe = width // 2 - 10, width // 2 + 10
     ys, ye = height // 4 * 3 - 10, height // 4 * 3 + 10
 

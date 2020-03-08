@@ -22,9 +22,9 @@ def save_log(epoch, results_train, results_val, depth_train, depth_val):
     :param depth_train: mean depths of train data, [2, samples] (gt for row0, pred for row1)
     :param depth_val: mean depths of validation data, [2, samples] (gt for row0, pred for row1)
     """
+    save_depths(depth_train, depth_val, "depths.txt")
     results = save_results(epoch, results_train[:3], results_val[:3], ["loss", "trj_err", "rot_err"], "history.txt")
     _ = save_results(epoch, results_train[3:], results_val[3:], list(opts.LOSS_WEIGHTS.keys()), "losses.txt")
-    save_depths(depth_train, depth_val, "depths.txt")
     draw_and_save_plot(results, "history.png")
 
 
@@ -58,10 +58,12 @@ def save_depths(depth_train, depth_val, filename):
     """
     depth_xxx: mean depths from a epoch, true depths in row 0, predicted depths in row 1
     """
-    stride = depth_train.shape[1] // 8
-    depth_train = depth_train[:, 0:-1:stride]
-    depth_val = depth_val[:, 0:-1:stride]
+    stride_train = depth_train.shape[1] // 8
+    depth_train = depth_train[:, 0:-1:stride_train][:, :8]
+    stride_val = depth_val.shape[1] // 4
+    depth_val = depth_val[:, 0:-1:stride_val][:, :4]
     depths = np.concatenate([depth_train, [[-1], [-2]], depth_val], axis=1)
+    print("save_depths:", depth_train.shape, depth_val.shape, depths.shape)
     filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
     # if the file existed, append only row 1 to it
     if op.isfile(filepath):
