@@ -73,8 +73,7 @@ class KittiReader(DataReaderBase):
                 continue
             verified_drives.append(drive_path)
 
-        print("drive list:", [op.basename(drive) for drive in verified_drives])
-        print("frame counts:", dict(zip(["total", "non-static"], self.frame_count)))
+        print("[_verify_drives] frame counts:", dict(zip(["total", "non-static"], self.frame_count)))
         return verified_drives
 
     def _read_static_frames(self):
@@ -139,6 +138,7 @@ class KittiRawReader(KittiReader):
             drives = [tuple(drive.strip("\n").split()) for drive in drives]
             drives = [self._make_raw_data_path(drive) for drive in drives]
             drives = self._verify_drives(drives)
+            print("[list_drive_paths] drive list:", [op.basename(drive) for drive in drives])
             return drives
 
     def parse_drive_path(self, drive_path):
@@ -198,7 +198,7 @@ class KittiRawReader(KittiReader):
         return op.join(prepare_data_path, "resources", "kitti_raw_static_frames.txt")
 
     def _create_drive_loader(self, drive_path):
-        print(f"[_create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
+        print(f"[_create_drive_loader] drive: {op.basename(drive_path)}, pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         date, drive_id = self.parse_drive_path(drive_path)
         return pykitti.raw(self.base_path, date, drive_id)
 
@@ -219,14 +219,14 @@ class KittiRawTrainReader(KittiRawReader):
 
         self.frame_count[0] += len(frame_files_all)
         frame_files = self._remove_static_frames(frame_files_all)
-        if not frame_files:
-            print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files_all)} -> 0")
+        if len(frame_files) < 2:
+            # print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files_all)} -> 0")
             return []
 
         self.frame_count[1] += len(frame_files)
         frame_inds = [frame.split()[-1] for frame in frame_files]
         frame_inds.sort()
-        print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files_all)} -> {len(frame_inds)}")
+        # print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files_all)} -> {len(frame_inds)}")
         return frame_inds
 
 
@@ -249,7 +249,7 @@ class KittiRawTestReader(KittiRawReader):
             self.frame_count[1] += len(test_frames)
             frame_inds = [frame.split()[-1] for frame in test_frames]
             frame_inds.sort()
-            print(f"[find_frame_names] {op.basename(drive_path)}: {len(test_frames)} -> {len(frame_inds)}")
+            # print(f"[find_frame_names] {op.basename(drive_path)}: {len(test_frames)} -> {len(frame_inds)}")
             return frame_inds
 
 
@@ -306,6 +306,7 @@ class KittiOdomTrainReader(KittiOdomReader):
         drives = [f"{i:02d}" for i in range(11, 22)]
         drives = [self._make_raw_data_path(drive) for drive in drives]
         drives = self._verify_drives(drives)
+        print("[list_drive_paths] drive list:", [op.basename(drive) for drive in drives])
         return drives
 
     def get_quat_pose(self, index):
@@ -313,8 +314,8 @@ class KittiOdomTrainReader(KittiOdomReader):
         return None
 
     def _create_drive_loader(self, drive_path):
-        print(f"[_create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         drive = op.basename(drive_path)
+        print(f"[_create_drive_loader] drive: {drive}, pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         return pykitti.odometry(self.base_path, drive)
 
     def _find_frame_names(self, drive_path):
@@ -328,14 +329,14 @@ class KittiOdomTrainReader(KittiOdomReader):
 
         self.frame_count[0] += len(frame_files_all)
         frame_files = self._remove_static_frames(frame_files_all)
-        if not frame_files:
+        if len(frame_files) < 2:
             print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files_all)} -> 0")
             return []
 
         self.frame_count[1] += len(frame_files)
         frame_inds = [frame.split()[-1] for frame in frame_files]
         frame_inds.sort()
-        print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files_all)} -> {len(frame_inds)}")
+        # print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files_all)} -> {len(frame_inds)}")
         return frame_inds
 
 
@@ -350,6 +351,7 @@ class KittiOdomTestReader(KittiOdomReader):
         drives = [f"{i:02d}" for i in range(0, 11)]
         drives = [self._make_raw_data_path(drive) for drive in drives]
         drives = self._verify_drives(drives)
+        print("[list_drive_paths] drive list:", [op.basename(drive) for drive in drives])
         return drives
 
     def get_quat_pose(self, index):
@@ -369,7 +371,7 @@ class KittiOdomTestReader(KittiOdomReader):
         drive = op.basename(drive_path)
         pose_file = op.join(self.base_path, "poses", drive+".txt")
         self.poses = np.loadtxt(pose_file)
-        print(f"[_create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
+        print(f"[_create_drive_loader] drive: {drive}, pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         return pykitti.odometry(self.base_path, drive)
 
     def _find_frame_names(self, drive_path):
@@ -386,5 +388,5 @@ class KittiOdomTestReader(KittiOdomReader):
         # convert to frame name to int
         frame_inds = [int(frame.split()[-1]) for frame in frame_files]
         frame_inds.sort()
-        print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files)} -> {len(frame_inds)}")
+        # print(f"[find_frame_names] {op.basename(drive_path)}: {len(frame_files)} -> {len(frame_inds)}")
         return frame_inds

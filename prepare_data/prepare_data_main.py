@@ -41,7 +41,7 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
         data_paths = data_reader.make_saving_paths(dstpath, drive_path)
         image_path = data_paths[0]
         if op.isdir(image_path):
-            print(f"this drive may have already prepared, check this path completed: {image_path}")
+            print(f"this drive is already prepared, check this path completed: {image_path.replace(opts.DATAPATH_SRC, '')}")
             continue
 
         print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {image_path}")
@@ -59,7 +59,7 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
         print("")
-    print(f"Data preparation of {dataset}_{split} is done")
+    print(f"===== Data preparation of {dataset}_{split} is done\n\n")
 
 
 def save_example(example, filename, data_paths):
@@ -102,6 +102,10 @@ def create_validation_set(dataset, src_split):
     srcpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{src_split}")
     dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_val")
     assert op.isdir(srcpath), f"[create_validation_set] src path does NOT exist {srcpath}"
+    if op.isdir(dstpath):
+        print("!!! The validation set has already been created. To create validation set, "
+              "remove validation set and try again")
+        return
 
     srcpattern = op.join(srcpath, "*", "*.png")
     srcfiles = glob.glob(srcpattern)
@@ -124,7 +128,7 @@ def create_validation_set(dataset, src_split):
                               f"{srcimg.replace(opts.DATAPATH_SRC, '')}, "
                               f"{imres, pores, deres, inres, stres}")
     print("")
-    print(f"Data preparation of {dataset}_val is done")
+    print(f"===== Data preparation of {dataset}_val is done\n\n")
 
 
 def copy_file(imgfile, srcpath, dstpath, dirname=None, extension=None):
