@@ -27,8 +27,8 @@ def train(final_epoch=opts.EPOCHS):
     model.compile(optimizer='sgd', loss='mean_absolute_error')
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
-    dataset_train, train_steps = get_dataset(opts.DATASET, "train", True)
-    dataset_val, val_steps = get_dataset(opts.DATASET, "val", False)
+    dataset_train, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
+    dataset_val, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
     optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
     trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
     validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
@@ -113,7 +113,7 @@ def predict(weight_name="latest.h5"):
     model = try_load_weights(model, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
-    dataset, steps = get_dataset(opts.DATASET, "test", False, batch_size)
+    dataset, steps = get_dataset(opts.DATASET_TO_USE, "test", False, batch_size)
     # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     # TODO: predict and collect outputs in for loop
     predictions = model.predict(dataset, steps)

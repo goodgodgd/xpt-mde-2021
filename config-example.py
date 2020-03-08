@@ -4,6 +4,8 @@ import os.path as op
 RAW_DATA_PATHS = {
     "kitti_raw": "/media/ian/IanPrivatePP/Datasets/kitti_raw_data",
     "kitti_odom": "/media/ian/IanPrivatePP/Datasets/kitti_odometry",
+    "cityscapes": "/media/ian/IanPrivatePP/Datasets/cityscapes",
+    "cityscapes_seq": "/media/ian/IanPrivatePP/Datasets/cityscapes",
 }
 RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
 
@@ -12,13 +14,18 @@ class VodeOptions:
     """
     data options
     """
-    STEREO = True
+    STEREO = False
     SNIPPET_LEN = 5
     IM_WIDTH = 384
     IM_HEIGHT = 128
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
     VALIDATION_FRAMES = 500
+    DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test", "val"],
+                           "kitti_odom": ["train", "test", "val"],
+                           "cityscapes": ["train_extra", "test"],
+                           "cityscapes_seq": ["train", "test", "val"],
+                           }
 
     """
     training options
@@ -46,12 +53,12 @@ class VodeOptions:
     """
     model options: network architecture, loss wegihts, ...
     """
+    DATASET_TO_USE = "kitti_raw"
     STEREO_EXTRINSIC = True
     SSIM_RATIO = 0.8
     LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO)*1., "SSIM": SSIM_RATIO*0.5, "smoothe": 1.,
                     "L1_R": (1. - SSIM_RATIO)*1., "SSIM_R": SSIM_RATIO*0.5, "smoothe_R": 1.,
                     "stereo_L1": 0.04, "stereo_pose": 0.5}
-    DATASET = "kitti_raw"
     NET_NAMES = {"depth": "NASNetMobile", "camera": "PoseNet"}
     SYNTHESIZER = "SynthesizeMultiScale"
     OPTIMIZER = "adam_constant"

@@ -3,7 +3,8 @@ import numpy as np
 
 import settings
 from config import opts, get_raw_data_path
-import prepare_data.kitti_reader as ku
+import prepare_data.readers.kitti_reader as kr
+import prepare_data.readers.city_reader as cr
 import utils.convert_pose as cp
 from utils.util_class import WrongInputException
 
@@ -13,35 +14,45 @@ KittiReader: reads data from files
 """
 
 
-def dataset_loader_factory(raw_data_path, dataset, split, stereo=opts.STEREO, snippet_len=opts.SNIPPET_LEN):
+def dataset_reader_factory(raw_data_path, dataset, split, stereo=opts.STEREO):
     if dataset == "kitti_raw" and split == "train":
-        data_reader = ku.KittiRawTrainReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = kr.KittiRawTrainReader(raw_data_path, stereo)
     elif dataset == "kitti_raw" and split == "test":
-        data_reader = ku.KittiRawTestReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = kr.KittiRawTestReader(raw_data_path, stereo)
     elif dataset == "kitti_odom" and split == "train":
-        data_reader = ku.KittiOdomTrainReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = kr.KittiOdomTrainReader(raw_data_path, stereo)
     elif dataset == "kitti_odom" and split == "test":
-        data_reader = ku.KittiOdomTestReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = kr.KittiOdomTestReader(raw_data_path, stereo)
+    elif dataset == "cityscapes":
+        data_reader = cr.CityScapesReader(raw_data_path, stereo, split)
+    elif dataset == "cityscapes_seq":
+        data_reader = cr.CityScapesReader(raw_data_path, stereo, split, "_sequence")
     else:
         raise WrongInputException(f"Wrong dataset and split: {dataset}, {split}")
 
+    return data_reader
+
+
+def example_maker_factory(raw_data_path, stereo=opts.STEREO, snippet_len=opts.SNIPPET_LEN):
     if stereo:
         snippet_maker = ExampleMakerStereo(raw_data_path, snippet_len)
     else:
         snippet_maker = ExampleMaker(raw_data_path, snippet_len)
-    return snippet_maker, data_reader
+    return snippet_maker
 
 
 class ExampleMaker:
     def __init__(self, base_path, snippet_len):
         self.base_path = base_path
         self.snippet_len = snippet_len
-        self.data_reader = ku.KittiRawTrainReader("", True, 2)
+        self.data_reader = kr.KittiRawTrainReader("", True)
         self.drive_path = ""
-        self.frame_inds = []
+        self.num_frames = 0
 
-    def set_reader(self, reader):
+    def set_reader(self, reader, num_frames):
+        assert reader.stereo is False
         self.data_reader = reader
+        self.num_frames = num_frames
 
     def get_example(self, index):
         indices = self.make_snippet_indices(index)
@@ -52,13 +63,15 @@ class ExampleMaker:
         if self.data_reader.pose_avail:
             example["pose_gt"] = self.load_snippet_poses(indices)
         if self.data_reader.depth_avail:
-            example["depth_gt"] = self.load_frame_depth(indices, self.drive_path, raw_img_shape)
+            example["depth_gt"] = self.load_frame_depth(index, raw_img_shape)
+        if self.data_reader.stereo:
+            example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
         return example
 
     def make_snippet_indices(self, frame_idx):
         halflen = self.snippet_len // 2
         indices = np.arange(frame_idx-halflen, frame_idx+halflen+1)
-        indices = np.clip(indices, 0, self.data_reader.last_index).tolist()
+        indices = np.clip(indices, 0, self.num_frames - 1).tolist()
         return indices
 
     def load_snippet_frames(self, frame_indices):
@@ -96,9 +109,9 @@ class ExampleMaker:
         tgt_to_src_poses = np.stack(tgt_to_src_poses, axis=0)
         return tgt_to_src_poses
 
-    def load_frame_depth(self, frame_idx, drive_path, raw_img_shape):
+    def load_frame_depth(self, frame_idx, raw_img_shape):
         dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
-        depth_map = self.data_reader.get_depth_map(frame_idx, drive_path, raw_img_shape, dst_shape)
+        depth_map = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         return depth_map
 
     def load_intrinsic(self, raw_img_shape):
@@ -117,21 +130,12 @@ class ExampleMakerStereo(ExampleMaker):
     def __init__(self, base_path, snippet_len):
         super().__init__(base_path, snippet_len)
 
-    def get_example(self, index):
-        indices = self.make_snippet_indices(index)
-        example = dict()
-        example["index"] = index
-        example["image"], raw_img_shape = self.load_snippet_frames_stereo(indices)
-        example["intrinsic"] = self.load_intrinsic_stereo(raw_img_shape)
-        if self.data_reader.pose_avail:
-            example["pose_gt"] = self.load_snippet_poses_stereo(indices)
-        if self.data_reader.depth_avail:
-            example["depth_gt"] = self.load_frame_depth_stereo(index, self.drive_path, raw_img_shape)
-        if self.data_reader.stereo:
-            example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
-        return example
+    def set_reader(self, reader, num_frames):
+        assert reader.stereo
+        self.data_reader = reader
+        self.num_frames = num_frames
 
-    def load_snippet_frames_stereo(self, frame_indices):
+    def load_snippet_frames(self, frame_indices):
         frames = []
         raw_img_shape = ()
         for ind in frame_indices:
@@ -147,7 +151,7 @@ class ExampleMakerStereo(ExampleMaker):
         frames = np.concatenate(frames, axis=0)
         return frames, raw_img_shape
 
-    def load_intrinsic_stereo(self, raw_img_shape):
+    def load_intrinsic(self, raw_img_shape):
         intrin_lef, intrin_rig = self.data_reader.get_intrinsic()
         intrinsic = np.concatenate([intrin_lef, intrin_rig], axis=1)
         sx = opts.IM_WIDTH / raw_img_shape[1]
@@ -156,7 +160,7 @@ class ExampleMakerStereo(ExampleMaker):
         intrinsic[1, :] = intrinsic[1, :] * sy
         return intrinsic
 
-    def load_snippet_poses_stereo(self, frame_indices):
+    def load_snippet_poses(self, frame_indices):
         pose_seq_lef = []
         pose_seq_rig = []
         for ind in frame_indices:
@@ -171,9 +175,9 @@ class ExampleMakerStereo(ExampleMaker):
         poses = np.concatenate([pose_seq_lef, pose_seq_rig], axis=1)
         return poses
 
-    def load_frame_depth_stereo(self, frame_idx, drive_path, raw_img_shape):
+    def load_frame_depth(self, frame_idx, raw_img_shape):
         dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
-        depth_lef, depth_rig = self.data_reader.get_depth_map(frame_idx, drive_path, raw_img_shape, dst_shape)
+        depth_lef, depth_rig = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         depth = np.concatenate([depth_lef, depth_rig], axis=1)
         return depth
 

@@ -49,27 +49,6 @@ def generate_depth_map(velo_data, T_cam_velo, K_cam, orig_shape, target_shape):
     return depth
 
 
-def read_calib_file(path):
-    # taken from https://github.com/hunse/kitti
-    float_chars = set("0123456789.e+- ")
-    data = {}
-    with open(path, 'r') as f:
-        for line in f.readlines():
-            key, value = line.split(':', 1)
-            value = value.strip()
-            data[key] = value
-            # if value is array of numbers, not date time, convert to numpy array
-            if float_chars.issuperset(value):
-                # try to cast to float array
-                try:
-                    # change: np.array(map(f, v)) -> np.array(list(map(f, v)))
-                    data[key] = np.array(list(map(float, value.split(' '))))
-                except ValueError:
-                    # casting error: data[key] already eq. value, so pass
-                    pass
-    return data
-
-
 def sub2ind(matrixSize, rowSub, colSub):
     m, n = matrixSize
     return rowSub * (n - 1) + colSub - 1

@@ -16,6 +16,7 @@ class TfrecordMaker:
         # check if there is depth data available
         depths = glob(srcpath + "/*/depth")
         poses = glob(srcpath + "/*/pose")
+        print("maker init", poses, depths)
         self.depth_avail = True if depths else False
         self.pose_avail = True if poses else False
         self.stereo = stereo
