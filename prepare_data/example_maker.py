@@ -25,6 +25,8 @@ def dataset_reader_factory(raw_data_path, dataset, split, stereo=opts.STEREO):
         data_reader = kr.KittiOdomTestReader(raw_data_path, stereo)
     elif dataset == "cityscapes":
         data_reader = cr.CityScapesReader(raw_data_path, stereo, split)
+    elif dataset == "cityscapes_seq":
+        data_reader = cr.CityScapesReader(raw_data_path, stereo, split, "_sequence")
     else:
         raise WrongInputException(f"Wrong dataset and split: {dataset}, {split}")
 

@@ -12,10 +12,9 @@ from utils.util_funcs import print_progress_status
 from utils.util_class import PathManager
 
 
-def prepare_kitti_data(dataset_in=None, split_in=None):
-    datasets = ["kitti_raw", "kitti_odom"] if dataset_in is None else [dataset_in]
-    splits = ["test", "train", "val"] if split_in is None else [split_in]
-    for dataset in datasets:
+def prepare_datasets():
+    datasets = opts.DATASETS_TO_PREPARE
+    for dataset, splits in datasets.items():
         for split in splits:
             if split == "val":
                 create_validation_set(dataset, "test")
@@ -29,13 +28,16 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
     dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
     os.makedirs(dstpath, exist_ok=True)
     drive_paths = data_reader.list_drive_paths()
+    if not drive_paths:
+        print("[Failure] There is no drive data in", dstpath)
+        return
+
     num_drives = len(drive_paths)
     half_len = opts.SNIPPET_LEN // 2
 
     for i, drive_path in enumerate(drive_paths):
         num_frames = data_reader.init_drive(drive_path)
         assert num_frames > 0
-
         data_paths = data_reader.make_saving_paths(dstpath, drive_path)
         image_path = data_paths[0]
         if op.isdir(image_path):
@@ -45,16 +47,15 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
         print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {image_path}")
         snippet_maker.set_reader(data_reader, num_frames)
         with PathManager(data_paths) as pm:
-            frame_indices = range(half_len, num_frames - half_len) if split in "train" else range(0, num_frames)
+            frame_indices = range(0, num_frames) if split in "test" else range(half_len, num_frames - half_len)
             for index in frame_indices:
                 example = snippet_maker.get_example(index)
                 filename = data_reader.get_filename(index)
                 mean_depth = save_example(example, filename, data_paths)
                 print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, file={filename} {index}/{num_frames}")
 
-                if dataset == "cityscapes" and index > 30:
-                    break
-
+                # if index > 10:
+                #     break
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
         print("")
@@ -153,4 +154,4 @@ def copy_text(imgfile, srcpath, dstpath, filename):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_kitti_data("cityscapes", "train_extra")
+    prepare_datasets()
