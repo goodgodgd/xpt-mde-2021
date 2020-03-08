@@ -1,19 +1,18 @@
 
 class DataReaderBase:
-    def __init__(self, base_path, stereo=False, frame_margin=2):
+    def __init__(self, base_path, stereo=False):
         """
         when 'stereo' is True, 'get_xxx' function returns two data in tuple
         """
         self.base_path = base_path
         self.stereo = stereo
-        self.frame_margin = frame_margin
         self.split = ""
         self.pose_avail = True
         self.depth_avail = True
+        self.frame_count = [0, 0]
+        self.frame_names = []
         self.intrinsic = None
         self.T_left_right = None
-        self.last_index = 0
-        self.frame_count = [0, 0]
 
     """
     Public methods used outside this class
@@ -28,7 +27,7 @@ class DataReaderBase:
         """
         reset variables for a new sequence like intrinsic, extrinsic, and last index
         :param drive_path: sequence drectory path
-        :return: frame indices
+        :return: number of frames
         """
         raise NotImplementedError()
 
@@ -47,26 +46,32 @@ class DataReaderBase:
         """
         raise NotImplementedError()
 
-    def get_intrinsic(self):
-        """
-        :return: camera projection matrix in the current sequence
-        """
-        raise NotImplementedError()
-
     def get_quat_pose(self, index):
         """
         :return: indexed pose in a vector [position, quaternion] in the current sequence
         """
         raise NotImplementedError()
 
-    def get_depth_map(self, index, raw_img_shape, target_shape):
+    def get_depth_map(self, index, raw_img_shape=None, target_shape=None):
         """
         :return: indexed pose in a vector [position, quaternion] in the current sequence
+        """
+        raise NotImplementedError()
+
+    def get_intrinsic(self):
+        """
+        :return: camera projection matrix in the current sequence
         """
         raise NotImplementedError()
 
     def get_stereo_extrinsic(self):
         """
         :return: stereo extrinsic pose that transforms point in right frame into left frame
+        """
+        raise NotImplementedError()
+
+    def get_filename(self, index):
+        """
+        :return: indexed frame file name
         """
         raise NotImplementedError()

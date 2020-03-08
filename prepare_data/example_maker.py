@@ -13,36 +13,41 @@ KittiReader: reads data from files
 """
 
 
-def dataset_loader_factory(raw_data_path, dataset, split, stereo=opts.STEREO, snippet_len=opts.SNIPPET_LEN):
+def dataset_reader_factory(raw_data_path, dataset, split, stereo=opts.STEREO):
     if dataset == "kitti_raw" and split == "train":
-        data_reader = ku.KittiRawTrainReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = ku.KittiRawTrainReader(raw_data_path, stereo)
     elif dataset == "kitti_raw" and split == "test":
-        data_reader = ku.KittiRawTestReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = ku.KittiRawTestReader(raw_data_path, stereo)
     elif dataset == "kitti_odom" and split == "train":
-        data_reader = ku.KittiOdomTrainReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = ku.KittiOdomTrainReader(raw_data_path, stereo)
     elif dataset == "kitti_odom" and split == "test":
-        data_reader = ku.KittiOdomTestReader(raw_data_path, stereo, snippet_len // 2)
+        data_reader = ku.KittiOdomTestReader(raw_data_path, stereo)
     else:
         raise WrongInputException(f"Wrong dataset and split: {dataset}, {split}")
 
+    return data_reader
+
+
+def example_maker_factory(raw_data_path, stereo=opts.STEREO, snippet_len=opts.SNIPPET_LEN):
     if stereo:
         snippet_maker = ExampleMakerStereo(raw_data_path, snippet_len)
     else:
         snippet_maker = ExampleMaker(raw_data_path, snippet_len)
-    return snippet_maker, data_reader
+    return snippet_maker
 
 
 class ExampleMaker:
     def __init__(self, base_path, snippet_len):
         self.base_path = base_path
         self.snippet_len = snippet_len
-        self.data_reader = ku.KittiRawTrainReader("", True, 2)
+        self.data_reader = ku.KittiRawTrainReader("", True)
         self.drive_path = ""
-        self.frame_inds = []
+        self.num_frames = 0
 
-    def set_reader(self, reader):
+    def set_reader(self, reader, num_frames):
         assert reader.stereo is False
         self.data_reader = reader
+        self.num_frames = num_frames
 
     def get_example(self, index):
         indices = self.make_snippet_indices(index)
@@ -61,7 +66,7 @@ class ExampleMaker:
     def make_snippet_indices(self, frame_idx):
         halflen = self.snippet_len // 2
         indices = np.arange(frame_idx-halflen, frame_idx+halflen+1)
-        indices = np.clip(indices, 0, self.data_reader.last_index).tolist()
+        indices = np.clip(indices, 0, self.num_frames - 1).tolist()
         return indices
 
     def load_snippet_frames(self, frame_indices):
@@ -120,9 +125,10 @@ class ExampleMakerStereo(ExampleMaker):
     def __init__(self, base_path, snippet_len):
         super().__init__(base_path, snippet_len)
 
-    def set_reader(self, reader):
+    def set_reader(self, reader, num_frames):
         assert reader.stereo
         self.data_reader = reader
+        self.num_frames = num_frames
 
     def load_snippet_frames(self, frame_indices):
         frames = []
