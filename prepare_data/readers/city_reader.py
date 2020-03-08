@@ -22,6 +22,7 @@ class CityScapesReader(DataReaderBase):
         self.pose_avail = False
         self.depth_avail = True
         self.left_img_dir = "leftImg8bit"
+        self.right_img_dir = "rightImg8bit"
         self.split = split
 
     """
@@ -76,19 +77,23 @@ class CityScapesReader(DataReaderBase):
 
     def get_image(self, index):
         frame_name = self.frame_names[index]
-        image_name = frame_name + f"_{self.left_img_dir}.png"
-        image = cv2.imread(image_name)
-        return image
+        image = self._read_and_crop_image(frame_name, self.left_img_dir)
+        if self.stereo:
+            frame_name = self.frame_names[index].replace(self.left_img_dir, self.right_img_dir)
+            image_rig = self._read_and_crop_image(frame_name, self.right_img_dir)
+            return image, image_rig
+        else:
+            return image
 
     def get_quat_pose(self, index):
         return None
 
     def get_depth_map(self, index, raw_img_shape=None, target_shape=None):
-        filename = self.frame_names[index].replace(self.left_img_dir, "disparity")
+        filename = self.frame_names[index]
+        filename = filename.replace(self.left_img_dir, "disparity") + "_disparity.png"
         depth = self._read_depth_map(filename, target_shape)
         if self.stereo:
-            filename = self.frame_names[index].replace(self.left_img_dir, "disparity")
-            depth_rig = self._read_depth_map(filename, target_shape)
+            depth_rig = depth.copy()
             return depth, depth_rig
         return depth
 
@@ -110,6 +115,13 @@ class CityScapesReader(DataReaderBase):
         imgfiles = [file.replace(f"_{self.left_img_dir}.png", "") for file in imgfiles]
         imgfiles.sort()
         return imgfiles
+
+    def _read_and_crop_image(self, frame_name, img_dir):
+        image_name = frame_name + f"_{img_dir}.png"
+        image = cv2.imread(image_name)
+        assert image.shape[0] == 1024
+        # crop image to remove car body in image
+        return image[:768]
 
     def _find_camera_matrix(self, index):
         intrinsic = self._read_camera_file(index, "intrinsic")

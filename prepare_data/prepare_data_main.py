@@ -51,6 +51,9 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
                 filename = data_reader.get_filename(index)
                 mean_depth = save_example(example, filename, data_paths)
                 print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, file={filename} {index}/{num_frames}")
+
+                if index >= 5:
+                    break
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
         print("")
@@ -149,4 +152,4 @@ def copy_text(imgfile, srcpath, dstpath, filename):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    prepare_kitti_data()
+    prepare_kitti_data("cityscapes", "train_extra")

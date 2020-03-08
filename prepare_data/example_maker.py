@@ -3,7 +3,8 @@ import numpy as np
 
 import settings
 from config import opts, get_raw_data_path
-import prepare_data.readers.kitti_reader as ku
+import prepare_data.readers.kitti_reader as kr
+import prepare_data.readers.city_reader as cr
 import utils.convert_pose as cp
 from utils.util_class import WrongInputException
 
@@ -15,13 +16,15 @@ KittiReader: reads data from files
 
 def dataset_reader_factory(raw_data_path, dataset, split, stereo=opts.STEREO):
     if dataset == "kitti_raw" and split == "train":
-        data_reader = ku.KittiRawTrainReader(raw_data_path, stereo)
+        data_reader = kr.KittiRawTrainReader(raw_data_path, stereo)
     elif dataset == "kitti_raw" and split == "test":
-        data_reader = ku.KittiRawTestReader(raw_data_path, stereo)
+        data_reader = kr.KittiRawTestReader(raw_data_path, stereo)
     elif dataset == "kitti_odom" and split == "train":
-        data_reader = ku.KittiOdomTrainReader(raw_data_path, stereo)
+        data_reader = kr.KittiOdomTrainReader(raw_data_path, stereo)
     elif dataset == "kitti_odom" and split == "test":
-        data_reader = ku.KittiOdomTestReader(raw_data_path, stereo)
+        data_reader = kr.KittiOdomTestReader(raw_data_path, stereo)
+    elif dataset == "cityscapes":
+        data_reader = cr.CityScapesReader(raw_data_path, stereo, split)
     else:
         raise WrongInputException(f"Wrong dataset and split: {dataset}, {split}")
 
@@ -40,7 +43,7 @@ class ExampleMaker:
     def __init__(self, base_path, snippet_len):
         self.base_path = base_path
         self.snippet_len = snippet_len
-        self.data_reader = ku.KittiRawTrainReader("", True)
+        self.data_reader = kr.KittiRawTrainReader("", True)
         self.drive_path = ""
         self.num_frames = 0
 
@@ -58,7 +61,7 @@ class ExampleMaker:
         if self.data_reader.pose_avail:
             example["pose_gt"] = self.load_snippet_poses(indices)
         if self.data_reader.depth_avail:
-            example["depth_gt"] = self.load_frame_depth(indices, raw_img_shape)
+            example["depth_gt"] = self.load_frame_depth(index, raw_img_shape)
         if self.data_reader.stereo:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
         return example

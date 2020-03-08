@@ -50,7 +50,7 @@ class KittiReader(DataReaderBase):
     def get_quat_pose(self, index):
         raise NotImplementedError()
 
-    def get_depth_map(self, index, raw_img_shape, target_shape):
+    def get_depth_map(self, index, raw_img_shape=None, target_shape=None):
         raise NotImplementedError()
 
     def get_stereo_extrinsic(self):
@@ -131,7 +131,8 @@ class KittiRawReader(KittiReader):
         self.depth_avail = True
 
     def list_drive_paths(self):
-        filename = op.join(op.dirname(op.abspath(__file__)), "resources", f"kitti_raw_{self.split}_scenes.txt")
+        prepare_data_path = op.dirname(op.dirname(op.abspath(__file__)))
+        filename = op.join(prepare_data_path, "resources", f"kitti_raw_{self.split}_scenes.txt")
         with open(filename, "r") as f:
             drives = f.readlines()
             drives.sort()
@@ -176,14 +177,14 @@ class KittiRawReader(KittiReader):
         else:
             return pose_lef
 
-    def get_depth_map(self, index, original_shape, target_shape):
+    def get_depth_map(self, index, raw_img_shape=None, target_shape=None):
         frame_id = self._get_frame_int_id(index)
         velo_data = self.drive_loader.get_velo(frame_id)
         T_cam2_velo, K_cam2 = self.drive_loader.calib.T_cam2_velo, self.drive_loader.calib.K_cam2
-        depth = kdg.generate_depth_map(velo_data, T_cam2_velo, K_cam2, original_shape, target_shape)
+        depth = kdg.generate_depth_map(velo_data, T_cam2_velo, K_cam2, raw_img_shape, target_shape)
         if self.stereo:
             T_cam3_velo, K_cam3 = self.drive_loader.calib.T_cam3_velo, self.drive_loader.calib.K_cam3
-            depth_rig = kdg.generate_depth_map(velo_data, T_cam3_velo, K_cam3, original_shape, target_shape)
+            depth_rig = kdg.generate_depth_map(velo_data, T_cam3_velo, K_cam3, raw_img_shape, target_shape)
             return depth, depth_rig
         else:
             return depth
@@ -193,7 +194,8 @@ class KittiRawReader(KittiReader):
         return drive_path
 
     def _static_frame_filename(self):
-        return op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_raw_static_frames.txt")
+        prepare_data_path = op.dirname(op.dirname(op.abspath(__file__)))
+        return op.join(prepare_data_path, "resources", "kitti_raw_static_frames.txt")
 
     def _create_drive_loader(self, drive_path):
         print(f"[_create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
@@ -238,7 +240,8 @@ class KittiRawTestReader(KittiRawReader):
         # format drive_path like 'date drive'
         drive_id = f"{drive_splits[-2]} {drive_splits[-1][-9:-5]}"
 
-        filename = op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_test_depth_frames.txt")
+        prepare_data_path = op.dirname(op.dirname(op.abspath(__file__)))
+        filename = op.join(prepare_data_path, "resources", "kitti_test_depth_frames.txt")
         with open(filename, "r") as fr:
             lines = fr.readlines()
             test_frames = [line.strip("\n") for line in lines if line.startswith(drive_id)]
@@ -265,12 +268,13 @@ class KittiOdomReader(KittiReader):
     def get_quat_pose(self, index):
         raise NotImplementedError()
 
-    def get_depth_map(self, index, original_shape, target_shape):
+    def get_depth_map(self, index, raw_img_shape=None, target_shape=None):
         # no depth available for kitti_odometry dataset
         return None
 
     def _static_frame_filename(self):
-        return op.join(op.dirname(op.abspath(__file__)), "resources", "kitti_odom_static_frames.txt")
+        prepare_data_path = op.dirname(op.dirname(op.abspath(__file__)))
+        return op.join(prepare_data_path, "resources", "kitti_odom_static_frames.txt")
 
     def list_drive_paths(self):
         raise NotImplementedError()
@@ -364,7 +368,6 @@ class KittiOdomTestReader(KittiOdomReader):
     def _create_drive_loader(self, drive_path):
         drive = op.basename(drive_path)
         pose_file = op.join(self.base_path, "poses", drive+".txt")
-        print("read pose file:", pose_file)
         self.poses = np.loadtxt(pose_file)
         print(f"[_create_drive_loader] pose avail: {self.pose_avail}, depth avail: {self.depth_avail}")
         return pykitti.odometry(self.base_path, drive)
