@@ -52,8 +52,9 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
                 mean_depth = save_example(example, filename, data_paths)
                 print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, file={filename} {index}/{num_frames}")
 
-                if index >= 5:
+                if dataset == "cityscapes" and index > 30:
                     break
+
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
         print("")
