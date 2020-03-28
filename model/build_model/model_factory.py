@@ -4,8 +4,8 @@ import settings
 from config import opts
 from utils.util_class import WrongInputException
 import utils.util_funcs as uf
-import model.build_model.nets as nets
-from model.build_model.pretrained_nets import PretrainedModel
+from model.build_model.depth_net import DepthNetBasic, DepthNetNoResize, DepthNetFromPretrained
+from model.build_model.pose_net import PoseNet
 import model.build_model.model_wrappers as mw
 
 
@@ -60,18 +60,19 @@ class ModelFactory:
 
     def depth_net_factory(self, net_name, activation):
         if net_name == "DepthNetBasic":
-            depth_net = nets.DepthNetBasic(self.input_shape, activation)()
+            depth_net = DepthNetBasic(self.input_shape, activation)()
         elif net_name == "DepthNetNoResize":
-            depth_net = nets.DepthNetNoResize(self.input_shape, activation)()
+            depth_net = DepthNetNoResize(self.input_shape, activation)()
         elif net_name in PRETRAINED_MODELS:
-            depth_net = PretrainedModel()(self.input_shape, net_name, self.pretrained_weight, activation)
+            depth_net = DepthNetFromPretrained(self.input_shape, activation,
+                                               net_name, self.pretrained_weight)()
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
         return depth_net
 
     def camera_net_factory(self, net_name):
         if net_name == "PoseNet":
-            posenet = nets.PoseNet()(self.input_shape)
+            posenet = PoseNet()(self.input_shape)
         else:
             raise WrongInputException("[camera_net_factory] wrong pose net name: " + net_name)
         return posenet
@@ -121,3 +122,4 @@ def test_build_model():
 
 if __name__ == "__main__":
     test_build_model()
+

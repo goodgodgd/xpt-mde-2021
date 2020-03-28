@@ -4,8 +4,7 @@ import utils.util_funcs as uf
 
 import settings
 import model.build_model.model_utils as mu
-
-DISP_SCALING_VGG = 10
+from model.build_model.pretrained_nets import PretrainedModel
 
 
 class DepthNetBasic:
@@ -101,27 +100,80 @@ class DepthNetNoResize(DepthNetBasic):
         return upconv
 
 
-class PoseNet:
-    def __call__(self, input_shape):
-        batch, snippet, height, width, channel = input_shape
-        stacked_image_shape = (snippet*height, width, channel)
-        snippet_image = layers.Input(shape=stacked_image_shape, batch_size=batch, name="posenet_input")
-        channel_stack_image = layers.Lambda(lambda image: mu.restack_on_channels(image, snippet),
-                                            name="channel_stack")(snippet_image)
-        print("[PoseNet] channel stacked image shape=", channel_stack_image.get_shape())
-        num_sources = snippet - 1
+class DepthNetFromPretrained(DepthNetNoResize):
+    def __init__(self, total_shape, activation, net_name, use_pt_weight):
+        """
+        :param total_shape: (batch, snippet, height, width, channel)
+        :param activation: activation function to output depth
+        :param net_name: pretrained model name
+        :param use_pt_weight: whether use pretrained weights
+        """
+        super().__init__(total_shape, activation)
+        self.net_name = net_name
+        self.pretrained_weight = use_pt_weight
 
-        conv1 = mu.convolution(channel_stack_image, 16, 7, 2, "vo_conv1")
-        conv2 = mu.convolution(conv1, 32, 5, 2, "vo_conv2")
-        conv3 = mu.convolution(conv2, 64, 3, 2, "vo_conv3")
-        conv4 = mu.convolution(conv3, 128, 3, 2, "vo_conv4")
-        conv5 = mu.convolution(conv4, 256, 3, 2, "vo_conv5")
-        conv6 = mu.convolution(conv5, 256, 3, 2, "vo_conv6")
-        conv7 = mu.convolution(conv6, 256, 3, 2, "vo_conv7")
+    def __call__(self):
+        batch, snippet, height, width, channel = self.total_shape
+        input_shape = (height*snippet, width, channel)
+        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
+                                                   name="depthnet_split_image")(input_tensor)
 
-        poses = tf.keras.layers.Conv2D(num_sources * 6, 1, strides=1, padding="same",
-                                       activation=None, name="vo_conv8")(conv7)
-        poses = tf.keras.layers.GlobalAveragePooling2D("channels_last", name="vo_pred")(poses)
-        poses = tf.keras.layers.Reshape((num_sources, 6), name="vo_reshape")(poses)
-        posenet = tf.keras.Model(inputs=snippet_image, outputs={"pose": poses}, name="posenet")
-        return posenet
+        features_ms = PretrainedModel(self.net_name, self.pretrained_weight).encode(target_image)
+        outputs = self.decode(features_ms)
+        depthnet = tf.keras.Model(inputs=input_tensor, outputs=outputs, name=self.net_name + "_base")
+        return depthnet
+
+    def decode(self, features_ms):
+        """
+        :param features_ms: [conv_s1, conv_s2, conv_s3, conv_s4]
+                conv'n' denotes convolutional feature map spatially scaled by 1/2^n
+                if input height is 128, heights of features are (64, 32, 16, 8, 4) repectively
+        """
+        conv1, conv2, conv3, conv4, conv5 = features_ms
+        batch, snippet, height, width, channel = self.total_shape
+
+        # decoder by upsampling
+        upconv4 = self.upconv_with_skip_connection(conv5, conv4, 256, "dp_up4")             # 1/16
+        upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")           # 1/8
+        depth3, dpconv2_up, dpconv3 = self.get_scaled_depth(upconv3, height // 4, width // 4, "dp_depth3")   # 1/8
+        upconv2 = self.upconv_with_skip_connection(upconv3, conv2, 64, "dp_up2", dpconv2_up)  # 1/4
+        depth2, dpconv1_up, dpconv2 = self.get_scaled_depth(upconv2, height // 2, width // 2, "dp_depth2")   # 1/4
+        upconv1 = self.upconv_with_skip_connection(upconv2, conv1, 32, "dp_up1", dpconv1_up)  # 1/2
+        depth1, dpconv0_up, dpconv1 = self.get_scaled_depth(upconv1, height, width, "dp_depth1")    # 1/2
+        upconv0 = self.upconv_with_skip_connection(upconv1, dpconv0_up, 16, "dp_up0")         # 1
+        depth0, dpconvn1_up, dpconv0 = self.get_scaled_depth(upconv0, height, width, "dp_depth0")  # 1
+
+        outputs = {"depth_ms": [depth0, depth1, depth2, depth3],
+                   "debug_out": [dpconv0, upconv0, dpconv3, upconv3]}
+        return outputs
+
+
+# ==================================================
+from config import opts
+
+
+class TempActivation:
+    def __call__(self, x):
+        y = tf.math.sigmoid(x) + 0.01
+        y = uf.safe_reciprocal_number(y)
+        return y
+
+
+def test_build_model():
+    total_shape = (opts.BATCH_SIZE, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    depthnet = DepthNetFromPretrained(total_shape, TempActivation(), "NASNetMobile", True)()
+    depthnet.summary()
+    depth_ms = depthnet.output["depth_ms"]
+    debug_out = depthnet.output["debug_out"]
+    print("multi scale depth outputs")
+    for depth in depth_ms:
+        print("\tdepth out", depth.name, depth.get_shape())
+    print("depthnet outputs for debugging")
+    for debug in debug_out:
+        print("\tdebug out", debug.name, debug.get_shape())
+
+
+if __name__ == "__main__":
+    test_build_model()
+
