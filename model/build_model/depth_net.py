@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 import utils.util_funcs as uf
+from copy import deepcopy
 
 import settings
 import model.build_model.model_utils as mu
@@ -11,13 +12,17 @@ class DepthNetBasic:
     """
     Basic DepthNet model used in sfmlearner and geonet
     """
-    def __init__(self, total_shape, activation):
+    def __init__(self, total_shape, conv2d, pred_depth, upsample_iterp):
         """
         :param total_shape: explicit shape (batch, snippet, height, width, channel)
-        :param activation: depth activation function or functor
+        :param conv2d: 2d convolution operator
+        :param pred_depth: final activation function for depth prediction
+        :param upsample_iterp: upsampling method
         """
         self.total_shape = total_shape
-        self.activate_depth = activation
+        self.predict_depth = pred_depth
+        self.conv2d_d = conv2d
+        self.upsample_interp_d = upsample_iterp
 
     def __call__(self):
         """
@@ -30,20 +35,20 @@ class DepthNetBasic:
         source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
                                                    name="depthnet_split_image")(input_tensor)
 
-        conv0 = mu.convolution(target_image, 32, 7, strides=1, name="dp_conv0b")
-        conv1 = mu.convolution(conv0, 32, 7, strides=2, name="dp_conv1a")
-        conv1 = mu.convolution(conv1, 64, 5, strides=1, name="dp_conv1b")
-        conv2 = mu.convolution(conv1, 64, 5, strides=2, name="dp_conv2a")
-        conv2 = mu.convolution(conv2, 128, 3, strides=1, name="dp_conv2b")
-        conv3 = mu.convolution(conv2, 128, 3, strides=2, name="dp_conv3a")
-        conv3 = mu.convolution(conv3, 256, 3, strides=1, name="dp_conv3b")
-        conv4 = mu.convolution(conv3, 256, 3, strides=2, name="dp_conv4a")
-        conv4 = mu.convolution(conv4, 512, 3, strides=1, name="dp_conv4b")
-        conv5 = mu.convolution(conv4, 512, 3, strides=2, name="dp_conv5a")
-        conv5 = mu.convolution(conv5, 512, 3, strides=1, name="dp_conv5b")
-        conv6 = mu.convolution(conv5, 512, 3, strides=2, name="dp_conv6a")
-        conv6 = mu.convolution(conv6, 512, 3, strides=1, name="dp_conv6b")
-        conv7 = mu.convolution(conv6, 512, 3, strides=2, name="dp_conv7a")
+        conv0 = self.conv2d_d(target_image, 32, 7, strides_=1, name="dp_conv0b")
+        conv1 = self.conv2d_d(conv0, 32, 7, strides_=2, name="dp_conv1a")
+        conv1 = self.conv2d_d(conv1, 64, 5, strides_=1, name="dp_conv1b")
+        conv2 = self.conv2d_d(conv1, 64, 5, strides_=2, name="dp_conv2a")
+        conv2 = self.conv2d_d(conv2, 128, 3, strides_=1, name="dp_conv2b")
+        conv3 = self.conv2d_d(conv2, 128, 3, strides_=2, name="dp_conv3a")
+        conv3 = self.conv2d_d(conv3, 256, 3, strides_=1, name="dp_conv3b")
+        conv4 = self.conv2d_d(conv3, 256, 3, strides_=2, name="dp_conv4a")
+        conv4 = self.conv2d_d(conv4, 512, 3, strides_=1, name="dp_conv4b")
+        conv5 = self.conv2d_d(conv4, 512, 3, strides_=2, name="dp_conv5a")
+        conv5 = self.conv2d_d(conv5, 512, 3, strides_=1, name="dp_conv5b")
+        conv6 = self.conv2d_d(conv5, 512, 3, strides_=2, name="dp_conv6a")
+        conv6 = self.conv2d_d(conv6, 512, 3, strides_=1, name="dp_conv6b")
+        conv7 = self.conv2d_d(conv6, 512, 3, strides_=2, name="dp_conv7a")
 
         upconv6 = self.upconv_with_skip_connection(conv7, conv6, 512, "dp_up6")     # 1/64
         upconv5 = self.upconv_with_skip_connection(upconv6, conv5, 512, "dp_up5")   # 1/32
@@ -62,53 +67,58 @@ class DepthNetBasic:
         depthnet = tf.keras.Model(inputs=input_tensor, outputs=outputs, name="depthnet")
         return depthnet
 
+    def upsample_2x_d(self, x, scope):
+        # TODO: bilinear interpolation도 테스트
+        upconv = layers.UpSampling2D(size=(2, 2), interpolation=self.upsample_interp_d, name=scope + "_sample")(x)
+        return upconv
+
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
-        upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
-        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv1")
+        upconv = self.upsample_2x_d(bef_layer, scope)
+        upconv = self.conv2d_d(upconv, out_channels, 3, name=scope + "_conv1")
         upconv = mu.resize_like(upconv, skip_layer, scope)
         upconv = tf.cond(bef_pred is not None,
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer, bef_pred]),
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer])
                          )
-        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
+        upconv = self.conv2d_d(upconv, out_channels, 3, name=scope + "_conv2")
         return upconv
 
     def get_scaled_depth(self, src, dst_height, dst_width, scope):
-        conv = layers.Conv2D(1, 3, strides=1, padding="same", activation="linear", name=scope + "_conv")(src)
-        depth = layers.Lambda(lambda x: self.activate_depth(x), name=scope + "_acti")(conv)
-        # disp = layers.Lambda(lambda x: tf.math.sigmoid(x) + 0.01, name=scope + "_acti")(conv)
-        # depth = uf.safe_reciprocal_number(disp)
+        conv = self.conv2d_d(src, 1, 3, activation_="linear", name=scope + "_conv")
+        depth = layers.Lambda(lambda x: self.predict_depth(x), name=scope + "_acti")(conv)
         conv_up = mu.resize_image(conv, dst_height, dst_width, scope)
         return depth, conv_up, conv
 
 
 class DepthNetNoResize(DepthNetBasic):
-    def __init__(self, total_shape, activation):
-        super().__init__(total_shape, activation)
+    def __init__(self, total_shape, conv2d, pred_depth, upsample_iterp):
+        super().__init__(total_shape, conv2d, pred_depth, upsample_iterp)
     """
     Modified BasicModel to remove resizing features in decoding layers
     Width and height of input image must be integer multiple of 128
     """
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
-        upconv = layers.UpSampling2D(size=(2, 2), interpolation="nearest", name=scope + "_sample")(bef_layer)
-        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv1")
+        upconv = self.upsample_2x_d(bef_layer, scope)
+        upconv = self.conv2d_d(upconv, out_channels, 3, name=scope + "_conv1")
         upconv = tf.cond(bef_pred is not None,
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer, bef_pred]),
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer])
                          )
-        upconv = mu.convolution(upconv, out_channels, 3, strides=1, name=scope + "_conv2")
+        upconv = self.conv2d_d(upconv, out_channels, 3, name=scope + "_conv2")
         return upconv
 
 
 class DepthNetFromPretrained(DepthNetNoResize):
-    def __init__(self, total_shape, activation, net_name, use_pt_weight):
+    def __init__(self, total_shape, conv2d, pred_depth, upsample_iterp, net_name, use_pt_weight):
         """
-        :param total_shape: (batch, snippet, height, width, channel)
-        :param activation: activation function to output depth
+        :param total_shape: explicit shape (batch, snippet, height, width, channel)
+        :param conv2d: 2d convolution operator
+        :param pred_depth: final activation function for depth prediction
+        :param upsample_iterp: upsampling method
         :param net_name: pretrained model name
         :param use_pt_weight: whether use pretrained weights
         """
-        super().__init__(total_shape, activation)
+        super().__init__(total_shape, conv2d, pred_depth, upsample_iterp)
         self.net_name = net_name
         self.pretrained_weight = use_pt_weight
 

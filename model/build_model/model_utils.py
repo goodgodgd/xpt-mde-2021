@@ -2,6 +2,20 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
+def conv2d_func_factory(kernel_size=3, strides=1, padding="same", dilation_rate=1,
+                        activation="relu", kernel_initializer="glorot_uniform"):
+
+    def conv2d(x, filters, kernel_size_=kernel_size, strides_=strides, padding_=padding,
+               dilation_rate_=dilation_rate, activation_=activation,
+               kernel_initializer_=kernel_initializer, **kwargs):
+        conv = tf.keras.layers.Conv2D(filters, kernel_size_, strides_, padding_,
+                                      dilation_rate=dilation_rate_, activation=activation_,
+                                      kernel_initializer=kernel_initializer_, **kwargs)(x)
+        return conv
+
+    return conv2d
+
+
 def convolution(x, filters, kernel_size, strides, name):
     conv = tf.keras.layers.Conv2D(filters, kernel_size, strides=strides,
                                   padding="same", activation="relu",
@@ -35,3 +49,24 @@ def restack_on_channels(vertical_stack, num_stack):
     # stack snippet images on channels
     channel_stack_image = tf.reshape(channel_stack_image, shape=(batch, imheight, imwidth, -1))
     return channel_stack_image
+
+
+# ===== TEST FUNCTIONS
+
+def test_conv2d_factory():
+    print("\n===== start test_conv2d_factory")
+    conv_op1 = conv2d_factory()
+    conv_op2 = conv2d_factory(filters=20, kernel_size=5, strides=2, activation="linear")
+    print("conv ops are created!")
+    x = tf.random.uniform((8, 100, 200, 10), -1, 1)
+    y1 = conv_op1(x, "conv1", filters=30)
+    y2 = conv_op2(x, "conv2")
+    print("conv op1 output shape:", y1.get_shape())
+    print("conv op2 output shape:", y2.get_shape())
+
+    print("!!! test_conv2d_factory passed")
+
+
+if __name__ == "__main__":
+    test_conv2d_factory()
+
