@@ -4,9 +4,11 @@ import settings
 from config import opts
 from utils.util_class import WrongInputException
 import utils.util_funcs as uf
-import model.build_model.nets as nets
-from model.build_model.pretrained_nets import PretrainedModel
+from model.build_model.depth_net import DepthNetBasic, DepthNetNoResize, DepthNetFromPretrained
+from model.build_model.pose_net import PoseNet
+from model.build_model.flow_net import PWCNet
 import model.build_model.model_wrappers as mw
+import model.build_model.model_utils as mu
 
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
@@ -29,17 +31,24 @@ class ModelFactory:
 
     def get_model(self):
         models = dict()
-        depth_activation = self.activation_factory(self.activation)
 
         if "depth" in self.net_names:
-            depthnet = self.depth_net_factory(self.net_names["depth"], depth_activation)
+            depth_activation = self.activation_factory(self.activation)
+            conv_depth = self.conv2d_factory(opts.DEPTH_CONV_ARGS)
+            upsample_interp_d = opts.DEPTH_UPSAMPLE_INTERP
+            depthnet = self.depth_net_factory(self.net_names["depth"], conv_depth,
+                                              depth_activation, upsample_interp_d)
             models["depthnet"] = depthnet
 
         if "camera" in self.net_names:
-            # TODO: add intrinsic output
-            posenet = self.camera_net_factory(self.net_names["camera"])
+            conv_pose = self.conv2d_factory(opts.POSE_CONV_ARGS)
+            posenet = self.pose_net_factory(self.net_names["camera"], conv_pose)
             models["posenet"] = posenet
-        # TODO: add optical flow factory
+
+        if "flow" in self.net_names:
+            conv_flow = self.conv2d_factory(opts.FLOW_CONV_ARGS)
+            flownet = self.flow_net_factory(self.net_names["flow"], conv_flow)
+            models["flownet"] = flownet
 
         if self.stereo_extrinsic:
             model_wrapper = mw.StereoPoseModelWrapper(models)
@@ -58,23 +67,52 @@ class ModelFactory:
         else:
             WrongInputException("[activation_factory] wrong activation name: " + activ_name)
 
-    def depth_net_factory(self, net_name, activation):
+    def conv2d_factory(self, src_args):
+        # convert string arguments for tf.keras.layers.Conv2D to object arguments
+        dst_args = {}
+        key = "activation"
+        if key in src_args:
+            if src_args[key] == "leaky_relu":
+                dst_args[key] = tf.keras.layers.LeakyReLU(src_args[key + "_param"])
+            else:
+                dst_args[key] = tf.keras.layers.ReLU()
+
+        key = "kernel_initializer"
+        if key in src_args:
+            if src_args[key] == "truncated_normal":
+                dst_args[key] = tf.keras.initializers.TruncatedNormal(stddev=src_args[key + "_param"])
+            else:
+                dst_args[key] = tf.keras.initializers.GlorotUniform()
+
+        # change default arguments of Conv2D layer
+        conv_layer = mu.CustomConv2D(**dst_args)
+        return conv_layer
+
+    def depth_net_factory(self, net_name, conv2d_d, pred_activ, upsample_interp):
         if net_name == "DepthNetBasic":
-            depth_net = nets.DepthNetBasic(self.input_shape, activation)()
+            depth_net = DepthNetBasic(self.input_shape, conv2d_d, pred_activ, upsample_interp)()
         elif net_name == "DepthNetNoResize":
-            depth_net = nets.DepthNetNoResize(self.input_shape, activation)()
+            depth_net = DepthNetNoResize(self.input_shape, conv2d_d, pred_activ, upsample_interp)()
         elif net_name in PRETRAINED_MODELS:
-            depth_net = PretrainedModel()(self.input_shape, net_name, self.pretrained_weight, activation)
+            depth_net = DepthNetFromPretrained(self.input_shape, conv2d_d, pred_activ, upsample_interp,
+                                               net_name, self.pretrained_weight)()
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
         return depth_net
 
-    def camera_net_factory(self, net_name):
+    def pose_net_factory(self, net_name, conv2d_p):
         if net_name == "PoseNet":
-            posenet = nets.PoseNet()(self.input_shape)
+            posenet = PoseNet(self.input_shape, conv2d_p)()
         else:
-            raise WrongInputException("[camera_net_factory] wrong pose net name: " + net_name)
+            raise WrongInputException("[pose_net_factory] wrong pose net name: " + net_name)
         return posenet
+
+    def flow_net_factory(self, net_name, conv2d_f):
+        if net_name == "PWCNet":
+            flownet = PWCNet(self.input_shape, conv2d_f)()
+        else:
+            raise WrongInputException("[flow_net_factory] wrong flow net name: " + net_name)
+        return flownet
 
 
 class InverseSigmoidActivation:
@@ -121,3 +159,4 @@ def test_build_model():
 
 if __name__ == "__main__":
     test_build_model()
+

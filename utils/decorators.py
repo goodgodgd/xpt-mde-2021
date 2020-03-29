@@ -18,7 +18,7 @@ def shape_check_real(func):
 def print_tensor_shape(tensor, index, name):
     if isinstance(tensor, tf.Tensor):
         print(f"  {name} {index}:", tensor.get_shape().as_list())
-    elif isinstance(tensor, list):
+    elif isinstance(tensor, list) or isinstance(tensor, tuple):
         for k, val in enumerate(tensor):
             if isinstance(val, tf.Tensor):
                 print(f"  {name} {index}-{k} in list:", val.get_shape().as_list())
