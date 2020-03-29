@@ -3,9 +3,6 @@ import tensorflow_addons as tfa
 from tensorflow.keras import layers
 
 import settings
-from utils.decorators import shape_check
-
-# TODO: change function to class
 
 
 class PWCNet:
@@ -114,29 +111,37 @@ class PWCNet:
         :param up: whether to return upsample flow and feature
         :return:
         """
+        # TODO: [ERROR] the below function results in TypeError:
+        #   '''
+        #   cp_r_warp = tfa.image.dense_image_warp(cp_r, up_flowq * flow_scale, name=f"pwc_flow{p}_warp")
+        #   '''
+        #   TypeError: An op outside of the function building code is being passed a "Graph" tensor. ~~~
+        #   there might be a bug in tfa.image.dense_image_warp(),
+        #   so the function is enclosed in layers.Lambda()
         cp_r_warp = layers.Lambda(lambda inputs: tfa.image.dense_image_warp(
-                                  inputs[0], inputs[1]),
-                                  name=f"pwc_flow{p}_warp")([cp_r, up_flowq*flow_scale])
-        # cp_r_warp = tfa.image.dense_image_warp(cp_r, up_flowq * flow_scale, f"pwc_flow{p}_warp")
-        corrp = self.correlation(cp_l, cp_r_warp)
-        flowp_in = tf.concat([corrp, cp_l, up_flowq, up_featq], axis=-1)
-        return self.predict_flow(flowp_in, f"flow{p}", up)
+                                  inputs[0], inputs[1]*flow_scale),
+                                  name=f"pwc_flow{p}_warp")([cp_r, up_flowq])
+        corrp = self.correlation(cp_l, cp_r_warp, name=f"pwc_flow{p}_corr")
+        return self.predict_flow([corrp, cp_l, up_flowq, up_featq], f"flow{p}", up)
 
-    def predict_flow(self, x, tag, up=True):
-        c = self.conv2d_f(x, 128, name=f"pwc_{tag}_c0")
-        x = tf.concat([x, c], axis=-1)
+    def predict_flow(self, inputs, tag, up=True):
+        x = tf.concat(inputs, axis=-1)
         c = self.conv2d_f(x, 128, name=f"pwc_{tag}_c1")
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 96, name=f"pwc_{tag}_c2")
+        c = self.conv2d_f(x, 128, name=f"pwc_{tag}_c2")
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 64, name=f"pwc_{tag}_c3")
+        c = self.conv2d_f(x, 96, name=f"pwc_{tag}_c3")
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 32, name=f"pwc_{tag}_c4")
+        c = self.conv2d_f(x, 64, name=f"pwc_{tag}_c4")
+        x = tf.concat([x, c], axis=-1)
+        c = self.conv2d_f(x, 32)
         flow = self.conv2d_f(c, 2, activation_="linear", name=f"pwc_{tag}_out")
 
         if up:
-            up_flow = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same")(flow)
-            up_feat = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same")(c)
+            up_flow = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
+                                             name=f"pwc_{tag}_ct1")(flow)
+            up_feat = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
+                                             name=f"pwc_{tag}_ct2")(c)
             return flow, up_flow, up_feat
         else:
             return flow, c
@@ -151,22 +156,11 @@ class PWCNet:
         refined_flow = self.conv2d_f(c, 2, activation_="linear", name=f"pwc_context_7") + flow
         return refined_flow
 
-    def correlation(self, cl, cr, ks=1, md=4):
+    def correlation(self, cl, cr, ks=1, md=4, name=""):
         corr = tfa.layers.CorrelationCost(kernel_size=ks, max_displacement=md, stride_1=1, stride_2=1,
-                                          pad=md + ks//2, data_format="channels_last")([cl, cr])
+                                          pad=md + ks//2, data_format="channels_last", name=name
+                                          )([cl, cr])
         return corr
-
-
-# def convolution(x, out_channel, kernel_size=3, stride=1, dilation=1, name=None):
-#     c = layers.Conv2D(out_channel, kernel_size=kernel_size, strides=stride, padding="same",
-#                       dilation_rate=dilation, name=name)(x)
-#     c = layers.LeakyReLU(0.1)(c)
-#     return c
-#
-#
-# def conv_flow(x, kernel_size=3, name=None):
-#     c = layers.Conv2D(2, kernel_size=kernel_size, padding="same", name=name)(x)
-#     return c
 
 
 # ===== TEST FUNCTIONS
@@ -202,8 +196,8 @@ def test_correlation():
     print("!!! test_correlation passed")
 
 
-def test_warp():
-    print("\n===== start test_warp")
+def test_warp_simple():
+    print("\n===== start test_warp_simple")
     batch, height, width, channel = (8, 100, 200, 10)
     im = tf.random.uniform((batch, height, width, channel), -2, 2)
     dy, dx = 1.5, 0.5
@@ -218,7 +212,37 @@ def test_warp():
     print("warp_tfa:", warp_tfa[1, 10:15, 10:15, 1].numpy())
     print("warp_man:", warp_man[1, 0:5, 0:5, 1].numpy())
     assert np.isclose(warp_tfa[1, 10:15, 10:15, 1].numpy(), warp_man[1, 0:5, 0:5, 1].numpy()).all()
-    print("!!! test_warp passed")
+    print("!!! test_warp_simple passed")
+
+
+def test_warp_multiple():
+    print("\n===== start test_warp_simple")
+
+    for k in range(1, 10):
+        batch, height, width, channel = (8, 100*5, 200, 10)
+        im = tf.random.uniform((batch, height, width, channel), -2, 2)
+        dy, dx = 1.5, 0.5
+        flow = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
+
+        # EXECUTE
+        warp_tfa = tfa.image.dense_image_warp(im, flow)
+        print("dense_image_warp without name", warp_tfa.get_shape())
+
+    # TODO: WARNING!! the below loop results in warnings like
+    #   "WARNING:tensorflow:5 out of the last 13 calls to <function dense_image_warp at 0x7f1c2e87e7a0>
+    #   triggered tf.function retracing. ~~~"
+    #   It seems like a bug and it happens only in the eager execution mode
+    for k in range(1, 10):
+        batch, height, width, channel = (8, 100*5, 200, 10)
+        im = tf.random.uniform((batch, height, width, channel), -2, 2)
+        dy, dx = 1.5, 0.5
+        flow = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
+
+        # EXECUTE
+        warp_tfa = tfa.image.dense_image_warp(im, flow, name=f"warp{k}")
+        print("dense_image_warp with name", warp_tfa.get_shape())
+
+    print("!!! test_warp_simple passed")
 
 
 def test_conv2d_5dtensor():
@@ -261,6 +285,30 @@ def test_reshape_tensor():
 import model.build_model.model_utils as mu
 
 
+def test_lambda_layer():
+    print("\n===== start test_lambda_layer")
+    batch, height, width, channel = (8, 100, 200, 10)
+    x = tf.random.uniform((batch, height, width, channel), -2, 2)
+    conv2d = mu.conv2d_func_factory(activation=layers.LeakyReLU(0.1))
+    y = convnet(conv2d, x)
+    print("normally build convnet, y shape:", y.get_shape())
+
+    try:
+        y = layers.Lambda(lambda inputs: convnet(conv2d, inputs),
+                          name=f"convnet")(x)
+        print("lambda layer output, y shape:", y.get_shape())
+        print("!!! test_lambda_layer passed")
+    except ValueError as ve:
+        print("[test_lambda_layer]", ve)
+
+
+def convnet(conv_op, x):
+    c = conv_op(x, 3)
+    c = conv_op(c, 5)
+    c = conv_op(c, 1, strides_=2)
+    return c
+
+
 def test_pwcnet():
     print("\n===== start test_pwcnet")
     total_shape = batch, snippet, height, width, channel = (8, 4, 128, 256, 10)
@@ -269,18 +317,28 @@ def test_pwcnet():
 
     # EXECUTE
     pwc_net = PWCNet(total_shape, conv2d)()
+    pwc_net.summary()
 
-    flows = pwc_net(input_tensor)
+    flows = run_net(pwc_net, input_tensor)
     for flow in flows:
         print("PWCNet flow shape:", flow.get_shape())
+    assert flows[0].get_shape() == (batch, snippet - 1, height // 4, width // 4, 2)
+    assert flows[1].get_shape() == (batch, snippet - 1, height // 8, width // 8, 2)
     print("!!! test_pwcnet passed")
 
 
+# @tf.function
+def run_net(net, input_tensor):
+    return net(input_tensor)
+
+
 if __name__ == "__main__":
-    test_correlation()
-    test_warp()
-    test_conv2d_5dtensor()
-    test_layer_input()
-    test_reshape_tensor()
+    # test_correlation()
+    # test_warp_simple()
+    # test_warp_multiple()
+    # test_conv2d_5dtensor()
+    # test_layer_input()
+    # test_reshape_tensor()
+    # test_lambda_layer()
     test_pwcnet()
 
