@@ -2,27 +2,46 @@ import tensorflow as tf
 from tensorflow.keras import layers
 
 
+class CustomConv2D:
+    def __init__(self, kernel_size=3, strides=1, padding="same", dilation_rate=1,
+                 activation="relu", kernel_initializer="glorot_uniform", scope=""):
+        self.kernel_size = kernel_size
+        self.strides = strides
+        self.padding = padding
+        self.dilation_rate = dilation_rate
+        self.activation = activation
+        self.kernel_initializer = kernel_initializer
+        self.scope = scope
+
+    def __call__(self, x, filters, kernel_size=None, strides=None, padding=None, dilation_rate=None,
+                 activation=None, kernel_initializer=None, name=""):
+        kernel_size = self.kernel_size if kernel_size is None else kernel_size
+        strides = self.strides if strides is None else strides
+        padding = self.padding if padding is None else padding
+        dilation_rate = self.dilation_rate if dilation_rate is None else dilation_rate
+        activation = self.activation if activation is None else activation
+        kernel_initializer = self.kernel_initializer if kernel_initializer is None else kernel_initializer
+        name = f"{self.scope}_{name}" if self.scope else name
+        conv = layers.Conv2D(filters, kernel_size, strides, padding,
+                             dilation_rate=dilation_rate, activation=activation,
+                             kernel_initializer=kernel_initializer, name=name
+                             )(x)
+        return conv
+
+
+# set default arguments of layers.Conv2D but still able to input arguments to 'conv2d'
 def conv2d_func_factory(kernel_size=3, strides=1, padding="same", dilation_rate=1,
                         activation="relu", kernel_initializer="glorot_uniform"):
 
     def conv2d(x, filters, kernel_size_=kernel_size, strides_=strides, padding_=padding,
                dilation_rate_=dilation_rate, activation_=activation,
                kernel_initializer_=kernel_initializer, **kwargs):
-        conv = tf.keras.layers.Conv2D(filters, kernel_size_, strides_, padding_,
-                                      dilation_rate=dilation_rate_, activation=activation_,
-                                      kernel_initializer=kernel_initializer_, **kwargs)(x)
+        conv = layers.Conv2D(filters, kernel_size_, strides_, padding_,
+                             dilation_rate=dilation_rate_, activation=activation_,
+                             kernel_initializer=kernel_initializer_, **kwargs)(x)
         return conv
 
     return conv2d
-
-
-def convolution(x, filters, kernel_size, strides, name):
-    conv = tf.keras.layers.Conv2D(filters, kernel_size, strides=strides,
-                                  padding="same", activation="relu",
-                                  kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.025),
-                                  # kernel_regularizer=tf.keras.regularizers.l2(0.001),
-                                  name=name)(x)
-    return conv
 
 
 def resize_like(src, ref, scope):
@@ -67,6 +86,22 @@ def test_conv2d_factory():
     print("!!! test_conv2d_factory passed")
 
 
+def test_custom_conv2d():
+    print("\n===== start test_conv2d_factory")
+    conv_op1 = CustomConv2D()
+    conv_op2 = CustomConv2D(kernel_size=5, strides=2, activation="linear", scope="my")
+    print("conv ops are created!")
+    x = tf.random.uniform((8, 100, 200, 10), -1, 1)
+    y1 = conv_op1(x, 20, name="conv1")
+    y2 = conv_op2(x, 30, name="conv2")
+    print("conv op1 output shape:", y1.get_shape())
+    print("conv op2 output shape:", y2.get_shape())
+    print("conv op1 args:", vars(conv_op1))
+    print("conv op2 args:", vars(conv_op2))
+    print("!!! test_conv2d_factory passed")
+
+
 if __name__ == "__main__":
     test_conv2d_factory()
+    test_custom_conv2d()
 
