@@ -50,8 +50,6 @@ class ModelFactory:
             flownet = self.flow_net_factory(self.net_names["flow"], conv_flow)
             models["flownet"] = flownet
 
-        # TODO: add optical flow factory
-
         if self.stereo_extrinsic:
             model_wrapper = mw.StereoPoseModelWrapper(models)
         elif self.stereo:
@@ -87,7 +85,7 @@ class ModelFactory:
                 dst_args[key] = tf.keras.initializers.GlorotUniform()
 
         # change default arguments of Conv2D layer
-        conv_layer = mu.conv2d_func_factory(**dst_args)
+        conv_layer = mu.CustomConv2D(**dst_args)
         return conv_layer
 
     def depth_net_factory(self, net_name, conv2d_d, pred_activ, upsample_interp):

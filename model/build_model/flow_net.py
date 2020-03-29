@@ -9,6 +9,7 @@ class PWCNet:
     def __init__(self, total_shape, conv2d):
         self.total_shape = total_shape
         self.conv2d_f = conv2d
+        print("[FlowNet] convolution default options:", vars(conv2d))
 
     def __call__(self):
         batch, snippet, height, width, channel = self.total_shape
@@ -40,7 +41,7 @@ class PWCNet:
         # reshape back to normal bactch size
         # -> list of [batch, num_src, height//scale, width//scale, channel]
         flows_ms = self.reshape_batch_back(flows_ms)
-        pwcnet = tf.keras.Model(inputs=input_tensor, outputs=flows_ms, name="PWCNet")
+        pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flows_ms": flows_ms}, name="PWCNet")
         return pwcnet
 
     def split_target_and_sources(self, input_tensor):
@@ -135,7 +136,7 @@ class PWCNet:
         c = self.conv2d_f(x, 64, name=f"pwc_{tag}_c4")
         x = tf.concat([x, c], axis=-1)
         c = self.conv2d_f(x, 32)
-        flow = self.conv2d_f(c, 2, activation_="linear", name=f"pwc_{tag}_out")
+        flow = self.conv2d_f(c, 2, activation="linear", name=f"pwc_{tag}_out")
 
         if up:
             up_flow = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
@@ -147,13 +148,13 @@ class PWCNet:
             return flow, c
 
     def context_network(self, x, flow):
-        c = self.conv2d_f(x, 128, 3, dilation_rate_=1, name="pwc_context_1")
-        c = self.conv2d_f(c, 128, 3, dilation_rate_=2, name="pwc_context_2")
-        c = self.conv2d_f(c, 128, 3, dilation_rate_=4, name="pwc_context_3")
-        c = self.conv2d_f(c,  96, 3, dilation_rate_=8, name="pwc_context_4")
-        c = self.conv2d_f(c,  64, 3, dilation_rate_=16, name="pwc_context_5")
-        c = self.conv2d_f(c,  32, 3, dilation_rate_=1, name="pwc_context_6")
-        refined_flow = self.conv2d_f(c, 2, activation_="linear", name=f"pwc_context_7") + flow
+        c = self.conv2d_f(x, 128, 3, dilation_rate=1, name="pwc_context_1")
+        c = self.conv2d_f(c, 128, 3, dilation_rate=2, name="pwc_context_2")
+        c = self.conv2d_f(c, 128, 3, dilation_rate=4, name="pwc_context_3")
+        c = self.conv2d_f(c,  96, 3, dilation_rate=8, name="pwc_context_4")
+        c = self.conv2d_f(c,  64, 3, dilation_rate=16, name="pwc_context_5")
+        c = self.conv2d_f(c,  32, 3, dilation_rate=1, name="pwc_context_6")
+        refined_flow = self.conv2d_f(c, 2, activation="linear", name=f"pwc_context_7") + flow
         return refined_flow
 
     def correlation(self, cl, cr, ks=1, md=4, name=""):
@@ -289,7 +290,7 @@ def test_lambda_layer():
     print("\n===== start test_lambda_layer")
     batch, height, width, channel = (8, 100, 200, 10)
     x = tf.random.uniform((batch, height, width, channel), -2, 2)
-    conv2d = mu.conv2d_func_factory(activation=layers.LeakyReLU(0.1))
+    conv2d = mu.CustomConv2D(activation=layers.LeakyReLU(0.1))
     y = convnet(conv2d, x)
     print("normally build convnet, y shape:", y.get_shape())
 
@@ -305,7 +306,7 @@ def test_lambda_layer():
 def convnet(conv_op, x):
     c = conv_op(x, 3)
     c = conv_op(c, 5)
-    c = conv_op(c, 1, strides_=2)
+    c = conv_op(c, 1, strides=2)
     return c
 
 

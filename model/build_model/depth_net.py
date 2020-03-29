@@ -23,6 +23,7 @@ class DepthNetBasic:
         self.predict_depth = pred_depth
         self.conv2d_d = conv2d
         self.upsample_interp_d = upsample_iterp
+        print("[DepthNet] convolution default options:", vars(conv2d))
 
     def __call__(self):
         """
@@ -35,20 +36,20 @@ class DepthNetBasic:
         source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
                                                    name="depthnet_split_image")(input_tensor)
 
-        conv0 = self.conv2d_d(target_image, 32, 7, strides_=1, name="dp_conv0b")
-        conv1 = self.conv2d_d(conv0, 32, 7, strides_=2, name="dp_conv1a")
-        conv1 = self.conv2d_d(conv1, 64, 5, strides_=1, name="dp_conv1b")
-        conv2 = self.conv2d_d(conv1, 64, 5, strides_=2, name="dp_conv2a")
-        conv2 = self.conv2d_d(conv2, 128, 3, strides_=1, name="dp_conv2b")
-        conv3 = self.conv2d_d(conv2, 128, 3, strides_=2, name="dp_conv3a")
-        conv3 = self.conv2d_d(conv3, 256, 3, strides_=1, name="dp_conv3b")
-        conv4 = self.conv2d_d(conv3, 256, 3, strides_=2, name="dp_conv4a")
-        conv4 = self.conv2d_d(conv4, 512, 3, strides_=1, name="dp_conv4b")
-        conv5 = self.conv2d_d(conv4, 512, 3, strides_=2, name="dp_conv5a")
-        conv5 = self.conv2d_d(conv5, 512, 3, strides_=1, name="dp_conv5b")
-        conv6 = self.conv2d_d(conv5, 512, 3, strides_=2, name="dp_conv6a")
-        conv6 = self.conv2d_d(conv6, 512, 3, strides_=1, name="dp_conv6b")
-        conv7 = self.conv2d_d(conv6, 512, 3, strides_=2, name="dp_conv7a")
+        conv0 = self.conv2d_d(target_image, 32, 7, strides=1, name="dp_conv0b")
+        conv1 = self.conv2d_d(conv0, 32, 7, strides=2, name="dp_conv1a")
+        conv1 = self.conv2d_d(conv1, 64, 5, strides=1, name="dp_conv1b")
+        conv2 = self.conv2d_d(conv1, 64, 5, strides=2, name="dp_conv2a")
+        conv2 = self.conv2d_d(conv2, 128, 3, strides=1, name="dp_conv2b")
+        conv3 = self.conv2d_d(conv2, 128, 3, strides=2, name="dp_conv3a")
+        conv3 = self.conv2d_d(conv3, 256, 3, strides=1, name="dp_conv3b")
+        conv4 = self.conv2d_d(conv3, 256, 3, strides=2, name="dp_conv4a")
+        conv4 = self.conv2d_d(conv4, 512, 3, strides=1, name="dp_conv4b")
+        conv5 = self.conv2d_d(conv4, 512, 3, strides=2, name="dp_conv5a")
+        conv5 = self.conv2d_d(conv5, 512, 3, strides=1, name="dp_conv5b")
+        conv6 = self.conv2d_d(conv5, 512, 3, strides=2, name="dp_conv6a")
+        conv6 = self.conv2d_d(conv6, 512, 3, strides=1, name="dp_conv6b")
+        conv7 = self.conv2d_d(conv6, 512, 3, strides=2, name="dp_conv7a")
 
         upconv6 = self.upconv_with_skip_connection(conv7, conv6, 512, "dp_up6")     # 1/64
         upconv5 = self.upconv_with_skip_connection(upconv6, conv5, 512, "dp_up5")   # 1/32
@@ -84,7 +85,7 @@ class DepthNetBasic:
         return upconv
 
     def get_scaled_depth(self, src, dst_height, dst_width, scope):
-        conv = self.conv2d_d(src, 1, 3, activation_="linear", name=scope + "_conv")
+        conv = self.conv2d_d(src, 1, 3, activation="linear", name=scope + "_conv")
         depth = layers.Lambda(lambda x: self.predict_depth(x), name=scope + "_acti")(conv)
         conv_up = mu.resize_image(conv, dst_height, dst_width, scope)
         return depth, conv_up, conv
