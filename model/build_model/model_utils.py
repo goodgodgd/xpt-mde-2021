@@ -55,12 +55,12 @@ def restack_on_channels(vertical_stack, num_stack):
 
 def test_conv2d_factory():
     print("\n===== start test_conv2d_factory")
-    conv_op1 = conv2d_factory()
-    conv_op2 = conv2d_factory(filters=20, kernel_size=5, strides=2, activation="linear")
+    conv_op1 = conv2d_func_factory()
+    conv_op2 = conv2d_func_factory(kernel_size=5, strides=2, activation="linear")
     print("conv ops are created!")
     x = tf.random.uniform((8, 100, 200, 10), -1, 1)
-    y1 = conv_op1(x, "conv1", filters=30)
-    y2 = conv_op2(x, "conv2")
+    y1 = conv_op1(x, 20, name="conv1")
+    y2 = conv_op2(x, 30, name="conv2")
     print("conv op1 output shape:", y1.get_shape())
     print("conv op2 output shape:", y2.get_shape())
 

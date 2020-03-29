@@ -1,9 +1,9 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-import utils.util_funcs as uf
 from copy import deepcopy
 
 import settings
+import utils.util_funcs as uf
 import model.build_model.model_utils as mu
 from model.build_model.pretrained_nets import PretrainedModel
 

@@ -6,6 +6,7 @@ from utils.util_class import WrongInputException
 import utils.util_funcs as uf
 from model.build_model.depth_net import DepthNetBasic, DepthNetNoResize, DepthNetFromPretrained
 from model.build_model.pose_net import PoseNet
+from model.build_model.flow_net import PWCNet
 import model.build_model.model_wrappers as mw
 import model.build_model.model_utils as mu
 
@@ -30,21 +31,24 @@ class ModelFactory:
 
     def get_model(self):
         models = dict()
-        depth_activation = self.activation_factory(self.activation)
-        conv_depth = self.conv2d_factory(opts.DEPTH_CONV_ARGS)
-        conv_pose = self.conv2d_factory(opts.POSE_CONV_ARGS)
-        conv_flow = self.conv2d_factory(opts.FLOW_CONV_ARGS)
-        upsample_interp_d = opts.DEPTH_UPSAMPLE_INTERP
 
         if "depth" in self.net_names:
+            depth_activation = self.activation_factory(self.activation)
+            conv_depth = self.conv2d_factory(opts.DEPTH_CONV_ARGS)
+            upsample_interp_d = opts.DEPTH_UPSAMPLE_INTERP
             depthnet = self.depth_net_factory(self.net_names["depth"], conv_depth,
                                               depth_activation, upsample_interp_d)
             models["depthnet"] = depthnet
 
         if "camera" in self.net_names:
-            # TODO: add intrinsic output
+            conv_pose = self.conv2d_factory(opts.POSE_CONV_ARGS)
             posenet = self.pose_net_factory(self.net_names["camera"], conv_pose)
             models["posenet"] = posenet
+
+        if "flow" in self.net_names:
+            conv_flow = self.conv2d_factory(opts.FLOW_CONV_ARGS)
+            flownet = self.flow_net_factory(self.net_names["flow"], conv_flow)
+            models["flownet"] = flownet
 
         # TODO: add optical flow factory
 
@@ -104,6 +108,13 @@ class ModelFactory:
         else:
             raise WrongInputException("[pose_net_factory] wrong pose net name: " + net_name)
         return posenet
+
+    def flow_net_factory(self, net_name, conv2d_f):
+        if net_name == "PWCNet":
+            flownet = PWCNet(self.input_shape, conv2d_f)()
+        else:
+            raise WrongInputException("[flow_net_factory] wrong flow net name: " + net_name)
+        return flownet
 
 
 class InverseSigmoidActivation:

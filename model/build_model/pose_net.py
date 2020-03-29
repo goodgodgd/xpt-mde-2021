@@ -3,6 +3,8 @@ from tensorflow.keras import layers
 
 import model.build_model.model_utils as mu
 
+# TODO: pretrained model (w/ and w/o pretrained weight)이나 conv가 더 많은 모델 등 활용해보기
+
 
 class PoseNet:
     def __init__(self, input_shape, conv2d):
