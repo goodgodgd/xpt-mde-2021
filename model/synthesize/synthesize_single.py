@@ -187,6 +187,28 @@ def test_gather_nd():
     print("test_gather_nd passed")
 
 
+def test_gather_nd_simple():
+    print("\n===== start test_gather_nd_simple")
+    batch, hwa, boxdim, maxpred = 3, 12, 4, 5
+    # batch, height*width*anchors, boxdim
+    pred_reshaped = tf.reshape(tf.range(batch*hwa*boxdim), (batch, hwa, 1, boxdim))
+    print("pred_reshaped:", pred_reshaped.get_shape())
+
+    # batch, hwa, maxpred
+    iou = tf.random.normal((batch, hwa, maxpred))
+    # batch, maxpred, 1
+    maxinds = tf.argmax(iou, axis=1)
+    maxinds = tf.expand_dims(maxinds, axis=-1)
+    print("indices of max:", maxinds.get_shape())
+
+    # EXECUTE
+    overlap_boxes = tf.gather_nd(pred_reshaped, maxinds, batch_dims=1)
+    print("extracted data:", overlap_boxes.get_shape())
+    print(overlap_boxes.numpy())
+
+    print("!!! test_gather_nd_simple passed")
+
+
 def test_synthesize_view():
     np.set_printoptions(precision=3, suppress=True)
     src_image, tgt_image, tgt_depth, t2s_pose, intrinsic = load_data()
@@ -201,10 +223,11 @@ def test_synthesize_view():
 
 def test():
     np.set_printoptions(precision=3, suppress=True)
-    test_pixel_meshgrid()
-    test_pixel2cam2pixel()
-    test_gather_nd()
-    test_synthesize_view()
+    # test_pixel_meshgrid()
+    # test_pixel2cam2pixel()
+    # test_gather_nd()
+    test_gather_nd_simple()
+    # test_synthesize_view()
 
 
 if __name__ == "__main__":
