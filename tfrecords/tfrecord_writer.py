@@ -27,7 +27,7 @@ class TfrecordMaker:
 
         self.write_tfrecord_config(data_feeders)
         num_images = len(data_feeders["image"])
-        num_shards = max(min(num_images // 2000, 10), 1)
+        num_shards = max(min(num_images // 2000, 20), 1)
         num_images_per_shard = num_images // num_shards
         print(f"========== tfrecord maker started\n\tsrcpath={self.srcpath}\n\tdstpath={self.dstpath}")
         print(f"\tnum images={num_images}, shards={num_shards}, images per shard={num_images_per_shard}")

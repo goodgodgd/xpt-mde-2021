@@ -8,8 +8,10 @@ from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 from model.build_model.model_factory import ModelFactory
-from model.optimizers import optimizer_factory
-import model.logger as log
+from model.loss_and_metric.loss_factory import loss_factory
+from model.model_util.optimizers import optimizer_factory
+import model.model_util.logger as log
+from model.model_util.distributer import StrategyScope, StrategyDataset
 import model.train_val as tv
 
 
@@ -21,24 +23,20 @@ def train(final_epoch=opts.EPOCHS):
 
     set_configs()
     log.copy_or_check_same()
-    pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
-    model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
-    model = try_load_weights(model)
-    model.compile(optimizer='sgd', loss='mean_absolute_error')
+    model, loss_object, optimizer = create_training_parts(initial_epoch)
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
     dataset_train, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
     dataset_val, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
-    optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
-    trainer_graph = tv.ModelTrainerGraph(train_steps, opts.STEREO, optimizer)
-    validater_graph = tv.ModelValidaterGraph(val_steps, opts.STEREO)
+    trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, loss_object,
+                                              train_steps, opts.STEREO, optimizer)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, final_epoch):
         print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
 
-        result_train, depth_train = trainer_graph.run_an_epoch(model, dataset_train)
-        result_val, depth_val = validater_graph.run_an_epoch(model, dataset_val)
+        result_train, depth_train = trainer.run_an_epoch(dataset_train)
+        result_val, depth_val = validater.run_an_epoch(dataset_val)
 
         print("save intermediate results ...")
         log.save_reconstruction_samples(model, dataset_val, epoch)
@@ -66,6 +64,17 @@ def set_configs():
             print(e)
 
 
+@StrategyScope
+def create_training_parts(initial_epoch):
+    pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
+    model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
+    model = try_load_weights(model)
+    model.compile(optimizer='sgd', loss='mean_absolute_error')
+    loss_object = loss_factory()
+    optimizer = optimizer_factory(opts.OPTIMIZER, opts.LEARNING_RATE, initial_epoch)
+    return model, loss_object, optimizer
+
+
 def try_load_weights(model, weights_suffix='latest'):
     if opts.CKPT_NAME:
         model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME)
@@ -76,6 +85,7 @@ def try_load_weights(model, weights_suffix='latest'):
     return model
 
 
+@StrategyDataset
 def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
     assert op.isdir(tfr_train_path)

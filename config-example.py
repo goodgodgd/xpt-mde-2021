@@ -7,14 +7,14 @@ RAW_DATA_PATHS = {
     "cityscapes": "/media/ian/IanPrivatePP/Datasets/cityscapes",
     "cityscapes_seq": "/media/ian/IanPrivatePP/Datasets/cityscapes",
 }
-RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data_384"
+RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data/vode_stereo_0705"
 
 
 class VodeOptions:
     """
     data options
     """
-    STEREO = False
+    STEREO = True
     SNIPPET_LEN = 5
     IM_WIDTH = 384
     IM_HEIGHT = 128
@@ -23,19 +23,9 @@ class VodeOptions:
     VALIDATION_FRAMES = 500
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test", "val"],
                            "kitti_odom": ["train", "test", "val"],
-                           "cityscapes": ["train_extra", "test"],
-                           "cityscapes_seq": ["train", "test", "val"],
+                           # "cityscapes": ["train_extra"],
+                           # "cityscapes_seq": ["train"],
                            }
-
-    """
-    training options
-    """
-    BATCH_SIZE = 4
-    EPOCHS = 51
-    LEARNING_RATE = 0.0001
-    ENABLE_SHAPE_DECOR = False
-    CKPT_NAME = "vode1_exp_acti"
-    LOG_LOSS = True
 
     """
     path options
@@ -51,27 +41,43 @@ class VodeOptions:
     PROJECT_ROOT = op.dirname(__file__)
 
     """
-    model options: network architecture, loss wegihts, ...
+    training options
     """
-    DATASET_TO_USE = "kitti_raw"
+    CKPT_NAME = "vode1"
+    BATCH_SIZE = 4
+    EPOCHS = 51
+    LEARNING_RATE = 0.0001
+    ENABLE_SHAPE_DECOR = False
+    LOG_LOSS = True
+    TRAIN_MODE = ["eager", "graph", "distributed"][2]
+    DATASET_TO_USE = ["kitti_raw", "kitti_odom"][0]
     STEREO_EXTRINSIC = True
     SSIM_RATIO = 0.8
     LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO)*1., "SSIM": SSIM_RATIO*0.5, "smoothe": 1.,
                     "L1_R": (1. - SSIM_RATIO)*1., "SSIM_R": SSIM_RATIO*0.5, "smoothe_R": 1.,
                     "stereo_L1": 0.04, "stereo_pose": 0.5}
-    NET_NAMES = {"depth": "NASNetMobile", "camera": "PoseNet"}
-    SYNTHESIZER = "SynthesizeMultiScale"
-    OPTIMIZER = "adam_constant"
-    DEPTH_ACTIVATION = "InverseSigmoid"
+    # SYNTHESIZER = "SynthesizeMultiScale"
+    OPTIMIZER = ["adam_constant"][0]
+    DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]
     PRETRAINED_WEIGHT = True
+
+    """
+    network options: network architecture, convolution args, ... 
+    """
+    NET_NAMES = {"depth": "NASNetMobile",
+                 "camera": "PoseNet",
+                 # "flow": "PWCNet"
+                 }
+    DEPTH_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
+                       "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
+    DEPTH_UPSAMPLE_INTERP = "nearest"
+    POSE_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
+                      "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
+    FLOW_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
+                      "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
 
 
 opts = VodeOptions()
-
-
-class WrongDatasetException(Exception):
-    def __init__(self, msg):
-        super().__init__(msg)
 
 
 def get_raw_data_path(dataset_name):
@@ -80,7 +86,7 @@ def get_raw_data_path(dataset_name):
         assert op.isdir(dataset_path)
         return dataset_path
     else:
-        raise WrongDatasetException(f"Unavailable dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}")
+        assert 0, f"Unavailable dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}"
 
 
 import numpy as np
