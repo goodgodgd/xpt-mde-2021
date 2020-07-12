@@ -3,8 +3,25 @@ import numpy as np
 import time
 
 import utils.util_funcs as uf
+import utils.util_class as uc
 from model.loss_and_metric.metric import compute_metric_pose
-from model.model_util.distributer import DistributionStrategy
+from model.model_util.distributer import DistributionStrategy, ReplicaOutputIntegrator
+
+
+def train_val_factory(mode_sel, model, loss_object, steps_per_epoch, stereo, optimizer):
+    if mode_sel == "eager":
+        trainer = ModelTrainer(model, loss_object, steps_per_epoch, stereo, optimizer)
+        validater = ModelValidater(model, loss_object, steps_per_epoch, stereo)
+    elif mode_sel == "graph":
+        trainer = ModelTrainerGraph(model, loss_object, steps_per_epoch, stereo, optimizer)
+        validater = ModelValidaterGraph(model, loss_object, steps_per_epoch, stereo)
+    elif mode_sel == "distributed":
+        trainer = ModelTrainerDistrib(model, loss_object, steps_per_epoch, stereo, optimizer)
+        validater = ModelValidaterDistrib(model, loss_object, steps_per_epoch, stereo)
+    else:
+        raise uc.WrongInputException(f"training mode '{mode_sel}' is NOT available")
+
+    return trainer, validater
 
 
 class TrainValBase:
@@ -77,28 +94,20 @@ class ModelTrainerGraph(ModelTrainer):
 
     @tf.function
     def run_a_batch(self, features):
-        self.train_a_step(features)
+        return self.train_a_step(features)
 
 
 class ModelTrainerDistrib(ModelTrainer):
     def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer):
         super().__init__(model, loss_object, steps_per_epoch, stereo, optimizer)
         self.strategy = DistributionStrategy.get_strategy()
+        self.replica_integrator = ReplicaOutputIntegrator()
 
     @tf.function
     def run_a_batch(self, features):
         per_replica_results = self.strategy.run(self.train_a_step, args=(features,))
         per_replica_results = self.strategy.experimental_local_results(per_replica_results)
-        # concatenate results by type
-        num_outs = 3
-        outputs = [[] for i in range(num_outs)]
-        for replica_result in per_replica_results:
-            for i in range(num_outs):
-                outputs[i].append(replica_result[i])
-
-        for i in range(num_outs):
-            outputs[i] = tf.concat(outputs[i], axis=0)
-        return tuple(outputs)
+        return self.replica_integrator(per_replica_results)
 
 
 class ModelValidater(TrainValBase):
@@ -129,21 +138,13 @@ class ModelValidaterDistrib(ModelValidater):
     def __init__(self, model, loss_object, steps_per_epoch, stereo):
         super().__init__(model, loss_object, steps_per_epoch, stereo)
         self.strategy = DistributionStrategy.get_strategy()
+        self.replica_integrator = ReplicaOutputIntegrator()
 
     @tf.function
     def run_a_batch(self, features):
         per_replica_results = self.strategy.run(self.validate_a_step, args=(features,))
         per_replica_results = self.strategy.experimental_local_results(per_replica_results)
-        # concatenate results by type
-        num_outs = 3
-        outputs = [[] for i in range(num_outs)]
-        for replica_result in per_replica_results:
-            for i in range(num_outs):
-                outputs[i].append(replica_result[i])
-
-        for i in range(num_outs):
-            outputs[i] = tf.concat(outputs[i], axis=0)
-        return tuple(outputs)
+        return self.replica_integrator(per_replica_results)
 
 
 def merge_results(features, preds, loss, loss_by_type, stereo):
@@ -192,10 +193,10 @@ def inspect_model(preds, step, steps_per_epoch):
         return
 
     print("")
-    print("depth0--", np.quantile(preds["depth_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
+    print("depth0 ", np.quantile(preds["depth_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
     print("dpconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv0", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
-    print("depth3--", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
+    print("depth3 ", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("dpconv3", np.quantile(preds["debug_out"][2].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv3", np.quantile(preds["debug_out"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("pose_LR", preds["pose_LR"][0].numpy())

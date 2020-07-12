@@ -210,7 +210,6 @@ def test_gather_nd_simple():
 
 
 def test_synthesize_view():
-    np.set_printoptions(precision=3, suppress=True)
     src_image, tgt_image, tgt_depth, t2s_pose, intrinsic = load_data()
 
     tgt_recon_image = synthesize_view(src_image, tgt_depth, t2s_pose, intrinsic)

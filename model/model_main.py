@@ -28,15 +28,15 @@ def train(final_epoch=opts.EPOCHS):
     # TODO WARNING! using "test" split for training dataset is just to check training process
     dataset_train, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
     dataset_val, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
-    trainer_graph = tv.ModelTrainerGraph(model, loss_object, train_steps, opts.STEREO, optimizer)
-    validater_graph = tv.ModelValidaterGraph(model, loss_object, val_steps, opts.STEREO)
+    trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, loss_object,
+                                              train_steps, opts.STEREO, optimizer)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, final_epoch):
         print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
 
-        result_train, depth_train = trainer_graph.run_an_epoch(dataset_train)
-        result_val, depth_val = validater_graph.run_an_epoch(dataset_val)
+        result_train, depth_train = trainer.run_an_epoch(dataset_train)
+        result_val, depth_val = validater.run_an_epoch(dataset_val)
 
         print("save intermediate results ...")
         log.save_reconstruction_samples(model, dataset_val, epoch)
@@ -71,7 +71,7 @@ def create_training_parts(initial_epoch):
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
     loss_object = loss_factory()
-    optimizer = optimizer_factory("adam_constant", opts.LEARNING_RATE, initial_epoch)
+    optimizer = optimizer_factory(opts.OPTIMIZER, opts.LEARNING_RATE, initial_epoch)
     return model, loss_object, optimizer
 
 
