@@ -36,12 +36,12 @@ class PWCNet:
         flow2, flow_feat2         = self.upconv_flow(2, c2l, c2r, 5.0,   up_flow3, up_feat3, up=False)
 
         flow2 = self.context_network(flow_feat2, flow2)
-        flows_ms = [flow2, flow3, flow4, flow5, flow6]
+        flow_ms = [flow2, flow3, flow4, flow5]
 
         # reshape back to normal bactch size
         # -> list of [batch, num_src, height//scale, width//scale, channel]
-        flows_ms = self.reshape_batch_back(flows_ms)
-        pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flows_ms": flows_ms}, name="PWCNet")
+        flow_ms = self.reshape_batch_back(flow_ms)
+        pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flow_ms": flow_ms}, name="PWCNet")
         return pwcnet
 
     def split_target_and_sources(self, input_tensor):

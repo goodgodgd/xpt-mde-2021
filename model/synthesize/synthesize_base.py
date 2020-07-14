@@ -77,9 +77,13 @@ class SynthesizeBatchBasic:
         :param src_img_stacked: [batch, height*num_src, width, 3]
         :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
         """
-        # resize image
-        scaled_image = tf.image.resize(src_img_stacked, size=(self.height * self.num_src, self.width), method="bilinear")
-        # reorganize scaled images: (4*height/scale,) -> (4, height/scale)
+        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
+        height_orig = stacked_height // self.num_src
+        # reshape image -> (batch*num_src, height_orig, width_orig, 3)
+        source_images = tf.reshape(src_img_stacked, shape=(self.batch * self.num_src, height_orig, width_orig, 3))
+        # resize image (scaled) -> (batch*num_src, height, width, 3)
+        scaled_image = tf.image.resize(source_images, size=(self.height, self.width), method="bilinear")
+        # reorganize scaled images -> (batch, num_src, height, width, 3)
         source_images = tf.reshape(scaled_image, shape=(self.batch, self.num_src, self.height, self.width, 3))
         return source_images
 

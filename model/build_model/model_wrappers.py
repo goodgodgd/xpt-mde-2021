@@ -90,8 +90,8 @@ class ModelWrapper:
 
 
 class StereoModelWrapper(ModelWrapper):
-    def __init__(self, model):
-        super().__init__(model)
+    def __init__(self, models):
+        super().__init__(models)
 
     def __call__(self, features):
         predictions = dict()
@@ -116,18 +116,21 @@ class StereoModelWrapper(ModelWrapper):
 
 
 class StereoPoseModelWrapper(ModelWrapper):
-    def __init__(self, model):
-        super().__init__(model)
+    def __init__(self, models):
+        super().__init__(models)
 
     def __call__(self, features):
         predictions = dict()
         for netname, model in self.models.items():
+            print("predict", netname)
             pred = model(features["image"])
+            print("predict", pred.keys())
             predictions.update(pred)
             preds_right = model(features["image_R"])
             preds_right = {key + "_R": value for key, value in preds_right.items()}
             predictions.update(preds_right)
 
+        print("!!! stereo wrapper model prediction keys:", predictions.keys())
         if "depth_ms" in predictions:
             predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
         if "depth_ms_R" in predictions:

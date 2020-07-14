@@ -1,6 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 from model.synthesize.synthesize_base import SynthesizeMultiScale
+from model.synthesize.flow_warping import FlowWarpMultiScale
 
 import utils.util_funcs as uf
 from utils.util_class import WrongInputException
@@ -60,6 +61,8 @@ class TotalLoss:
                 target_ms: multi scale target frame, list of [batch, height/scale, width/scale, 3]
                 synth_target_ms: multi scale synthesized target frames generated from each source image,
                                 list of [batch, num_src, height/scale, width/scale, 3]
+                warped_target_ms: multi scale flow warped target frames generated from each source image,
+                                list of [batch, num_src, height/scale, width/scale, 3]
         """
         augm_data = dict()
         pred_depth_ms = predictions["depth_ms" + suffix]
@@ -68,14 +71,21 @@ class TotalLoss:
         stacked_image = features["image" + suffix]
         intrinsic = features["intrinsic" + suffix]
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
-        target_ms = uf.multi_scale_like(target_image, pred_depth_ms)
+        target_ms = uf.multi_scale_like_depth(target_image, pred_depth_ms)
         augm_data["source" + suffix] = source_image
         augm_data["target" + suffix] = target_image
         augm_data["target_ms" + suffix] = target_ms
-
+        # synthesized image is used in both L1 and SSIM photometric losses
         synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, pred_depth_ms, pred_pose)
         augm_data["synth_target_ms" + suffix] = synth_target_ms
 
+        # warped image is used in both L1 and SSIM photometric losses
+        if "flow_ms" + suffix in predictions:
+            pred_flow_ms = predictions["flow_ms" + suffix]
+            flow_target_ms = uf.multi_scale_like_flow(target_image, pred_flow_ms)
+            augm_data["flow_target_ms" + suffix] = flow_target_ms
+            warped_target_ms = FlowWarpMultiScale()(source_image, pred_flow_ms)
+            augm_data["warped_target_ms" + suffix] = warped_target_ms
         return augm_data
 
 
@@ -84,7 +94,7 @@ class LossBase:
         raise NotImplementedError()
 
 
-class PhotometricLossMultiScale(LossBase):
+class PhotometricLoss(LossBase):
     def __init__(self, method, key_suffix=""):
         if method == "L1":
             self.photometric_loss = photometric_loss_l1
@@ -94,6 +104,14 @@ class PhotometricLossMultiScale(LossBase):
             raise WrongInputException("Wrong photometric loss name: " + method)
 
         self.key_suffix = key_suffix
+
+    def __call__(self, features, predictions, augm_data):
+        raise NotImplementedError()
+
+
+class PhotometricLossMultiScale(PhotometricLoss):
+    def __init__(self, method, key_suffix=""):
+        super().__init__(method, key_suffix)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -238,14 +256,9 @@ class SmoothenessLossMultiScale(LossBase):
         return smoothness
 
 
-class StereoDepthLoss(LossBase):
+class StereoDepthLoss(PhotometricLoss):
     def __init__(self, method):
-        if method == "L1":
-            self.photometric_loss = photometric_loss_l1
-        elif method == "SSIM":
-            self.photometric_loss = photometric_loss_ssim
-        else:
-            raise WrongInputException("Wrong photometric loss name: " + method)
+        super().__init__(method)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -307,6 +320,30 @@ class StereoPoseLoss(LossBase):
         # loss: [batch]
         loss = tf.reduce_mean(loss, axis=1)
         return loss
+
+
+class FlowWarpLossMultiScale(PhotometricLoss):
+    def __init__(self, method, key_suffix=""):
+        super().__init__(method, key_suffix)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        :return: photo_loss [batch]
+        """
+        flow_target_ms = augm_data["flow_target_ms" + self.key_suffix]
+        # warp a target from 4 sources and 4 flows in 4 level scales
+        warped_target_ms = augm_data["warped_target_ms" + self.key_suffix]
+
+        losses = []
+        for i, (warp_target, orig_target) in enumerate(zip(warped_target_ms, flow_target_ms)):
+            loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
+                                 name=f"flow_warp_loss_{i}")([warp_target, orig_target])
+            losses.append(loss)
+        # losses: list of [batch, num_src] -> after stack: [batch, num_src, num_scale] -> after sum: [batch]
+        batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
+                                   name="flow_warp_loss_sum")(losses)
+        return batch_loss
 
 
 # ===== TEST FUNCTIONS

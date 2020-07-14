@@ -158,7 +158,7 @@ def safe_reciprocal_number(src_tensor):
     return dst_tensor
 
 
-def multi_scale_like(image, disp_ms):
+def multi_scale_like_depth(image, disp_ms):
     """
     :param image: [batch, height, width, 3]
     :param disp_ms: list of [batch, height/scale, width/scale, 1]
@@ -168,7 +168,22 @@ def multi_scale_like(image, disp_ms):
     for i, disp in enumerate(disp_ms):
         batch, height_sc, width_sc, _ = disp.get_shape().as_list()
         image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
-                                 name=f"target_resize_{i}")(image)
+                                 name=f"resize_like_depth_{i}")(image)
+        image_ms.append(image_sc)
+    return image_ms
+
+
+def multi_scale_like_flow(image, flow_ms):
+    """
+    :param image: [batch, height, width, 3]
+    :param flow_ms: list of [batch, num_src, height/scale, width/scale, 1]
+    :return: image_ms: list of [batch, height/scale, width/scale, 3]
+    """
+    image_ms = []
+    for i, flow in enumerate(flow_ms):
+        batch, num_src, height_sc, width_sc, _ = flow.get_shape().as_list()
+        image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
+                                 name=f"resize_like_flow_{i}")(image)
         image_ms.append(image_sc)
     return image_ms
 
