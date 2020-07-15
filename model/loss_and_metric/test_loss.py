@@ -40,7 +40,7 @@ def test_photometric_loss_quality(suffix=""):
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
-        target_ms = uf.multi_scale_like(target_image, depth_gt_ms)
+        target_ms = uf.multi_scale_like_depth(target_image, depth_gt_ms)
         batch, height, width, _ = target_image.get_shape().as_list()
 
         synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, depth_gt_ms, pose_gt)
@@ -94,7 +94,7 @@ def test_photometric_loss_quantity(suffix=""):
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pose_gt = cp.pose_matr2rvec_batch(pose_gt)
-        target_ms = uf.multi_scale_like(target_image, depth_gt_ms)
+        target_ms = uf.multi_scale_like_depth(target_image, depth_gt_ms)
 
         # EXECUTE
         batch_loss_right, scale_loss_right, recon_image_right = \
@@ -219,7 +219,7 @@ def test_smootheness_loss_quantity():
 def tu_smootheness_loss(depth_gt, target_image):
     depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
     disp_gt_ms = uf.safe_reciprocal_number_ms(depth_gt_ms)
-    target_ms = uf.multi_scale_like(target_image, depth_gt_ms)
+    target_ms = uf.multi_scale_like_depth(target_image, depth_gt_ms)
 
     features = {"image": target_image}
     predictions = {"disp_ms": disp_gt_ms}

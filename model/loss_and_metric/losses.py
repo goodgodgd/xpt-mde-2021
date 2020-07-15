@@ -1,11 +1,13 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 from model.synthesize.synthesize_base import SynthesizeMultiScale
+from model.synthesize.flow_warping import FlowWarpMultiScale
 
 import utils.util_funcs as uf
 from utils.util_class import WrongInputException
 import utils.convert_pose as cp
 from utils.decorators import shape_check
+from model.loss_and_metric.loss_util import photometric_loss_l1, photometric_loss_ssim
 
 
 class TotalLoss:
@@ -60,6 +62,8 @@ class TotalLoss:
                 target_ms: multi scale target frame, list of [batch, height/scale, width/scale, 3]
                 synth_target_ms: multi scale synthesized target frames generated from each source image,
                                 list of [batch, num_src, height/scale, width/scale, 3]
+                warped_target_ms: multi scale flow warped target frames generated from each source image,
+                                list of [batch, num_src, height/scale, width/scale, 3]
         """
         augm_data = dict()
         pred_depth_ms = predictions["depth_ms" + suffix]
@@ -68,14 +72,21 @@ class TotalLoss:
         stacked_image = features["image" + suffix]
         intrinsic = features["intrinsic" + suffix]
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
-        target_ms = uf.multi_scale_like(target_image, pred_depth_ms)
+        target_ms = uf.multi_scale_like_depth(target_image, pred_depth_ms)
         augm_data["source" + suffix] = source_image
         augm_data["target" + suffix] = target_image
         augm_data["target_ms" + suffix] = target_ms
-
+        # synthesized image is used in both L1 and SSIM photometric losses
         synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, pred_depth_ms, pred_pose)
         augm_data["synth_target_ms" + suffix] = synth_target_ms
 
+        # warped image is used in both L1 and SSIM photometric losses
+        if "flow_ms" + suffix in predictions:
+            pred_flow_ms = predictions["flow_ms" + suffix]
+            flow_target_ms = uf.multi_scale_like_flow(target_image, pred_flow_ms)
+            augm_data["flow_target_ms" + suffix] = flow_target_ms
+            warped_target_ms = FlowWarpMultiScale()(source_image, pred_flow_ms)
+            augm_data["warped_target_ms" + suffix] = warped_target_ms
         return augm_data
 
 
@@ -84,7 +95,7 @@ class LossBase:
         raise NotImplementedError()
 
 
-class PhotometricLossMultiScale(LossBase):
+class PhotometricLoss(LossBase):
     def __init__(self, method, key_suffix=""):
         if method == "L1":
             self.photometric_loss = photometric_loss_l1
@@ -94,6 +105,14 @@ class PhotometricLossMultiScale(LossBase):
             raise WrongInputException("Wrong photometric loss name: " + method)
 
         self.key_suffix = key_suffix
+
+    def __call__(self, features, predictions, augm_data):
+        raise NotImplementedError()
+
+
+class PhotometricLossMultiScale(PhotometricLoss):
+    def __init__(self, method, key_suffix=""):
+        super().__init__(method, key_suffix)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -106,80 +125,12 @@ class PhotometricLossMultiScale(LossBase):
         losses = []
         for i, (synt_target, orig_target) in enumerate(zip(synth_target_ms, original_target_ms)):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
-                                 name=f"photo_loss_{i}")([synt_target, orig_target])
+                                 name=f"photo_loss_{i}" + self.key_suffix)([synt_target, orig_target])
             losses.append(loss)
         # losses: list of [batch, num_src] -> after stack: [batch, num_src, num_scale] -> after sum: [batch]
         batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
-                                   name="photo_loss_sum")(losses)
+                                   name="photo_loss_sum" + self.key_suffix)(losses)
         return batch_loss
-
-
-@shape_check
-def photometric_loss_l1(synt_target, orig_target):
-    """
-    :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
-    :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :return: photo_loss [batch, num_src]
-    """
-    orig_target = tf.expand_dims(orig_target, axis=1)
-    # create mask to ignore black region
-    synt_target_gray = tf.reduce_mean(synt_target, axis=-1, keepdims=True)
-    error_mask = tf.equal(synt_target_gray, 0)
-
-    # orig_target: [batch, 1, height/scale, width/scale, 3]
-    # axis=1 broadcasted in subtraction
-    # photo_error: [batch, num_src, height/scale, width/scale, 3]
-    photo_error = tf.abs(synt_target - orig_target)
-    photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
-    # average over image dimensions (h, w, c)
-    photo_loss = tf.reduce_mean(photo_error, axis=[2, 3, 4])
-    return photo_loss
-
-
-@shape_check
-def photometric_loss_ssim(synt_target, orig_target):
-    """
-    :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
-    :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
-    :return: photo_loss [batch, num_src]
-    """
-    num_src = synt_target.get_shape().as_list()[1]
-    orig_target = tf.expand_dims(orig_target, axis=1)
-    orig_target = tf.tile(orig_target, [1, num_src, 1, 1, 1])
-    # create mask to ignore black region
-    synt_target_gray = tf.reduce_mean(synt_target, axis=-1, keepdims=True)
-    error_mask = tf.equal(synt_target_gray, 0)
-
-    x = orig_target     # [batch, num_src, height/scale, width/scale, 3]
-    y = synt_target     # [batch, num_src, height/scale, width/scale, 3]
-    c1 = 0.01 ** 2
-    c2 = 0.03 ** 2
-    ksize = [1, 3, 3]
-
-    # TODO IMPORTANT!
-    #   tf.nn.avg_pool results in error like ['NoneType' object has no attribute 'decode']
-    #   when training model with gradient tape in eager mode,
-    #   but no error in graph mode by @tf.function
-    #   Instead, tf.keras.layers.AveragePooling3D results in NO error in BOTH modes
-    # mu_x, mu_y: [batch, num_src, height/scale, width/scale, 3]
-    average_pool = tf.keras.layers.AveragePooling3D(pool_size=ksize, strides=1, padding="SAME")
-    mu_x = average_pool(x)
-    mu_y = average_pool(y)
-    # mu_x = tf.nn.avg_pool(x, ksize=ksize, strides=1, padding='SAME')
-    # mu_y = tf.nn.avg_pool(y, ksize=ksize, strides=1, padding='SAME')
-
-    sigma_x = average_pool(x ** 2) - mu_x ** 2
-    sigma_y = average_pool(y ** 2) - mu_y ** 2
-    sigma_xy = average_pool(x * y) - mu_x * mu_y
-
-    ssim_n = (2 * mu_x * mu_y + c1) * (2 * sigma_xy + c2)
-    ssim_d = (mu_x ** 2 + mu_y ** 2 + c1) * (sigma_x + sigma_y + c2)
-    ssim = ssim_n / ssim_d
-    ssim = tf.clip_by_value((1 - ssim) / 2, 0, 1)
-    ssim = tf.where(error_mask, tf.constant(0, dtype=tf.float32), ssim)
-    # average over image dimensions (h, w, c)
-    ssim = tf.reduce_mean(ssim, axis=[2, 3, 4])
-    return ssim
 
 
 class SmoothenessLossMultiScale(LossBase):
@@ -238,14 +189,9 @@ class SmoothenessLossMultiScale(LossBase):
         return smoothness
 
 
-class StereoDepthLoss(LossBase):
+class StereoDepthLoss(PhotometricLoss):
     def __init__(self, method):
-        if method == "L1":
-            self.photometric_loss = photometric_loss_l1
-        elif method == "SSIM":
-            self.photometric_loss = photometric_loss_ssim
-        else:
-            raise WrongInputException("Wrong photometric loss name: " + method)
+        super().__init__(method)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -258,6 +204,7 @@ class StereoDepthLoss(LossBase):
                                                    target_depth_ms=predictions["depth_ms"],
                                                    pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
                                                    intrinsic=features["intrinsic"])
+        # synthesize right image from left image
         loss_right, _ = self.stereo_synthesize_loss(source_img=augm_data["target"],
                                                     target_ms=augm_data["target_ms_R"],
                                                     target_depth_ms=predictions["depth_ms_R"],
@@ -307,6 +254,30 @@ class StereoPoseLoss(LossBase):
         # loss: [batch]
         loss = tf.reduce_mean(loss, axis=1)
         return loss
+
+
+class FlowWarpLossMultiScale(PhotometricLoss):
+    def __init__(self, method, key_suffix=""):
+        super().__init__(method, key_suffix)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        :return: photo_loss [batch]
+        """
+        flow_target_ms = augm_data["flow_target_ms" + self.key_suffix]
+        # warp a target from 4 sources and 4 flows in 4 level scales
+        warped_target_ms = augm_data["warped_target_ms" + self.key_suffix]
+
+        losses = []
+        for i, (warp_target, orig_target) in enumerate(zip(warped_target_ms, flow_target_ms)):
+            loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
+                                 name=f"flow_warp_loss_{i}" + self.key_suffix)([warp_target, orig_target])
+            losses.append(loss)
+        # losses: list of [batch, num_src] -> after stack: [batch, num_src, num_scale] -> after sum: [batch]
+        batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
+                                   name="flow_warp_loss_sum" + self.key_suffix)(losses)
+        return batch_loss
 
 
 # ===== TEST FUNCTIONS

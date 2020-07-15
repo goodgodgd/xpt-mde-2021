@@ -34,7 +34,6 @@ def train(final_epoch=opts.EPOCHS):
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, final_epoch):
         print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
-
         result_train, depth_train = trainer.run_an_epoch(dataset_train)
         result_val, depth_val = validater.run_an_epoch(dataset_val)
 
@@ -167,7 +166,7 @@ def test_model_wrapper_output():
 
 if __name__ == "__main__":
     reset_period = 15
-    for epoch in range(reset_period, opts.EPOCHS, reset_period):
-        train(epoch)
+    for epoch_ in range(reset_period, opts.EPOCHS, reset_period):
+        train(epoch_)
     # predict()
     # test_model_wrapper_output()

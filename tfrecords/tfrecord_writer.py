@@ -9,7 +9,7 @@ import tfrecords.data_feeders as df
 
 
 class TfrecordMaker:
-    def __init__(self, srcpath, dstpath, stereo, im_width):
+    def __init__(self, srcpath, dstpath, stereo, max_frames=None, shuffle=False):
         self.srcpath = srcpath
         self.dstpath = dstpath
         self.data_root = op.dirname(op.dirname(dstpath))
@@ -20,7 +20,8 @@ class TfrecordMaker:
         self.depth_avail = True if depths else False
         self.pose_avail = True if poses else False
         self.stereo = stereo
-        self.im_width = im_width
+        self.max_frames = max_frames
+        self.shuffle = shuffle
 
     def make(self):
         data_feeders = self.create_feeders()
@@ -101,11 +102,13 @@ class TfrecordMaker:
         print(f"pose: {[file.replace(self.data_root, '') for file in  pose_files[0:1000:200]]}")
         print(f"extrin: {[file.replace(self.data_root, '') for file in extrin_files[0:1000:200]]}")
 
-        for files in [image_files, intrin_files, depth_files, pose_files, extrin_files]:
+        results = (image_files, intrin_files, depth_files, pose_files, extrin_files)
+        for files in results:
             for file in files:
                 assert op.isfile(file), f"{file} NOT exist"
 
-        return image_files, intrin_files, depth_files, pose_files, extrin_files
+        results = self.slice_shuffle(results)
+        return results
 
     def write_tfrecord_config(self, feeders):
         config = dict()
