@@ -54,6 +54,7 @@ class PWCNet:
         numsrc = snippet - 1
         target = input_tensor[:, numsrc*height:]
         sources = input_tensor[:, :numsrc*height]
+        print("sources shape", sources.shape, (batch, numsrc, height, width, channel))
         sources = tf.reshape(sources, (batch*numsrc, height, width, channel))
         return target, sources
 
@@ -334,12 +335,12 @@ def run_net(net, input_tensor):
 
 
 if __name__ == "__main__":
-    # test_correlation()
+    test_correlation()
     # test_warp_simple()
     # test_warp_multiple()
     # test_conv2d_5dtensor()
     # test_layer_input()
     # test_reshape_tensor()
     # test_lambda_layer()
-    test_pwcnet()
+    # test_pwcnet()
 

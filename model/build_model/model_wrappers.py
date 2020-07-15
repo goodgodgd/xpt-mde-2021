@@ -122,9 +122,7 @@ class StereoPoseModelWrapper(ModelWrapper):
     def __call__(self, features):
         predictions = dict()
         for netname, model in self.models.items():
-            print("predict", netname)
             pred = model(features["image"])
-            print("predict", pred.keys())
             predictions.update(pred)
             preds_right = model(features["image_R"])
             preds_right = {key + "_R": value for key, value in preds_right.items()}

@@ -68,15 +68,12 @@ class ModelTrainer(TrainValBase):
         super().__init__("Train (graph)", model, loss_object, steps_per_epoch, stereo, optimizer)
 
     def run_a_batch(self, features):
-        print("----- run_a_batch")
         return self.train_a_step(features)
 
     def train_a_step(self, features):
         with tf.GradientTape() as tape:
             # NOTE! preds = {"depth_ms": ..., "pose": ...} = model(image)
-            print("----- model(features)")
             preds = self.model(features)
-            print("----- model(features) done")
             loss_batch, loss_by_type = self.loss_object(preds, features)
 
         grads = tape.gradient(loss_batch, self.model.trainable_weights())
@@ -97,7 +94,6 @@ class ModelTrainerGraph(ModelTrainer):
 
     @tf.function
     def run_a_batch(self, features):
-        print("======== run_a_batch22")
         return self.train_a_step(features)
 
 
