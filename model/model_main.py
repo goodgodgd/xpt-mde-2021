@@ -69,7 +69,7 @@ def create_training_parts(initial_epoch):
     model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
-    loss_object = loss_factory()
+    loss_object = loss_factory(weights_to_regularize=model.weights_to_regularize())
     optimizer = optimizer_factory(opts.OPTIMIZER, opts.LEARNING_RATE, initial_epoch)
     return model, loss_object, optimizer
 

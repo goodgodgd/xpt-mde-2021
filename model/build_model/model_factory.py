@@ -84,6 +84,11 @@ class ModelFactory:
             else:
                 dst_args[key] = tf.keras.initializers.GlorotUniform()
 
+        key = "kernel_regularizer"
+        if key in src_args:
+            if src_args[key] == "l2":
+                dst_args[key] = tf.keras.regularizers.l2(src_args[key + "_param"])
+
         # change default arguments of Conv2D layer
         conv_layer = mu.CustomConv2D(**dst_args)
         return conv_layer

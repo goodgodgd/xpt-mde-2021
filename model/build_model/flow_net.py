@@ -325,10 +325,13 @@ def test_pwcnet():
     print("\n===== start test_pwcnet")
     total_shape = batch, snippet, height, width, channel = (8, 4, 128, 256, 10)
     input_tensor = tf.random.uniform((batch, snippet*height, width, channel), -2, 2)
-    conv2d = mu.conv2d_func_factory(activation=layers.LeakyReLU(0.1))
+    conv_layer = mu.CustomConv2D(activation=tf.keras.layers.LeakyReLU(0.1),
+                                 kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.025),
+                                 kernel_regularizer=tf.keras.regularizers.l2(0.0004)
+                                 )
 
     # EXECUTE
-    pwc_net = PWCNet(total_shape, conv2d)()
+    pwc_net = PWCNet(total_shape, conv_layer)()
     pwc_net.summary()
 
     flows = run_net(pwc_net, input_tensor)

@@ -11,13 +11,13 @@ from model.loss_and_metric.loss_util import photometric_loss_l1, photometric_los
 
 
 class TotalLoss:
-    def __init__(self, calc_losses=None, weights=None, stereo=False):
+    def __init__(self, calc_losses=None, loss_weights=None, stereo=False):
         """
         :param calc_losses: list of loss calculators
-        :param weights: list of weights of loss calculators
+        :param loss_weights: list of weights of loss calculators
         """
         self.calc_losses = calc_losses
-        self.weights = weights
+        self.loss_weights = loss_weights
         self.stereo = stereo
 
     @shape_check
@@ -38,7 +38,7 @@ class TotalLoss:
             augm_data.update(augm_data_rig)
 
         losses = []
-        for calc_loss, weight in zip(self.calc_losses, self.weights):
+        for calc_loss, weight in zip(self.calc_losses, self.loss_weights):
             loss = calc_loss(features, predictions, augm_data)
             losses.append(loss * weight)
 
@@ -278,6 +278,18 @@ class FlowWarpLossMultiScale(PhotometricLoss):
         batch_loss = layers.Lambda(lambda data: tf.reduce_sum(tf.stack(data, axis=2), axis=[1, 2]),
                                    name="flow_warp_loss_sum" + self.key_suffix)(losses)
         return batch_loss
+
+
+class L2Regularizer(LossBase):
+    def __init__(self, weights_to_regularize):
+        self.weights = weights_to_regularize
+
+    def __call__(self, features, predictions, augm_data):
+        loss = 0
+        print("L2Regularizer weights:", len(self.weights))
+        for weight in self.weights:
+            loss += tf.nn.l2_loss(weight)
+        return loss
 
 
 # ===== TEST FUNCTIONS
