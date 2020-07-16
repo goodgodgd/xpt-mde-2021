@@ -8,7 +8,7 @@ from model.build_model.depth_net import DepthNetBasic, DepthNetNoResize, DepthNe
 from model.build_model.pose_net import PoseNet
 from model.build_model.flow_net import PWCNet
 import model.build_model.model_wrappers as mw
-import model.build_model.model_utils as mu
+import model.model_util.layer_ops as lo
 
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
@@ -90,7 +90,7 @@ class ModelFactory:
                 dst_args[key] = tf.keras.regularizers.l2(src_args[key + "_param"])
 
         # change default arguments of Conv2D layer
-        conv_layer = mu.CustomConv2D(**dst_args)
+        conv_layer = lo.CustomConv2D(**dst_args)
         return conv_layer
 
     def depth_net_factory(self, net_name, conv2d_d, pred_activ, upsample_interp):

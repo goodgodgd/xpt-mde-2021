@@ -293,14 +293,14 @@ def test_reshape_tensor():
     print("!!! test_reshape_tensor passed")
 
 
-import model.build_model.model_utils as mu
+import model.model_util.layer_ops as lo
 
 
 def test_lambda_layer():
     print("\n===== start test_lambda_layer")
     batch, height, width, channel = (8, 100, 200, 10)
     x = tf.random.uniform((batch, height, width, channel), -2, 2)
-    conv2d = mu.CustomConv2D(activation=layers.LeakyReLU(0.1))
+    conv2d = lo.CustomConv2D(activation=layers.LeakyReLU(0.1))
     y = convnet(conv2d, x)
     print("normally build convnet, y shape:", y.get_shape())
 
@@ -324,7 +324,7 @@ def test_pwcnet():
     print("\n===== start test_pwcnet")
     total_shape = batch, snippet, height, width, channel = (8, 4, 128, 256, 10)
     input_tensor = tf.random.uniform((batch, snippet*height, width, channel), -2, 2)
-    conv_layer = mu.CustomConv2D(activation=tf.keras.layers.LeakyReLU(0.1),
+    conv_layer = lo.CustomConv2D(activation=tf.keras.layers.LeakyReLU(0.1),
                                  kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.025),
                                  kernel_regularizer=tf.keras.regularizers.l2(0.0004)
                                  )
