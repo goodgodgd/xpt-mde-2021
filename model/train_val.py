@@ -74,18 +74,16 @@ class ModelTrainer(TrainValBase):
         with tf.GradientTape() as tape:
             # NOTE! preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = self.model(features)
-            loss_batch, loss_by_type = self.loss_object(preds, features)
+            total_loss, loss_by_type = self.loss_object(preds, features)
 
-        grads = tape.gradient(loss_batch, self.model.trainable_weights())
+        grads = tape.gradient(total_loss, self.model.trainable_weights())
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights()))
-        loss_mean = tf.reduce_mean(loss_batch)
-        loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
         """
         preds: {"pose": ..., "depth_ms":, ...}
         loss_mean: loss scalar that is averaged over all this epoch  
         loss_by_type: loss [loss types]
         """
-        return preds, loss_mean, loss_by_type
+        return preds, total_loss, loss_by_type
 
 
 class ModelTrainerGraph(ModelTrainer):

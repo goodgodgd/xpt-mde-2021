@@ -20,7 +20,7 @@ def photometric_loss_l1(synt_target, orig_target):
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
     # average over image dimensions (h, w, c)
-    photo_loss = tf.reduce_mean(photo_error, axis=[2, 3, 4])
+    photo_loss = tf.reduce_mean(photo_error)
     return photo_loss
 
 
@@ -66,5 +66,5 @@ def photometric_loss_ssim(synt_target, orig_target):
     ssim = tf.clip_by_value((1 - ssim) / 2, 0, 1)
     ssim = tf.where(error_mask, tf.constant(0, dtype=tf.float32), ssim)
     # average over image dimensions (h, w, c)
-    ssim = tf.reduce_mean(ssim, axis=[2, 3, 4])
+    ssim = tf.reduce_mean(ssim)
     return ssim

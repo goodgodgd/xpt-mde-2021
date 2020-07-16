@@ -56,7 +56,6 @@ class PWCNet:
         numsrc = snippet - 1
         target = input_tensor[:, numsrc*height:]
         sources = input_tensor[:, :numsrc*height]
-        print("sources shape", sources.shape, (batch, numsrc, height, width, channel))
         sources = tf.reshape(sources, (batch*numsrc, height, width, channel))
         return target, sources
 
