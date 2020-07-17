@@ -95,7 +95,7 @@ class BilinearInterpolation:
         if valid_mask is not None:
             # nonzero_mask: [batch, height, width, 1] -> [batch, 1, 1, height*width]
             nonzero_mask = tf.reshape(valid_mask, shape=(batch, 1, 1, -1))
-            nonzero_mask = tf.math.equal(nonzero_mask, 0)
+            nonzero_mask = tf.math.not_equal(nonzero_mask, 0)
             mask = tf.logical_and(mask, nonzero_mask)
 
         mask = tf.cast(mask, tf.float32)

@@ -7,7 +7,7 @@ import utils.util_funcs as uf
 from utils.util_class import WrongInputException
 import utils.convert_pose as cp
 from utils.decorators import shape_check
-from model.loss_and_metric.loss_util import photometric_loss_l1, photometric_loss_ssim
+import model.loss_and_metric.loss_util as lsu
 
 
 class TotalLoss:
@@ -88,6 +88,7 @@ class TotalLoss:
             augm_data["flow_target_ms" + suffix] = flow_target_ms
             warped_target_ms = FlowWarpMultiScale()(source_image, pred_flow_ms)
             augm_data["warped_target_ms" + suffix] = warped_target_ms
+
         return augm_data
 
 
@@ -99,9 +100,11 @@ class LossBase:
 class PhotometricLoss(LossBase):
     def __init__(self, method, key_suffix=""):
         if method == "L1":
-            self.photometric_loss = photometric_loss_l1
+            self.photometric_loss = lsu.photometric_loss_l1
+        elif method == "L2":
+            self.photometric_loss = lsu.photometric_loss_l2
         elif method == "SSIM":
-            self.photometric_loss = photometric_loss_ssim
+            self.photometric_loss = lsu.photometric_loss_ssim
         else:
             raise WrongInputException("Wrong photometric loss name: " + method)
 
@@ -199,18 +202,18 @@ class StereoDepthLoss(PhotometricLoss):
         :return: photo_loss (scalar)
         """
         # synthesize left image from right image
-        loss_left = self.stereo_synthesize_loss(source_img=augm_data["target_R"],
-                                                target_ms=augm_data["target_ms"],
-                                                target_depth_ms=predictions["depth_ms"],
-                                                pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
-                                                intrinsic=features["intrinsic"])
+        loss_left, _ = self.stereo_synthesize_loss(source_img=augm_data["target_R"],
+                                                   target_ms=augm_data["target_ms"],
+                                                   target_depth_ms=predictions["depth_ms"],
+                                                   pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
+                                                   intrinsic=features["intrinsic"])
         # synthesize right image from left image
-        loss_right = self.stereo_synthesize_loss(source_img=augm_data["target"],
-                                                 target_ms=augm_data["target_ms_R"],
-                                                 target_depth_ms=predictions["depth_ms_R"],
-                                                 pose_t2s=features["stereo_T_LR"],
-                                                 intrinsic=features["intrinsic_R"],
-                                                 suffix="_R")
+        loss_right, _ = self.stereo_synthesize_loss(source_img=augm_data["target"],
+                                                    target_ms=augm_data["target_ms_R"],
+                                                    target_depth_ms=predictions["depth_ms_R"],
+                                                    pose_t2s=features["stereo_T_LR"],
+                                                    intrinsic=features["intrinsic_R"],
+                                                    suffix="_R")
         # list concatenation, not summation
         losses = loss_left + loss_right
         # losses: [loss at each scale] -> sum: scalar
@@ -237,7 +240,7 @@ class StereoDepthLoss(PhotometricLoss):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
                                  name=f"photo_loss_{i}" + suffix)([synth_img_sc, target_img_sc])
             losses.append(loss)
-        return losses
+        return losses, synth_target_ms
 
 
 class StereoPoseLoss(LossBase):

@@ -117,10 +117,8 @@ class ModelValidater(TrainValBase):
 
     def validate_a_step(self, features):
         preds = self.model(features)
-        loss_batch, loss_by_type = self.loss_object(preds, features)
-        loss_mean = tf.reduce_mean(loss_batch)
-        loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
-        return preds, loss_mean, loss_by_type
+        total_loss, loss_by_type = self.loss_object(preds, features)
+        return preds, total_loss, loss_by_type
 
 
 class ModelValidaterGraph(ModelValidater):
@@ -197,4 +195,5 @@ def inspect_model(preds, step, steps_per_epoch):
     print("depth3 ", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("dpconv3", np.quantile(preds["debug_out"][2].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv3", np.quantile(preds["debug_out"][3].numpy(), np.arange(0.1, 1, 0.1)))
-    print("pose_LR", preds["pose_LR"][0].numpy())
+    if "pose_LR" in preds:
+        print("pose_LR", preds["pose_LR"][0].numpy())

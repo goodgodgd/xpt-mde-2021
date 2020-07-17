@@ -134,7 +134,6 @@ class StereoPoseModelWrapper(ModelWrapper):
             preds_right = {key + "_R": value for key, value in preds_right.items()}
             predictions.update(preds_right)
 
-        print("!!! stereo wrapper model prediction keys:", predictions.keys())
         if "depth_ms" in predictions:
             predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
         if "depth_ms_R" in predictions:
