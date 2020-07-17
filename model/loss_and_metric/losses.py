@@ -11,12 +11,12 @@ import model.loss_and_metric.loss_util as lsu
 
 
 class TotalLoss:
-    def __init__(self, calc_losses=None, loss_weights=None, stereo=False):
+    def __init__(self, loss_objects=None, loss_weights=None, stereo=False):
         """
-        :param calc_losses: list of loss calculators
-        :param loss_weights: list of weights of loss calculators
+        :param loss_objects: dict of loss objects
+        :param loss_weights: dict of weights of losses
         """
-        self.calc_losses = calc_losses
+        self.loss_objects = loss_objects
         self.loss_weights = loss_weights
         self.stereo = stereo
 
@@ -30,7 +30,7 @@ class TotalLoss:
             image: stacked image [batch, height*snippet_len, width, 3]
             intrinsic: camera projection matrix [batch, 3, 3]
         :return loss: final loss of frames in batch (scalar)
-                losses: list of losses computed from calc_losses
+                losses: list of losses computed from loss_objects
         """
         augm_data = self.augment_data(features, predictions)
         if self.stereo:
@@ -38,13 +38,15 @@ class TotalLoss:
             augm_data.update(augm_data_rig)
 
         losses = []
-        for calc_loss, weight in zip(self.calc_losses, self.loss_weights):
-            loss = calc_loss(features, predictions, augm_data)
-            losses.append(loss * weight)
+        loss_by_type = dict()
+        for loss_name in self.loss_objects:
+            loss = self.loss_objects[loss_name](features, predictions, augm_data)
+            losses.append(loss * self.loss_weights[loss_name])
+            loss_by_type[loss_name] = loss * self.loss_weights[loss_name]
 
         losses = layers.Lambda(lambda x: tf.stack(x, axis=0), name="losses")(losses)
         total_loss = layers.Lambda(lambda x: tf.reduce_sum(x), name="total_loss")(losses)
-        return total_loss, losses
+        return total_loss, loss_by_type
 
     def augment_data(self, features, predictions, suffix=""):
         """

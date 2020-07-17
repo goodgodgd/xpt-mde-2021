@@ -16,13 +16,13 @@ def loss_factory(loss_weights=opts.LOSS_WEIGHTS, stereo=opts.STEREO, weights_to_
                  "FW_L2_regular": lm.L2Regularizer(weights_to_regularize),
                  }
 
-    losses = []
-    weights = []
-    for name, loss_w in loss_weights.items():
-        if loss_w == 0.:
+    losses = dict()
+    weights = dict()
+    for name, weight in loss_weights.items():
+        if weight == 0.:
             continue
-        losses.append(loss_pool[name])
-        weights.append(loss_w)
+        losses[name] = loss_pool[name]
+        weights[name] = weight
 
     print("[loss_factory] loss weights:", weights)
     return lm.TotalLoss(losses, weights, stereo)

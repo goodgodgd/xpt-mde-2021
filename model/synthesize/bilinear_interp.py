@@ -4,7 +4,7 @@ from utils.decorators import shape_check
 
 class BilinearInterpolation:
     @shape_check
-    def __call__(self, image, pixel_coords, valid_mask=None, is_flow=False):
+    def __call__(self, image, pixel_coords, valid_mask=None):
         """
         :param image: source image [batch, num_src, height, width, ?]
         :param pixel_coords: floating-point pixel coordinates (u,v,1)
@@ -13,8 +13,6 @@ class BilinearInterpolation:
         :return: reconstructed image [batch, num_src, height, width, ?]
         """
         batch, num_src, height, width, channels = image.get_shape()
-        if is_flow:
-            pixel_coords = self.flow_to_pixel_coordinates(pixel_coords)
 
         # pixel_floorceil[batch, num_src, :, height*width] = (u_ceil, u_floor, v_ceil, v_floor)
         pixel_floorceil = self.neighbor_int_pixels(pixel_coords, height, width)
@@ -33,29 +31,6 @@ class BilinearInterpolation:
         flat_image = self.merge_images([sampled_images, weights])
         recon_image = tf.reshape(flat_image, shape=(batch, num_src, height, width, channels))
         return recon_image
-
-    def flow_to_pixel_coordinates(self, flow):
-        """
-        :param flow: optical flow (u, v) [batch, num_src, height, width, 2]
-        :return: pixel_coords: source image pixel coordinates [batch, num_src, 2, height*width]
-        """
-        batch, num_src, height, width, _ = flow.get_shape()
-        v = tf.range(0, height, 1, dtype=tf.float32)
-        u = tf.range(0, width, 1, dtype=tf.float32)
-        ugrid, vgrid = tf.meshgrid(u, v)
-        uvgrid = tf.stack([ugrid, vgrid], axis=0)
-        # uvgrid -> [1, 1, 2, height*width]
-        uvgrid = tf.reshape(uvgrid, (1, 1, 2, -1))
-        # uvgrid = tf.concat([uvgrid, tf.ones((1, height*width), tf.float32)], axis=0)
-
-        # uvflow -> [batch, num_src, height*width, 2]
-        uvflow = tf.reshape(flow, (batch, num_src, -1, 2))
-        # uvflow -> [batch, num_src, 2, height*width]
-        uvflow = tf.transpose(uvflow, perm=[0, 1, 3, 2])
-
-        # add flow to basic grid
-        pixel_coords = uvgrid - uvflow
-        return pixel_coords
 
     def neighbor_int_pixels(self, pixel_coords, height, width):
         """
@@ -187,3 +162,45 @@ class BilinearInterpolation:
         depth_invalid_mask = tf.math.equal(depth_vec, 0)
         flat_image = tf.where(depth_invalid_mask, tf.constant(0, dtype=tf.float32), flat_image)
         return flat_image
+
+
+class FlowBilinearInterpolation:
+    @shape_check
+    def __call__(self, image, flow):
+        """
+        :param image: source image [batch*num_src, height, width, ?]
+        :param flow: optical flow [batch*num_src, height, width, 2(u,v)]
+        :return: reconstructed image [batch*num_src, height, width, ?]
+        """
+        _, height, width, channels = image.get_shape()
+        # -> [batch*num_src, 1, height, width, ?]
+        feature = tf.expand_dims(image, axis=1)
+        flow = tf.expand_dims(flow, axis=1)
+        print("bilinear feature shape:", feature.get_shape())
+        flow = self.flow_to_pixel_coordinates(flow)
+        warped_feature = BilinearInterpolation()(feature, flow)
+        warped_feature = tf.squeeze(warped_feature, axis=1)
+        return warped_feature
+
+    def flow_to_pixel_coordinates(self, flow):
+        """
+        :param flow: optical flow [batch, num_src, height, width, 2(u,v)]
+        :return: pixel_coords: source image pixel coordinates [batch, num_src, 2, height*width]
+        """
+        batch, num_src, height, width, _ = flow.get_shape()
+        u = tf.range(0, width, 1, dtype=tf.float32)
+        v = tf.range(0, height, 1, dtype=tf.float32)
+        ugrid, vgrid = tf.meshgrid(u, v)
+        uvgrid = tf.stack([ugrid, vgrid], axis=0)
+        # uvgrid -> [1, 1, 2, height*width]
+        uvgrid = tf.reshape(uvgrid, (1, 1, 2, -1))
+
+        # uvflow -> [batch, num_src, height*width, 2]
+        uvflow = tf.reshape(flow, (batch, num_src, -1, 2))
+        # uvflow -> [batch, num_src, 2, height*width]
+        uvflow = tf.transpose(uvflow, perm=[0, 1, 3, 2])
+
+        # add flow to basic grid
+        pixel_coords = uvgrid - uvflow
+        return pixel_coords
+

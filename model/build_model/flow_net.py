@@ -1,7 +1,7 @@
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import layers
-from model.synthesize.bilinear_interp import BilinearInterpolation
+from model.synthesize.bilinear_interp import FlowBilinearInterpolation
 
 import settings
 
@@ -115,25 +115,15 @@ class PWCNet:
         :param up: whether to return upsample flow and feature
         :return:
         """
-        # TODO: [ERROR] the below function results in TypeError:
-        #   '''
-        #   cp_r_warp = tfa.image.dense_image_warp(cp_r, up_flowq * flow_scale, name=f"pwc_flow{p}_warp")
-        #   '''
-        #   TypeError: An op outside of the function building code is being passed a "Graph" tensor. ~~~
-        #   there might be a bug in tfa.image.dense_image_warp(),
-        #   so the function is enclosed in layers.Lambda()
         prefix = f"pwc_flow{p}_"
-        # cp_r_warp = layers.Lambda(lambda inputs: tfa.image.dense_image_warp(
-        #                           inputs[0], inputs[1]*flow_scale),
-        #                           name=prefix + "warp")([cp_r, up_flowq])
-        cp_r_warp = self.warp_feature(cp_r, up_flowq)
+        cp_r_warp = FlowBilinearInterpolation()(cp_r, up_flowq)
         corrp = self.correlation(cp_l, cp_r_warp, p, name=prefix + "corr")
         return self.predict_flow([corrp, cp_l, up_flowq, up_featq], prefix, up)
 
     def warp_feature(self, feature, flow):
         """
         :param feature: [batch*num_src, height/scale, width/scale, channels]
-        :param flow: [batch*num_src, height/scale, width/scale, 2]
+        :param flow: [batch*num_src, height/scale, width/scale, 2(v, u)]
         :return:
         """
         batch, snippet = self.total_shape[:2]
@@ -142,7 +132,7 @@ class PWCNet:
         feature = tf.reshape(feature, shape=(batch, num_src, height, width, channels))
         flow = tf.reshape(flow, shape=(batch, num_src, height, width, 2))
         print("bilinear feature shape:", feature.get_shape())
-        warped_feature = BilinearInterpolation()(feature, flow, is_flow=True)
+        warped_feature = FlowBilinearInterpolation()(feature, flow)
         warped_feature = tf.reshape(warped_feature, shape=(batch*num_src, height, width, channels))
         return warped_feature
 
@@ -230,26 +220,18 @@ def test_warp_simple():
     dy, dx = 3.5, 1.5
     dyd, dyu, dxd, dxu = int(np.floor(dy)), int(np.ceil(dy)), int(np.floor(dx)), int(np.ceil(dx))
     print("dy up, dy down, dx up, dx down:", dyd, dyu, dxd, dxu)
-    # dense_image_warp needs warp: [batch, height, width, 2(v, u)]
-    warp = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
+    # dense_image_warp needs warp: [batch, height, width, 2]
+    warp_vu = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
+    warp_uv = tf.stack([tf.ones((batch, height, width)) * dx, tf.ones((batch, height, width)) * dy], axis=-1)
 
     # EXECUTE
-    warp_tfa = tfa.image.dense_image_warp(im, warp)
-
-    # BilinearInterpolation needs
-    #   image: [batch, num_src, height, width, channels]
-    #   pixel_coords: [batch, num_src, height, width, 2(u, v)] !! different from dense_image_warp (v, u)
-    flow = tf.stack([tf.ones((batch, height, width)) * dx, tf.ones((batch, height, width)) * dy], axis=-1)
-    imex = tf.expand_dims(im, axis=1)
-    flowex = tf.expand_dims(flow, axis=1)
-
-    # EXECUTE
-    warp_ian = BilinearInterpolation()(imex, flowex, is_flow=True)
+    warp_tfa = tfa.image.dense_image_warp(im, warp_vu)
+    warp_ian = FlowBilinearInterpolation()(im, warp_uv)
 
     # sample image and warped images
     im_np = im[1, :, :, 1].numpy()
     warp_tfa_np = warp_tfa[1, :, :, 1].numpy()
-    warp_ian_np = warp_ian[1, 0, :, :, 1].numpy()
+    warp_ian_np = warp_ian[1, :, :, 1].numpy()
     # create manually interpolated image
     temp = (im_np[:-dyu, :-dxu] + im_np[1:-dyd, :-dxu] + im_np[:-dyu, 1:-dxd] + im_np[1:-dyd, 1:-dxd])/4.
     interp_manual = np.zeros((height, width))
@@ -261,7 +243,7 @@ def test_warp_simple():
 
     print("src image corner:\n", im_np[:8, :8])
     print(f"image corner warped by dense_image_warp: {warp_tfa.get_shape()}\n", warp_tfa_np[:8, :8])
-    print(f"image corner warped by BilinearInterpolation: {warp_ian.get_shape()}\n", warp_ian_np[:8, :8])
+    print(f"image corner warped by FlowBilinearInterpolation: {warp_ian.get_shape()}\n", warp_ian_np[:8, :8])
     print(f"image corner manually interpolated: {interp_manual.shape}\n", interp_manual[:8, :8])
     print("!!! test_warp_simple passed")
     return

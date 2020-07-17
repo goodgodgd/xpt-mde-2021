@@ -34,14 +34,14 @@ def train(final_epoch=opts.EPOCHS):
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, final_epoch):
         print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
-        result_train, depth_train = trainer.run_an_epoch(dataset_train)
-        result_val, depth_val = validater.run_an_epoch(dataset_val)
+        result_train = trainer.run_an_epoch(dataset_train)
+        result_val = validater.run_an_epoch(dataset_val)
 
         print("save intermediate results ...")
         log.save_reconstruction_samples(model, dataset_val, epoch)
-        log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
-        save_model(model, result_val[0])
-        log.save_log(epoch, result_train, result_val, depth_train, depth_val)
+        # log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
+        save_model(model, result_val)
+        log.save_log(epoch, result_train, result_val)
 
 
 def set_configs():
@@ -93,11 +93,12 @@ def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
     return dataset, steps_per_epoch
 
 
-def save_model(model, val_loss):
+def save_model(model, results_val):
     """
     :param model: nn model object
-    :param val_loss: current validation loss
+    :param results_val: validatation results
     """
+    val_loss = results_val['loss'].mean()
     # save the latest model
     save_model_weights(model, 'latest')
     # save the best model (function static variable)
