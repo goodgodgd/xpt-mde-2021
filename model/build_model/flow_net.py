@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import layers
+from model.synthesize.bilinear_interp import BilinearInterpolation
 
 import settings
 
@@ -26,7 +27,7 @@ class PWCNet:
         c1l, c2l, c3l, c4l, c5l, c6l = self.pwc_encode(target, "_l")
         c1r, c2r, c3r, c4r, c5r, c6r = self.pwc_encode(sources, "_r")
 
-        # repeate target numsrc times -> [batch*num_src, height//scale, width//scale, channel]
+        # repeate target numsrc times -> [batch*num_src, height/scale, width/scale, channel]
         c1l, c2l, c3l, c4l, c5l, c6l = self.repeat_features((c1l, c2l, c3l, c4l, c5l, c6l), numsrc)
 
         corr6 = self.correlation(c6l, c6r, 6, "pwc_flow6_corr")
@@ -106,11 +107,11 @@ class PWCNet:
     def upconv_flow(self, p, cp_l, cp_r, flow_scale, up_flowq, up_featq, up=True):
         """
         :param p: current layer level, q = p+1, feature resolution is (H/2^p, W/2^p)
-        :param cp_l: p-th encoded feature from left image [batch, height//2^p, width//2^p, channel_p]
-        :param cp_r: p-th encoded feature from left image [batch, height//2^p, width//2^p, channel_p]
+        :param cp_l: p-th encoded feature from left image [batch*num_src, height/2^p, width/2^p, channel_p]
+        :param cp_r: p-th encoded feature from left image [batch*num_src, height/2^p, width/2^p, channel_p]
         :param flow_scale: flow scale factor for flow scale to be 1/20
-        :param up_flowq: upsampled flow from q-th level [batch, height//2^p, width//2^p, 2]
-        :param up_featq: upsampled flow from q-th level [batch, height//2^p, width//2^p, channel_q]
+        :param up_flowq: upsampled flow from q-th level [batch*num_src, height/2^p, width/2^p, 2]
+        :param up_featq: upsampled flow from q-th level [batch*num_src, height/2^p, width/2^p, channel_q]
         :param up: whether to return upsample flow and feature
         :return:
         """
@@ -122,11 +123,28 @@ class PWCNet:
         #   there might be a bug in tfa.image.dense_image_warp(),
         #   so the function is enclosed in layers.Lambda()
         prefix = f"pwc_flow{p}_"
-        cp_r_warp = layers.Lambda(lambda inputs: tfa.image.dense_image_warp(
-                                  inputs[0], inputs[1]*flow_scale),
-                                  name=prefix + "warp")([cp_r, up_flowq])
+        # cp_r_warp = layers.Lambda(lambda inputs: tfa.image.dense_image_warp(
+        #                           inputs[0], inputs[1]*flow_scale),
+        #                           name=prefix + "warp")([cp_r, up_flowq])
+        cp_r_warp = self.warp_feature(cp_r, up_flowq)
         corrp = self.correlation(cp_l, cp_r_warp, p, name=prefix + "corr")
         return self.predict_flow([corrp, cp_l, up_flowq, up_featq], prefix, up)
+
+    def warp_feature(self, feature, flow):
+        """
+        :param feature: [batch*num_src, height/scale, width/scale, channels]
+        :param flow: [batch*num_src, height/scale, width/scale, 2]
+        :return:
+        """
+        batch, snippet = self.total_shape[:2]
+        num_src = snippet - 1
+        _, height, width, channels = feature.get_shape()
+        feature = tf.reshape(feature, shape=(batch, num_src, height, width, channels))
+        flow = tf.reshape(flow, shape=(batch, num_src, height, width, 2))
+        print("bilinear feature shape:", feature.get_shape())
+        warped_feature = BilinearInterpolation()(feature, flow, is_flow=True)
+        warped_feature = tf.reshape(warped_feature, shape=(batch*num_src, height, width, channels))
+        return warped_feature
 
     def predict_flow(self, inputs, prefix, up=True):
         x = tf.concat(inputs, axis=-1)
@@ -181,6 +199,7 @@ class PWCNet:
 # ===== TEST FUNCTIONS
 
 import numpy as np
+np.set_printoptions(precision=4, suppress=True, linewidth=100)
 
 
 def test_correlation():
@@ -200,10 +219,7 @@ def test_correlation():
                                           pad=md + ks//2, data_format="channels_last")([cl, cr])
         print(f"Level={p}, md={md}, stride_2={stride_2}, corr shape={corr.shape}")
 
-    # TEST
-    corr_shape = (batch, height, width, (2*md + 1)**2)
-    # assert corr.get_shape() == corr_shape, f"correlation shape: {corr.get_shape()} != {corr_shape}"
-
+    print("correlation channels are kept constant")
     print("!!! test_correlation passed")
 
 
@@ -211,19 +227,44 @@ def test_warp_simple():
     print("\n===== start test_warp_simple")
     batch, height, width, channel = (8, 100, 200, 10)
     im = tf.random.uniform((batch, height, width, channel), -2, 2)
-    dy, dx = 1.5, 0.5
-    flow = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
+    dy, dx = 3.5, 1.5
+    dyd, dyu, dxd, dxu = int(np.floor(dy)), int(np.ceil(dy)), int(np.floor(dx)), int(np.ceil(dx))
+    print("dy up, dy down, dx up, dx down:", dyd, dyu, dxd, dxu)
+    # dense_image_warp needs warp: [batch, height, width, 2(v, u)]
+    warp = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
 
     # EXECUTE
-    warp_tfa = tfa.image.dense_image_warp(im, flow)
+    warp_tfa = tfa.image.dense_image_warp(im, warp)
 
-    # flow is applied in a negative way
-    warp_man = (im[:, 9:19, 10:20, :] + im[:, 8:18, 10:20, :] + im[:, 9:19, 9:19, :]
-                + im[:, 8:18, 9:19, :]) / 4.
-    print("warp_tfa:", warp_tfa[1, 10:15, 10:15, 1].numpy())
-    print("warp_man:", warp_man[1, 0:5, 0:5, 1].numpy())
-    assert np.isclose(warp_tfa[1, 10:15, 10:15, 1].numpy(), warp_man[1, 0:5, 0:5, 1].numpy()).all()
+    # BilinearInterpolation needs
+    #   image: [batch, num_src, height, width, channels]
+    #   pixel_coords: [batch, num_src, height, width, 2(u, v)] !! different from dense_image_warp (v, u)
+    flow = tf.stack([tf.ones((batch, height, width)) * dx, tf.ones((batch, height, width)) * dy], axis=-1)
+    imex = tf.expand_dims(im, axis=1)
+    flowex = tf.expand_dims(flow, axis=1)
+
+    # EXECUTE
+    warp_ian = BilinearInterpolation()(imex, flowex, is_flow=True)
+
+    # sample image and warped images
+    im_np = im[1, :, :, 1].numpy()
+    warp_tfa_np = warp_tfa[1, :, :, 1].numpy()
+    warp_ian_np = warp_ian[1, 0, :, :, 1].numpy()
+    # create manually interpolated image
+    temp = (im_np[:-dyu, :-dxu] + im_np[1:-dyd, :-dxu] + im_np[:-dyu, 1:-dxd] + im_np[1:-dyd, 1:-dxd])/4.
+    interp_manual = np.zeros((height, width))
+    interp_manual[dyu:, dxu:] += temp
+
+    # TEST
+    assert np.isclose(warp_tfa_np[dyu:, dxu:], warp_ian_np[dyu:, dxu:]).all()
+    assert np.isclose(interp_manual[dyu:, dxu:], warp_ian_np[dyu:, dxu:]).all()
+
+    print("src image corner:\n", im_np[:8, :8])
+    print(f"image corner warped by dense_image_warp: {warp_tfa.get_shape()}\n", warp_tfa_np[:8, :8])
+    print(f"image corner warped by BilinearInterpolation: {warp_ian.get_shape()}\n", warp_ian_np[:8, :8])
+    print(f"image corner manually interpolated: {interp_manual.shape}\n", interp_manual[:8, :8])
     print("!!! test_warp_simple passed")
+    return
 
 
 def test_warp_multiple():
@@ -348,7 +389,7 @@ def run_net(net, input_tensor):
 
 if __name__ == "__main__":
     test_correlation()
-    # test_warp_simple()
+    test_warp_simple()
     # test_warp_multiple()
     # test_conv2d_5dtensor()
     # test_layer_input()

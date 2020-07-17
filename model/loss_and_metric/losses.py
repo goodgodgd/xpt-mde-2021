@@ -259,6 +259,7 @@ class StereoPoseLoss(LossBase):
 class FlowWarpLossMultiScale(PhotometricLoss):
     def __init__(self, method, key_suffix=""):
         super().__init__(method, key_suffix)
+        self.scale_wegihts = ()
 
     def __call__(self, features, predictions, augm_data):
         """
