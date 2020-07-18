@@ -116,25 +116,9 @@ class PWCNet:
         :return:
         """
         prefix = f"pwc_flow{p}_"
-        cp_r_warp = FlowBilinearInterpolation()(cp_r, up_flowq)
+        cp_r_warp = FlowBilinearInterpolation()(cp_r, up_flowq*flow_scale)
         corrp = self.correlation(cp_l, cp_r_warp, p, name=prefix + "corr")
         return self.predict_flow([corrp, cp_l, up_flowq, up_featq], prefix, up)
-
-    def warp_feature(self, feature, flow):
-        """
-        :param feature: [batch*num_src, height/scale, width/scale, channels]
-        :param flow: [batch*num_src, height/scale, width/scale, 2(v, u)]
-        :return:
-        """
-        batch, snippet = self.total_shape[:2]
-        num_src = snippet - 1
-        _, height, width, channels = feature.get_shape()
-        feature = tf.reshape(feature, shape=(batch, num_src, height, width, channels))
-        flow = tf.reshape(flow, shape=(batch, num_src, height, width, 2))
-        print("bilinear feature shape:", feature.get_shape())
-        warped_feature = FlowBilinearInterpolation()(feature, flow)
-        warped_feature = tf.reshape(warped_feature, shape=(batch*num_src, height, width, channels))
-        return warped_feature
 
     def predict_flow(self, inputs, prefix, up=True):
         x = tf.concat(inputs, axis=-1)

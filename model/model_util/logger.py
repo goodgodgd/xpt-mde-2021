@@ -57,51 +57,6 @@ def save_results(epoch, results_train, results_val, columns, filename):
     return results
 
 
-def save_results1(epoch, results_train, results_val, columns, filename):
-    results = np.concatenate([[epoch], results_train, results_val], axis=0)
-    results = np.expand_dims(results, 0)
-
-    train_columns = ["train_" + col for col in columns]
-    val_columns = ["val_" + col for col in columns]
-    total_columns = ["epoch"] + train_columns + val_columns
-    # create single row dataframe
-    results = pd.DataFrame(data=results, columns=total_columns)
-    results["|"] = "|"
-    total_columns = ["epoch"] + train_columns + ["|"] + val_columns
-    results = results[total_columns]
-    results['epoch'] = results['epoch'].astype(int)
-
-    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
-    # if the file existed, append new data to it
-    if op.isfile(filepath):
-        existing = pd.read_csv(filepath, encoding='utf-8', converters={'epoch': lambda c: int(c)})
-        results = pd.concat([existing, results], axis=0, ignore_index=True)
-        results = results.drop_duplicates(subset='epoch', keep='last')
-        results = results.sort_values(by=['epoch'])
-    # write to a file
-    results.to_csv(filepath, encoding='utf-8', index=False, float_format='%.4f')
-    return results
-
-
-def save_depths(depth_train, depth_val, filename):
-    """
-    depth_xxx: mean depths from a epoch, true depths in row 0, predicted depths in row 1
-    """
-    stride_train = depth_train.shape[1] // 8
-    depth_train = depth_train[:, 0:-1:stride_train][:, :8]
-    stride_val = depth_val.shape[1] // 4
-    depth_val = depth_val[:, 0:-1:stride_val][:, :4]
-    depths = np.concatenate([depth_train, [[-1], [-2]], depth_val], axis=1)
-    print("save_depths:", depth_train.shape, depth_val.shape, depths.shape)
-    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
-    # if the file existed, append only row 1 to it
-    if op.isfile(filepath):
-        existing = np.loadtxt(filepath)
-        depths = np.concatenate([existing, [depths[1]]], axis=0)
-    # write to a file
-    np.savetxt(filepath, depths, fmt="%7.4f")
-
-
 def draw_and_save_plot(results, filename):
     # plot graphs of loss and metrics
     fig, axes = plt.subplots(3, 1)
@@ -188,48 +143,6 @@ def make_reconstructed_views(model, dataset):
     return recon_views
 
 
-def save_loss_scales(model, dataset, steps, is_stereo):
-    if opts.LOG_LOSS:
-        print("\n===== save_loss_scales")
-        losses = collect_losses(model, dataset, steps, is_stereo)
-        save_loss_to_file(losses)
-
-
-def collect_losses(model, dataset, steps_per_epoch, is_stereo):
-    results = {"L1": [], "SSIM": [], "smoothe": [], "stereo": []}
-    total_loss = lm.TotalLoss()
-    calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
-    calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
-    calc_smootheness_loss = lm.SmoothenessLossMultiScale()
-    calc_stereo_loss = lm.StereoDepthLoss("L1")
-    stride = steps_per_epoch // 20
-
-    for step, features in enumerate(dataset):
-        if step % stride > 0:
-            continue
-
-        preds = model(features)
-        augm_data = total_loss.augment_data(features, preds)
-        if is_stereo:
-            augm_data_rig = total_loss.augment_data(features, preds, "_R")
-            augm_data.update(augm_data_rig)
-
-        photo_l1 = calc_photo_loss_l1(features, preds, augm_data)
-        photo_ssim = calc_photo_loss_ssim(features, preds, augm_data)
-        smoothe = calc_smootheness_loss(features, preds, augm_data)
-        stereo = calc_stereo_loss(features, preds, augm_data)
-
-        results["L1"].append(photo_l1)
-        results["SSIM"].append(photo_ssim)
-        results["smoothe"].append(smoothe)
-        results["stereo"].append(stereo)
-        uf.print_progress_status(f"step: {step} / {steps_per_epoch}")
-
-    print("")
-    results = {key: tf.concat(res, 0).numpy() for key, res in results.items()}
-    return results
-
-
 def save_scales(epoch, results_train, results_val, filename):
     filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
     results_train = results_train.rename(columns={col: "t_" + col for col in list(results_train)})
@@ -243,16 +156,6 @@ def save_scales(epoch, results_train, results_val, filename):
         f.write(f"===== epoch: {epoch}\n")
         f.write(f"{results.to_csv(sep=' ', index=False, float_format='%.4f')}\n\n")
         print(f"{filename} written !!")
-
-
-def save_loss_to_file(losses):
-    with open(op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "loss_scale.txt"), "a") as f:
-        for key, loss in losses.items():
-            f.write(f"> loss type={key}, shape={loss.shape}\n")
-            f.write(f"\tloss min={loss.min():1.4f}, max={loss.max():1.4f}, mean={loss.mean():1.4f}, median={np.median(loss):1.4f}\n")
-            f.write(f"\tloss quantile={np.quantile(loss, np.arange(0, 1, 0.1))}\n")
-        f.write("\n\n")
-        print("loss_scale.txt written !!")
 
 
 def copy_or_check_same():

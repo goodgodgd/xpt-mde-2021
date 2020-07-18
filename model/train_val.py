@@ -43,6 +43,9 @@ class TrainValBase:
         results = []
         for step, features in enumerate(dataset):
             start = time.time()
+            translation = features["pose_gt"].numpy()[:, :, :3, 3]
+            if (np.abs(translation) > 10).any():
+                print("pose gt too large:\n", translation)
             preds, loss, loss_by_type = self.run_a_batch(features)
             batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
             uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "

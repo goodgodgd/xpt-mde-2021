@@ -7,8 +7,7 @@ class BilinearInterpolation:
     def __call__(self, image, pixel_coords, valid_mask=None):
         """
         :param image: source image [batch, num_src, height, width, ?]
-        :param pixel_coords: floating-point pixel coordinates (u,v,1)
-                [batch, num_src, 3, height*width] or [batch, num_src, height, width, 2] (is_flow=True)
+        :param pixel_coords: floating-point pixel coordinates (u,v,1) [batch, num_src, 3 or 2, height*width]
         :param valid_mask: zero pixels in valid_mask are INVALID in recon_image [batch, height, width, 1]
         :return: reconstructed image [batch, num_src, height, width, ?]
         """
