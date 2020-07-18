@@ -70,9 +70,12 @@ def split_into_source_and_target(stacked_image):
     """
     batch, imheight, imwidth, _ = stacked_image.get_shape().as_list()
     imheight = int(imheight // opts.SNIPPET_LEN)
-    source_image = tf.slice(stacked_image, (0, 0, 0, 0), (-1, imheight*(opts.SNIPPET_LEN-1), -1, -1))
-    target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
-                            (-1, imheight, -1, -1))
+    border = imheight*(opts.SNIPPET_LEN-1)
+    source_image = stacked_image[:, :border]
+    target_image = stacked_image[:, border:]
+    # source_image = tf.slice(stacked_image, (0, 0, 0, 0), (-1, imheight*(opts.SNIPPET_LEN-1), -1, -1))
+    # target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
+    #                         (-1, imheight, -1, -1))
     return source_image, target_image
 
 

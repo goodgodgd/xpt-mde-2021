@@ -1,6 +1,5 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-from copy import deepcopy
 
 import settings
 import utils.util_funcs as uf

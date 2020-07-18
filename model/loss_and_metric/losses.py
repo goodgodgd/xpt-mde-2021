@@ -11,7 +11,7 @@ import model.loss_and_metric.loss_util as lsu
 
 
 class TotalLoss:
-    def __init__(self, loss_objects=None, loss_weights=None, stereo=False):
+    def __init__(self, loss_objects=None, loss_weights=None, stereo=False, batch_size=1):
         """
         :param loss_objects: dict of loss objects
         :param loss_weights: dict of weights of losses
@@ -19,6 +19,7 @@ class TotalLoss:
         self.loss_objects = loss_objects
         self.loss_weights = loss_weights
         self.stereo = stereo
+        self.batch_size = batch_size
 
     @shape_check
     def __call__(self, predictions, features):
@@ -41,10 +42,12 @@ class TotalLoss:
         loss_by_type = dict()
         for loss_name in self.loss_objects:
             loss = self.loss_objects[loss_name](features, predictions, augm_data)
-            losses.append(loss * self.loss_weights[loss_name])
-            loss_by_type[loss_name] = loss * self.loss_weights[loss_name]
+            # [batch] -> scalar
+            loss = tf.nn.compute_average_loss(loss, global_batch_size=self.batch_size)
+            weighted_loss = loss * self.loss_weights[loss_name]
+            losses.append(weighted_loss)
+            loss_by_type[loss_name] = weighted_loss
 
-        losses = layers.Lambda(lambda x: tf.stack(x, axis=0), name="losses")(losses)
         total_loss = layers.Lambda(lambda x: tf.reduce_sum(x), name="total_loss")(losses)
         return total_loss, loss_by_type
 
@@ -123,7 +126,7 @@ class PhotometricLossMultiScale(PhotometricLoss):
     def __call__(self, features, predictions, augm_data):
         """
         desciptions of inputs are available in 'TotalLoss.augment_data()'
-        :return: photo_loss (scalar)
+        :return: photo_loss [batch]
         """
         original_target_ms = augm_data["target_ms" + self.key_suffix]
         synth_target_ms = augm_data["synth_target_ms" + self.key_suffix]
@@ -133,10 +136,11 @@ class PhotometricLossMultiScale(PhotometricLoss):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
                                  name=f"photo_loss_{i}" + self.key_suffix)([synt_target, orig_target])
             losses.append(loss)
-        # losses: list of scale losses -> sum: scalar
+
         name = "photo_loss_sum" + self.key_suffix
-        loss = layers.Lambda(lambda x: tf.reduce_sum(x), name=name)(losses)
-        return loss
+        # losses: [scales, batch] -> sum -> [batch]
+        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=name)(losses)
+        return loss_batch
 
 
 class SmoothenessLossMultiScale(LossBase):
@@ -146,7 +150,7 @@ class SmoothenessLossMultiScale(LossBase):
     def __call__(self, features, predictions, augm_data):
         """
         desciptions of inputs are available in "PhotometricLossL1MultiScale"
-        :return: smootheness loss (scalar)
+        :return: smootheness loss [batch]
         """
         pred_disp_ms = predictions["disp_ms" + self.key_suffix]
         target_ms = augm_data["target_ms" + self.key_suffix]
@@ -158,14 +162,14 @@ class SmoothenessLossMultiScale(LossBase):
                                  name=f"smooth_loss_{i}")([disp, image])
             losses.append(loss)
 
-        loss = layers.Lambda(lambda x: tf.reduce_sum(x), name="smooth_loss_sum")(losses)
+        loss = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name="smooth_loss_sum")(losses)
         return loss
 
     def smootheness_loss(self, disp, image):
         """
         :param disp: scaled disparity map, list of [batch, height/scale, width/scale, 1]
         :param image: scaled original target image [batch, height/scale, width/scale, 3]
-        :return: smootheness loss (scalar)
+        :return: smootheness loss [batch]
         """
         def gradient_x(img):
             gx = img[:, :, :-1, :] - img[:, :, 1:, :]
@@ -188,8 +192,8 @@ class SmoothenessLossMultiScale(LossBase):
         smoothness_x = disp_gradients_x * weights_x
         smoothness_y = disp_gradients_y * weights_y
 
-        smoothness_x = 0.5 * tf.reduce_mean(tf.abs(smoothness_x))
-        smoothness_y = 0.5 * tf.reduce_mean(tf.abs(smoothness_y))
+        smoothness_x = 0.5 * tf.reduce_mean(tf.abs(smoothness_x), axis=[1, 2, 3])
+        smoothness_y = 0.5 * tf.reduce_mean(tf.abs(smoothness_y), axis=[1, 2, 3])
         smoothness = smoothness_x + smoothness_y
         return smoothness
 
@@ -201,7 +205,7 @@ class StereoDepthLoss(PhotometricLoss):
     def __call__(self, features, predictions, augm_data):
         """
         desciptions of inputs are available in 'TotalLoss.augment_data()'
-        :return: photo_loss (scalar)
+        :return: photo_loss [batch]
         """
         # synthesize left image from right image
         loss_left, _ = self.stereo_synthesize_loss(source_img=augm_data["target_R"],
@@ -218,9 +222,9 @@ class StereoDepthLoss(PhotometricLoss):
                                                     suffix="_R")
         # list concatenation, not summation
         losses = loss_left + loss_right
-        # losses: [loss at each scale] -> sum: scalar
-        loss = layers.Lambda(lambda x: tf.reduce_sum(x), name="photo_loss_sum")(losses)
-        return loss
+        # losses: [scales, batch] -> sum -> [batch]
+        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name="photo_loss_sum")(losses)
+        return loss_batch
 
     def stereo_synthesize_loss(self, source_img, target_ms, target_depth_ms, pose_t2s, intrinsic, suffix=""):
         """
@@ -256,8 +260,8 @@ class StereoPoseLoss(LossBase):
         pose_rl_true = cp.pose_matr2rvec_batch(pose_rl_true_mat)
         # loss: [batch, num_src]
         loss = tf.keras.losses.MSE(pose_lr_true, pose_lr_pred) + tf.keras.losses.MSE(pose_rl_true, pose_rl_pred)
-        # loss: (scalar)
-        loss = tf.reduce_mean(loss)
+        # loss: [batch]
+        loss = tf.reduce_mean(loss, axis=1)
         return loss
 
 
@@ -269,7 +273,7 @@ class FlowWarpLossMultiScale(PhotometricLoss):
     def __call__(self, features, predictions, augm_data):
         """
         desciptions of inputs are available in 'TotalLoss.augment_data()'
-        :return: photo_loss (scalar)
+        :return: photo_loss [batch]
         """
         flow_target_ms = augm_data["flow_target_ms" + self.key_suffix]
         # warp a target from 4 sources and 4 flows in 4 level scales
@@ -282,8 +286,9 @@ class FlowWarpLossMultiScale(PhotometricLoss):
             losses.append(loss)
         # losses: [loss at each scale] -> sum: scalar
         name = "flow_warp_loss_sum" + self.key_suffix
-        loss = layers.Lambda(lambda x: tf.reduce_sum(x), name=name)(losses)
-        return loss
+        # losses: [scales, batch] -> sum -> [batch]
+        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=name)(losses)
+        return loss_batch
 
 
 class L2Regularizer(LossBase):
@@ -294,7 +299,10 @@ class L2Regularizer(LossBase):
         loss = 0
         for weight in self.weights:
             loss += tf.nn.l2_loss(weight)
-        return loss
+        # scalar -> [batch]
+        batch = features["image"].get_shape()[0]
+        loss_batch = tf.tile([loss], [batch])
+        return loss_batch
 
 
 # ===== TEST FUNCTIONS
