@@ -8,6 +8,8 @@ import os
 BATCH_SIZE_PER_REPLICA = 16
 
 
+# source: https://www.tensorflow.org/tutorials/distribute/custom_training
+
 def train_multi_gpu():
     print(tf.__version__)
     strategy = tf.distribute.MirroredStrategy()

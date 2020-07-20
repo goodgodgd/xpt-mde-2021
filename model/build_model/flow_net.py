@@ -1,6 +1,7 @@
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import layers
+from model.synthesize.bilinear_interp import FlowBilinearInterpolation
 
 import settings
 
@@ -9,6 +10,8 @@ class PWCNet:
     def __init__(self, total_shape, conv2d):
         self.total_shape = total_shape
         self.conv2d_f = conv2d
+        # maximum pixel movement in optical flow
+        self.max_displacement = 128
         print("[FlowNet] convolution default options:", vars(conv2d))
 
     def __call__(self):
@@ -24,10 +27,10 @@ class PWCNet:
         c1l, c2l, c3l, c4l, c5l, c6l = self.pwc_encode(target, "_l")
         c1r, c2r, c3r, c4r, c5r, c6r = self.pwc_encode(sources, "_r")
 
-        # repeate target numsrc times -> [batch*num_src, height//scale, width//scale, channel]
+        # repeate target numsrc times -> [batch*num_src, height/scale, width/scale, channel]
         c1l, c2l, c3l, c4l, c5l, c6l = self.repeat_features((c1l, c2l, c3l, c4l, c5l, c6l), numsrc)
 
-        corr6 = self.correlation(c6l, c6r)
+        corr6 = self.correlation(c6l, c6r, 6, "pwc_flow6_corr")
         flow6, up_flow6, up_feat6 = self.predict_flow(corr6, "flow6")
 
         flow5, up_flow5, up_feat5 = self.upconv_flow(5, c5l, c5r, 0.625, up_flow6, up_feat6)
@@ -36,12 +39,12 @@ class PWCNet:
         flow2, flow_feat2         = self.upconv_flow(2, c2l, c2r, 5.0,   up_flow3, up_feat3, up=False)
 
         flow2 = self.context_network(flow_feat2, flow2)
-        flows_ms = [flow2, flow3, flow4, flow5, flow6]
+        flow_ms = [flow2, flow3, flow4, flow5]
 
         # reshape back to normal bactch size
         # -> list of [batch, num_src, height//scale, width//scale, channel]
-        flows_ms = self.reshape_batch_back(flows_ms)
-        pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flows_ms": flows_ms}, name="PWCNet")
+        flow_ms = self.reshape_batch_back(flow_ms)
+        pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flow_ms": flow_ms}, name="PWCNet")
         return pwcnet
 
     def split_target_and_sources(self, input_tensor):
@@ -103,46 +106,38 @@ class PWCNet:
 
     def upconv_flow(self, p, cp_l, cp_r, flow_scale, up_flowq, up_featq, up=True):
         """
-        :param p: current layer level, q = p+1 (lower resolution level)
-        :param cp_l: p-th encoded feature from left image [batch, height//2^p, width//2^p, channel_p]
-        :param cp_r: p-th encoded feature from left image [batch, height//2^p, width//2^p, channel_p]
+        :param p: current layer level, q = p+1, feature resolution is (H/2^p, W/2^p)
+        :param cp_l: p-th encoded feature from left image [batch*num_src, height/2^p, width/2^p, channel_p]
+        :param cp_r: p-th encoded feature from left image [batch*num_src, height/2^p, width/2^p, channel_p]
         :param flow_scale: flow scale factor for flow scale to be 1/20
-        :param up_flowq: upsampled flow from q-th level [batch, height//2^p, width//2^p, 2]
-        :param up_featq: upsampled flow from q-th level [batch, height//2^p, width//2^p, channel_q]
+        :param up_flowq: upsampled flow from q-th level [batch*num_src, height/2^p, width/2^p, 2]
+        :param up_featq: upsampled flow from q-th level [batch*num_src, height/2^p, width/2^p, channel_q]
         :param up: whether to return upsample flow and feature
         :return:
         """
-        # TODO: [ERROR] the below function results in TypeError:
-        #   '''
-        #   cp_r_warp = tfa.image.dense_image_warp(cp_r, up_flowq * flow_scale, name=f"pwc_flow{p}_warp")
-        #   '''
-        #   TypeError: An op outside of the function building code is being passed a "Graph" tensor. ~~~
-        #   there might be a bug in tfa.image.dense_image_warp(),
-        #   so the function is enclosed in layers.Lambda()
-        cp_r_warp = layers.Lambda(lambda inputs: tfa.image.dense_image_warp(
-                                  inputs[0], inputs[1]*flow_scale),
-                                  name=f"pwc_flow{p}_warp")([cp_r, up_flowq])
-        corrp = self.correlation(cp_l, cp_r_warp, name=f"pwc_flow{p}_corr")
-        return self.predict_flow([corrp, cp_l, up_flowq, up_featq], f"flow{p}", up)
+        prefix = f"pwc_flow{p}_"
+        cp_r_warp = FlowBilinearInterpolation()(cp_r, up_flowq*flow_scale)
+        corrp = self.correlation(cp_l, cp_r_warp, p, name=prefix + "corr")
+        return self.predict_flow([corrp, cp_l, up_flowq, up_featq], prefix, up)
 
-    def predict_flow(self, inputs, tag, up=True):
+    def predict_flow(self, inputs, prefix, up=True):
         x = tf.concat(inputs, axis=-1)
-        c = self.conv2d_f(x, 128, name=f"pwc_{tag}_c1")
+        c = self.conv2d_f(x, 128, name=prefix + "c1")
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 128, name=f"pwc_{tag}_c2")
+        c = self.conv2d_f(x, 128, name=prefix + "c2")
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 96, name=f"pwc_{tag}_c3")
+        c = self.conv2d_f(x, 96, name=prefix + "c3")
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 64, name=f"pwc_{tag}_c4")
+        c = self.conv2d_f(x, 64, name=prefix + "c4")
         x = tf.concat([x, c], axis=-1)
         c = self.conv2d_f(x, 32)
-        flow = self.conv2d_f(c, 2, activation="linear", name=f"pwc_{tag}_out")
+        flow = self.conv2d_f(c, 2, activation="linear", name=prefix + "out")
 
         if up:
             up_flow = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
-                                             name=f"pwc_{tag}_ct1")(flow)
+                                             name=prefix + "ct1")(flow)
             up_feat = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
-                                             name=f"pwc_{tag}_ct2")(c)
+                                             name=prefix + "ct2")(c)
             return flow, up_flow, up_feat
         else:
             return flow, c
@@ -157,43 +152,48 @@ class PWCNet:
         refined_flow = self.conv2d_f(c, 2, activation="linear", name=f"pwc_context_7") + flow
         return refined_flow
 
-    def correlation(self, cl, cr, ks=1, md=4, name=""):
-        corr = tfa.layers.CorrelationCost(kernel_size=ks, max_displacement=md, stride_1=1, stride_2=1,
-                                          pad=md + ks//2, data_format="channels_last", name=name
+    def correlation(self, cl, cr, p, name=""):
+        """
+        :param cl: left convolutional features [batch, height/2^p, width/2^p, channels]
+        :param cr: right convolutional features [batch, height/2^p, width/2^p, channels]
+        :param p: resolution level
+        :param name:
+        :return: correlation volumn [batch, height/2^p, width/2^p, (2*md+1)^2]
+        """
+        md = self.max_displacement // 2**p
+        stride_2 = max(md//4, 1)
+        corr = tfa.layers.CorrelationCost(kernel_size=1, max_displacement=md,
+                                          stride_1=1, stride_2=stride_2,
+                                          pad=md, data_format="channels_last", name=name
                                           )([cl, cr])
+        print(f"[CorrelationCost] max_displacement={md}, stride_2={stride_2}, corr shape={corr.shape}")
         return corr
 
 
 # ===== TEST FUNCTIONS
 
 import numpy as np
+np.set_printoptions(precision=4, suppress=True, linewidth=100)
 
 
 def test_correlation():
     print("\n===== start test_correlation")
-    batch, height, width, channel = (8, 100, 200, 10)
+    batch, height, width, channel = (8, 128, 384, 10)
     cl = tf.random.uniform((batch, height, width, channel), -2, 2)
     cr = tf.random.uniform((batch, height, width, channel), -2, 2)
     print("input shape:", (batch, height, width, channel))
-    ks, md = 1, 5
+    max_displacement = 128
+    resolution_level = range(2, 7)
+    ks = 1
 
-    # EXECUTE
-    corr = tfa.layers.CorrelationCost(kernel_size=ks, max_displacement=md, stride_1=1, stride_2=1,
-                                      pad=md + ks // 2, data_format="channels_last")([cl, cr])
+    for p in resolution_level:
+        md = max_displacement // 2**p
+        stride_2 = max(md//4, 1)
+        corr = tfa.layers.CorrelationCost(kernel_size=ks, max_displacement=md, stride_1=1, stride_2=stride_2,
+                                          pad=md + ks//2, data_format="channels_last")([cl, cr])
+        print(f"Level={p}, md={md}, stride_2={stride_2}, corr shape={corr.shape}")
 
-    # TEST
-    corr_shape = (batch, height, width, (2*md + 1)**2)
-    assert corr.get_shape() == corr_shape, f"correlation shape: {corr.get_shape()} != {corr_shape}"
-    print("correlation shape:", corr.get_shape())
-
-    # manually compute correlation at (md+v, md+u) but NOT same with corr
-    u, v = 1, 1
-    cr_shift = tf.pad(cr[:, v:, u:, :], [[0, 0], [v, 0], [u, 0], [0, 0]])
-    corr_man = cl * cr_shift
-    corr_man = layers.AveragePooling2D(pool_size=(ks, ks), strides=1, padding="same")(corr_man)
-    corr_man = tf.reduce_mean(corr_man, axis=-1)
-    print("corr_man shape:", corr_man.get_shape())
-
+    print("correlation channels are kept constant")
     print("!!! test_correlation passed")
 
 
@@ -201,19 +201,36 @@ def test_warp_simple():
     print("\n===== start test_warp_simple")
     batch, height, width, channel = (8, 100, 200, 10)
     im = tf.random.uniform((batch, height, width, channel), -2, 2)
-    dy, dx = 1.5, 0.5
-    flow = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
+    dy, dx = 3.5, 1.5
+    dyd, dyu, dxd, dxu = int(np.floor(dy)), int(np.ceil(dy)), int(np.floor(dx)), int(np.ceil(dx))
+    print("dy up, dy down, dx up, dx down:", dyd, dyu, dxd, dxu)
+    # dense_image_warp needs warp: [batch, height, width, 2]
+    warp_vu = tf.stack([tf.ones((batch, height, width)) * dy, tf.ones((batch, height, width)) * dx], axis=-1)
+    warp_uv = tf.stack([tf.ones((batch, height, width)) * dx, tf.ones((batch, height, width)) * dy], axis=-1)
 
     # EXECUTE
-    warp_tfa = tfa.image.dense_image_warp(im, flow)
+    warp_tfa = tfa.image.dense_image_warp(im, warp_vu)
+    warp_ian = FlowBilinearInterpolation()(im, warp_uv)
 
-    # flow is applied in a negative way
-    warp_man = (im[:, 9:19, 10:20, :] + im[:, 8:18, 10:20, :] + im[:, 9:19, 9:19, :]
-                + im[:, 8:18, 9:19, :]) / 4.
-    print("warp_tfa:", warp_tfa[1, 10:15, 10:15, 1].numpy())
-    print("warp_man:", warp_man[1, 0:5, 0:5, 1].numpy())
-    assert np.isclose(warp_tfa[1, 10:15, 10:15, 1].numpy(), warp_man[1, 0:5, 0:5, 1].numpy()).all()
+    # sample image and warped images
+    im_np = im[1, :, :, 1].numpy()
+    warp_tfa_np = warp_tfa[1, :, :, 1].numpy()
+    warp_ian_np = warp_ian[1, :, :, 1].numpy()
+    # create manually interpolated image
+    temp = (im_np[:-dyu, :-dxu] + im_np[1:-dyd, :-dxu] + im_np[:-dyu, 1:-dxd] + im_np[1:-dyd, 1:-dxd])/4.
+    interp_manual = np.zeros((height, width))
+    interp_manual[dyu:, dxu:] += temp
+
+    # TEST
+    assert np.isclose(warp_tfa_np[dyu:, dxu:], warp_ian_np[dyu:, dxu:]).all()
+    assert np.isclose(interp_manual[dyu:, dxu:], warp_ian_np[dyu:, dxu:]).all()
+
+    print("src image corner:\n", im_np[:8, :8])
+    print(f"image corner warped by dense_image_warp: {warp_tfa.get_shape()}\n", warp_tfa_np[:8, :8])
+    print(f"image corner warped by FlowBilinearInterpolation: {warp_ian.get_shape()}\n", warp_ian_np[:8, :8])
+    print(f"image corner manually interpolated: {interp_manual.shape}\n", interp_manual[:8, :8])
     print("!!! test_warp_simple passed")
+    return
 
 
 def test_warp_multiple():
@@ -283,14 +300,14 @@ def test_reshape_tensor():
     print("!!! test_reshape_tensor passed")
 
 
-import model.build_model.model_utils as mu
+import model.model_util.layer_ops as lo
 
 
 def test_lambda_layer():
     print("\n===== start test_lambda_layer")
     batch, height, width, channel = (8, 100, 200, 10)
     x = tf.random.uniform((batch, height, width, channel), -2, 2)
-    conv2d = mu.CustomConv2D(activation=layers.LeakyReLU(0.1))
+    conv2d = lo.CustomConv2D(activation=layers.LeakyReLU(0.1))
     y = convnet(conv2d, x)
     print("normally build convnet, y shape:", y.get_shape())
 
@@ -314,10 +331,13 @@ def test_pwcnet():
     print("\n===== start test_pwcnet")
     total_shape = batch, snippet, height, width, channel = (8, 4, 128, 256, 10)
     input_tensor = tf.random.uniform((batch, snippet*height, width, channel), -2, 2)
-    conv2d = mu.conv2d_func_factory(activation=layers.LeakyReLU(0.1))
+    conv_layer = lo.CustomConv2D(activation=tf.keras.layers.LeakyReLU(0.1),
+                                 kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.025),
+                                 kernel_regularizer=tf.keras.regularizers.l2(0.0004)
+                                 )
 
     # EXECUTE
-    pwc_net = PWCNet(total_shape, conv2d)()
+    pwc_net = PWCNet(total_shape, conv_layer)()
     pwc_net.summary()
 
     flows = run_net(pwc_net, input_tensor)
@@ -334,12 +354,12 @@ def run_net(net, input_tensor):
 
 
 if __name__ == "__main__":
-    # test_correlation()
-    # test_warp_simple()
+    test_correlation()
+    test_warp_simple()
     # test_warp_multiple()
     # test_conv2d_5dtensor()
     # test_layer_input()
     # test_reshape_tensor()
     # test_lambda_layer()
-    test_pwcnet()
+    # test_pwcnet()
 

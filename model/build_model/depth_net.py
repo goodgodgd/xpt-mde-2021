@@ -1,10 +1,9 @@
 import tensorflow as tf
 from tensorflow.keras import layers
-from copy import deepcopy
 
 import settings
 import utils.util_funcs as uf
-import model.build_model.model_utils as mu
+import model.model_util.layer_ops as lo
 from model.build_model.pretrained_nets import PretrainedModel
 
 
@@ -76,7 +75,7 @@ class DepthNetBasic:
     def upconv_with_skip_connection(self, bef_layer, skip_layer, out_channels, scope, bef_pred=None):
         upconv = self.upsample_2x_d(bef_layer, scope)
         upconv = self.conv2d_d(upconv, out_channels, 3, name=scope + "_conv1")
-        upconv = mu.resize_like(upconv, skip_layer, scope)
+        upconv = lo.resize_like(upconv, skip_layer, scope)
         upconv = tf.cond(bef_pred is not None,
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer, bef_pred]),
                          lambda: layers.Concatenate(axis=3, name=scope + "_concat")([upconv, skip_layer])
@@ -87,7 +86,7 @@ class DepthNetBasic:
     def get_scaled_depth(self, src, dst_height, dst_width, scope):
         conv = self.conv2d_d(src, 1, 3, activation="linear", name=scope + "_conv")
         depth = layers.Lambda(lambda x: self.predict_depth(x), name=scope + "_acti")(conv)
-        conv_up = mu.resize_image(conv, dst_height, dst_width, scope)
+        conv_up = lo.resize_image(conv, dst_height, dst_width, scope)
         return depth, conv_up, conv
 
 

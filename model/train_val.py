@@ -1,5 +1,6 @@
 import tensorflow as tf
 import numpy as np
+import pandas as pd
 import time
 
 import utils.util_funcs as uf
@@ -25,39 +26,42 @@ def train_val_factory(mode_sel, model, loss_object, steps_per_epoch, stereo, opt
 
 
 class TrainValBase:
-    def __init__(self, train_val_name, model, loss_object, steps_per_epoch, stereo, optimizer=None):
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer=None):
         self.model = model
         self.loss_object = loss_object
-        self.train_val_name = train_val_name
+        self.train_val_name = "train_val"
         self.steps_per_epoch = steps_per_epoch
         self.stereo = stereo
         self.optimizer = optimizer
         self.weights = None
 
+    def set_name(self, name):
+        self.train_val_name = name
+
+    # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     def run_an_epoch(self, dataset):
         results = []
-        depths = []
-
-        # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
         for step, features in enumerate(dataset):
             start = time.time()
+            translation = features["pose_gt"].numpy()[:, :, :3, 3]
+            # if (np.abs(translation) > 10).any():
+            #     print("pose gt too large:\n", translation)
             preds, loss, loss_by_type = self.run_a_batch(features)
             batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
-            mean_depths = get_center_depths(features, preds)
             uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
                                      f"time={time.time() - start:1.4f}...")
             inspect_model(preds, step, self.steps_per_epoch)
             results.append(batch_result)
-            depths.append(mean_depths)
 
         print("")
-        # mean_result: mean of [all losses, trj_err, rot_err, weighted losses from various loss types]
-        mean_result = np.array(results).mean(axis=0)
-        # depths: [2, # frames in dataset]
-        depths = np.concatenate(depths, axis=1)
-        print(f"[{self.train_val_name} Epoch MEAN], result: loss={mean_result[0]:1.4f}, "
-              f"trj_err={mean_result[1]:1.4f}, rot_err={mean_result[2]:1.4f}")
-        return mean_result, depths
+        # list of dict -> dataframe -> mean: single row dataframe -> to_dict: dict of mean values
+        results = pd.DataFrame(results)
+        mean_results = results.mean(axis=0).to_dict()
+        message = f"[{self.train_val_name} Epoch MEAN], result: "
+        for key, val in mean_results.items():
+            message += f"{key}={val:1.4f}, "
+        print(message, "\n\n")
+        return results
 
     def run_a_batch(self, features):
         raise NotImplementedError()
@@ -65,7 +69,8 @@ class TrainValBase:
 
 class ModelTrainer(TrainValBase):
     def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer):
-        super().__init__("Train (graph)", model, loss_object, steps_per_epoch, stereo, optimizer)
+        super().__init__(model, loss_object, steps_per_epoch, stereo, optimizer)
+        self.set_name("Train (eager)")
 
     def run_a_batch(self, features):
         return self.train_a_step(features)
@@ -74,23 +79,22 @@ class ModelTrainer(TrainValBase):
         with tf.GradientTape() as tape:
             # NOTE! preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = self.model(features)
-            loss_batch, loss_by_type = self.loss_object(preds, features)
+            total_loss, loss_by_type = self.loss_object(preds, features)
 
-        grads = tape.gradient(loss_batch, self.model.trainable_weights())
+        grads = tape.gradient(total_loss, self.model.trainable_weights())
         self.optimizer.apply_gradients(zip(grads, self.model.trainable_weights()))
-        loss_mean = tf.reduce_mean(loss_batch)
-        loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
         """
         preds: {"pose": ..., "depth_ms":, ...}
         loss_mean: loss scalar that is averaged over all this epoch  
         loss_by_type: loss [loss types]
         """
-        return preds, loss_mean, loss_by_type
+        return preds, total_loss, loss_by_type
 
 
 class ModelTrainerGraph(ModelTrainer):
     def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer):
         super().__init__(model, loss_object, steps_per_epoch, stereo, optimizer)
+        self.set_name("Train (graph)")
 
     @tf.function
     def run_a_batch(self, features):
@@ -102,6 +106,7 @@ class ModelTrainerDistrib(ModelTrainer):
         super().__init__(model, loss_object, steps_per_epoch, stereo, optimizer)
         self.strategy = DistributionStrategy.get_strategy()
         self.replica_integrator = ReplicaOutputIntegrator()
+        self.set_name("Train (distributed)")
 
     @tf.function
     def run_a_batch(self, features):
@@ -112,22 +117,22 @@ class ModelTrainerDistrib(ModelTrainer):
 
 class ModelValidater(TrainValBase):
     def __init__(self, model, loss_object, steps_per_epoch, stereo):
-        super().__init__("Validate (graph)", model, loss_object, steps_per_epoch, stereo)
+        super().__init__(model, loss_object, steps_per_epoch, stereo)
+        self.set_name("Validate (eager)")
 
     def run_a_batch(self, features):
         return self.validate_a_step(features)
 
     def validate_a_step(self, features):
         preds = self.model(features)
-        loss_batch, loss_by_type = self.loss_object(preds, features)
-        loss_mean = tf.reduce_mean(loss_batch)
-        loss_by_type = tf.reduce_mean(loss_by_type, axis=1)
-        return preds, loss_mean, loss_by_type
+        total_loss, loss_by_type = self.loss_object(preds, features)
+        return preds, total_loss, loss_by_type
 
 
 class ModelValidaterGraph(ModelValidater):
     def __init__(self, model, loss_object, steps_per_epoch, stereo):
         super().__init__(model, loss_object, steps_per_epoch, stereo)
+        self.set_name("Validate (graph)")
 
     @tf.function
     def run_a_batch(self, features):
@@ -137,6 +142,7 @@ class ModelValidaterGraph(ModelValidater):
 class ModelValidaterDistrib(ModelValidater):
     def __init__(self, model, loss_object, steps_per_epoch, stereo):
         super().__init__(model, loss_object, steps_per_epoch, stereo)
+        self.set_name("Validate (distributed)")
         self.strategy = DistributionStrategy.get_strategy()
         self.replica_integrator = ReplicaOutputIntegrator()
 
@@ -149,8 +155,12 @@ class ModelValidaterDistrib(ModelValidater):
 
 def merge_results(features, preds, loss, loss_by_type, stereo):
     trjerr, roterr = get_metric_pose(preds, features, stereo)
-    batch_result = [loss.numpy(), trjerr, roterr] + loss_by_type.numpy().tolist()
-    log_msg = f"loss = {loss.numpy():1.4f}, metric={trjerr:1.4f}, {roterr:1.4f}"
+    depths = get_center_depths(features, preds)
+    loss_by_type = {key: loss.numpy() for key, loss in loss_by_type.items()}
+    batch_result = {"loss": loss.numpy(), "trjerr": trjerr, "roterr": roterr,
+                    "gtdepth": depths[0, 0], "prdepth": depths[1, 0]}
+    batch_result.update(loss_by_type)
+    log_msg = f"loss = {loss.numpy():1.4f}, metric={trjerr:1.4f}, {roterr:1.4f}, prdepth={depths[1, 0]:1.4f}"
     return batch_result, log_msg
 
 
@@ -199,4 +209,5 @@ def inspect_model(preds, step, steps_per_epoch):
     print("depth3 ", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("dpconv3", np.quantile(preds["debug_out"][2].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv3", np.quantile(preds["debug_out"][3].numpy(), np.arange(0.1, 1, 0.1)))
-    print("pose_LR", preds["pose_LR"][0].numpy())
+    # if "pose_LR" in preds:
+    #     print("pose_LR", preds["pose_LR"][0].numpy())

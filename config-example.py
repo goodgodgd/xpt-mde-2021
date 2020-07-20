@@ -49,14 +49,15 @@ class VodeOptions:
     LEARNING_RATE = 0.0001
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
-    TRAIN_MODE = ["eager", "graph", "distributed"][2]
+    TRAIN_MODE = ["eager", "graph", "distributed"][1]
     DATASET_TO_USE = ["kitti_raw", "kitti_odom"][0]
     STEREO_EXTRINSIC = True
     SSIM_RATIO = 0.8
-    LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO)*1., "SSIM": SSIM_RATIO*0.5, "smoothe": 1.,
-                    "L1_R": (1. - SSIM_RATIO)*1., "SSIM_R": SSIM_RATIO*0.5, "smoothe_R": 1.,
+    LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO) * 1., "SSIM": SSIM_RATIO * 0.5, "smoothe": 1.,
+                    "L1_R": (1. - SSIM_RATIO) * 1., "SSIM_R": SSIM_RATIO * 0.5, "smoothe_R": 1.,
+                    "FW_L1": (1. - SSIM_RATIO) * 1., "FW_SSIM": SSIM_RATIO * 0.5,
+                    "FW_L1_R": (1. - SSIM_RATIO) * 1., "FW_SSIM_R": SSIM_RATIO * 0.5,
                     "stereo_L1": 0.04, "stereo_pose": 0.5}
-    # SYNTHESIZER = "SynthesizeMultiScale"
     OPTIMIZER = ["adam_constant"][0]
     DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]
     PRETRAINED_WEIGHT = True
@@ -66,7 +67,7 @@ class VodeOptions:
     """
     NET_NAMES = {"depth": "NASNetMobile",
                  "camera": "PoseNet",
-                 # "flow": "PWCNet"
+                 "flow": "PWCNet"
                  }
     DEPTH_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
                        "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}

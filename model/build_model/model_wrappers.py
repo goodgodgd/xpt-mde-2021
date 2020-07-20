@@ -56,6 +56,12 @@ class ModelWrapper:
             train_weights.extend(model.trainable_weights)
         return train_weights
 
+    def weights_to_regularize(self):
+        if "flownet" in self.models:
+            return self.models["flownet"].trainable_weights
+        else:
+            return None
+
     def save_weights(self, ckpt_dir_path, suffix):
         for netname, model in self.models.items():
             save_path = op.join(ckpt_dir_path, f"{netname}_{suffix}.h5")
@@ -90,8 +96,8 @@ class ModelWrapper:
 
 
 class StereoModelWrapper(ModelWrapper):
-    def __init__(self, model):
-        super().__init__(model)
+    def __init__(self, models):
+        super().__init__(models)
 
     def __call__(self, features):
         predictions = dict()
@@ -116,8 +122,8 @@ class StereoModelWrapper(ModelWrapper):
 
 
 class StereoPoseModelWrapper(ModelWrapper):
-    def __init__(self, model):
-        super().__init__(model)
+    def __init__(self, models):
+        super().__init__(models)
 
     def __call__(self, features):
         predictions = dict()

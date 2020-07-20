@@ -23,13 +23,13 @@ class SynthesizeMultiScale:
                                    name="pose2matrix")(pred_pose)
         synth_targets = []
         for depth_sc in pred_depth_ms:
-            synth_target_sc = SynthesizeBatchBasic()(src_img_stacked, intrinsic, depth_sc, poses_matr)
+            synth_target_sc = SynthesizeSingleScale()(src_img_stacked, intrinsic, depth_sc, poses_matr)
             synth_targets.append(synth_target_sc)
 
         return synth_targets
 
 
-class SynthesizeBatchBasic:
+class SynthesizeSingleScale:
     def __init__(self, shape=(0, 0, 0), num_src=0, scale=0):
         # shape is scaled from the original shape, height = original_height / scale
         self.batch, self.height, self.width = shape
@@ -77,9 +77,13 @@ class SynthesizeBatchBasic:
         :param src_img_stacked: [batch, height*num_src, width, 3]
         :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
         """
-        # resize image
-        scaled_image = tf.image.resize(src_img_stacked, size=(self.height * self.num_src, self.width), method="bilinear")
-        # reorganize scaled images: (4*height/scale,) -> (4, height/scale)
+        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
+        height_orig = stacked_height // self.num_src
+        # reshape image -> (batch*num_src, height_orig, width_orig, 3)
+        source_images = tf.reshape(src_img_stacked, shape=(self.batch * self.num_src, height_orig, width_orig, 3))
+        # resize image (scaled) -> (batch*num_src, height, width, 3)
+        scaled_image = tf.image.resize(source_images, size=(self.height, self.width), method="bilinear")
+        # reorganize scaled images -> (batch, num_src, height, width, 3)
         source_images = tf.reshape(scaled_image, shape=(self.batch, self.num_src, self.height, self.width, 3))
         return source_images
 
@@ -99,7 +103,7 @@ class SynthesizeBatchBasic:
         tgt_image_synthesized = layers.Lambda(lambda inputs:
                                               BilinearInterpolation()(inputs[0], inputs[1], inputs[2]),
                                               name="recon_interp_" + suffix)(
-                                              [src_pixel_coords, src_image, tgt_depth])
+                                              [src_image, src_pixel_coords, tgt_depth])
         return tgt_image_synthesized
 
     def warp_pixel_coords(self, inputs, height, width):
