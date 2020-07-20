@@ -20,8 +20,9 @@ def save_log(epoch, results_train, results_val):
     :param results_train: dict of losses, metrics and depths from training data
     :param results_val: dict of losses, metrics and depths from validation data
     """
-    summary = save_results(epoch, results_train, results_val, ["loss", "trjerr", "roterr"], "history.csv")
-    other_cols = [colname for colname in results_train.keys() if colname not in ["loss", "trjerr", "roterr"]]
+    summ_cols = ["loss", "trjerr", "roterr"]
+    summary = save_results(epoch, results_train, results_val, summ_cols, "history.csv")
+    other_cols = [colname for colname in results_train.keys() if colname not in summ_cols]
     _ = save_results(epoch, results_train, results_val, other_cols, "mean_result.csv")
 
     save_scales(epoch, results_train, results_val, "scales.txt")
@@ -49,8 +50,9 @@ def save_results(epoch, results_train, results_val, columns, filename):
         results = pd.DataFrame([epoch_result])
 
     # reorder columns
-    loss_cols = list(opts.LOSS_WEIGHTS.keys())
-    other_cols = [col for col in columns if col not in loss_cols]
+    all_loss_cols = list(opts.LOSS_WEIGHTS.keys())
+    loss_cols = [col for col in columns if col in all_loss_cols]
+    other_cols = [col for col in columns if col not in all_loss_cols]
     split_cols = loss_cols + other_cols
     train_cols = ["t_" + col for col in split_cols]
     val_cols = ["v_" + col for col in split_cols]
@@ -58,6 +60,7 @@ def save_results(epoch, results_train, results_val, columns, filename):
     print("total cols", total_cols)
     print("result", list(results))
     results = results.loc[:, total_cols]
+    print("LOG: Results:", results)
 
     # write to a file
     results['epoch'] = results['epoch'].astype(int)

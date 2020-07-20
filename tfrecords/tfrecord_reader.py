@@ -117,6 +117,7 @@ def test_read_dataset():
         for key, value in x.items():
             print(f"x shape and type: {key}={value.shape}, {value.dtype}")
 
+        print("stereo pose\n", x["stereo_T_LR"][0].numpy())
         print("gt poses:\n", x['pose_gt'].numpy()[0])
         image = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8).numpy()
         cv2.imshow("image", image[0])

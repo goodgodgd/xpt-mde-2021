@@ -130,10 +130,11 @@ def check_tfrecord_including(dataset_dir, key_list):
 
 
 def read_previous_epoch(model_name):
-    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.csv')
     if op.isfile(filename):
         history = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
         if history.empty:
+            print("[read_previous_epoch] EMPTY history:", history)
             return 0
         epochs = history['epoch'].tolist()
         epochs.sort()
@@ -141,6 +142,7 @@ def read_previous_epoch(model_name):
         print(f"[read_previous_epoch] start from epoch {prev_epoch + 1}")
         return prev_epoch + 1
     else:
+        print("[read_previous_epoch] NO history")
         return 0
 
 
