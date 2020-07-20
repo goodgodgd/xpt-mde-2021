@@ -175,7 +175,6 @@ class FlowBilinearInterpolation:
         # -> [batch*num_src, 1, height, width, ?]
         feature = tf.expand_dims(image, axis=1)
         flow = tf.expand_dims(flow, axis=1)
-        print("bilinear feature shape:", feature.get_shape())
         flow = self.flow_to_pixel_coordinates(flow)
         warped_feature = BilinearInterpolation()(feature, flow)
         warped_feature = tf.squeeze(warped_feature, axis=1)
