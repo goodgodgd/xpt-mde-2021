@@ -12,6 +12,13 @@ def compute_metric_pose(pose_pred, pose_true_mat, stereo=False):
     pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
     trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat, stereo)
     rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
+    if tf.reduce_mean(trj_err).numpy() > 10:
+        print("\n===========")
+        print("trj_err", trj_err.numpy())
+        print("rot_err", rot_err.numpy())
+        print("mean:", tf.reduce_mean(trj_err), tf.reduce_mean(rot_err))
+        print("pred pose", pose_pred[0].numpy())
+        print("true pose", pose_true_mat[0, :, :, 3].numpy())
     return tf.reduce_mean(trj_err), tf.reduce_mean(rot_err)
 
 

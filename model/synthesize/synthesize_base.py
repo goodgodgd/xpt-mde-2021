@@ -23,13 +23,13 @@ class SynthesizeMultiScale:
                                    name="pose2matrix")(pred_pose)
         synth_targets = []
         for depth_sc in pred_depth_ms:
-            synth_target_sc = SynthesizeBatchBasic()(src_img_stacked, intrinsic, depth_sc, poses_matr)
+            synth_target_sc = SynthesizeSingleScale()(src_img_stacked, intrinsic, depth_sc, poses_matr)
             synth_targets.append(synth_target_sc)
 
         return synth_targets
 
 
-class SynthesizeBatchBasic:
+class SynthesizeSingleScale:
     def __init__(self, shape=(0, 0, 0), num_src=0, scale=0):
         # shape is scaled from the original shape, height = original_height / scale
         self.batch, self.height, self.width = shape
@@ -103,7 +103,7 @@ class SynthesizeBatchBasic:
         tgt_image_synthesized = layers.Lambda(lambda inputs:
                                               BilinearInterpolation()(inputs[0], inputs[1], inputs[2]),
                                               name="recon_interp_" + suffix)(
-                                              [src_pixel_coords, src_image, tgt_depth])
+                                              [src_image, src_pixel_coords, tgt_depth])
         return tgt_image_synthesized
 
     def warp_pixel_coords(self, inputs, height, width):

@@ -14,72 +14,65 @@ import model.loss_and_metric.losses as lm
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 
 
-def save_log(epoch, results_train, results_val, depth_train, depth_val):
+def save_log(epoch, results_train, results_val):
     """
     :param epoch: current epoch
-    :param results_train: [loss, metric_trj, metric_rot, [losses from various loss types]]
-    :param results_val: [loss, metric_trj, metric_rot, [losses from various loss types)]
-    :param depth_train: mean depths of train data, [2, samples] (gt for row0, pred for row1)
-    :param depth_val: mean depths of validation data, [2, samples] (gt for row0, pred for row1)
+    :param results_train: dict of losses, metrics and depths from training data
+    :param results_val: dict of losses, metrics and depths from validation data
     """
-    save_depths(depth_train, depth_val, "depths.txt")
-    results = save_results(epoch, results_train[:3], results_val[:3], ["loss", "trj_err", "rot_err"], "history.txt")
-    _ = save_results(epoch, results_train[3:], results_val[3:], list(opts.LOSS_WEIGHTS.keys()), "losses.txt")
-    draw_and_save_plot(results, "history.png")
+    summary = save_results(epoch, results_train, results_val, ["loss", "trjerr", "roterr"], "history.csv")
+    other_cols = [colname for colname in results_train.keys() if colname not in ["loss", "trjerr", "roterr"]]
+    _ = save_results(epoch, results_train, results_val, other_cols, "mean_result.csv")
+
+    save_scales(epoch, results_train, results_val, "scales.txt")
+    draw_and_save_plot(summary, "history.png")
 
 
 def save_results(epoch, results_train, results_val, columns, filename):
-    results = np.concatenate([[epoch], results_train, results_val], axis=0)
-    results = np.expand_dims(results, 0)
-
-    train_columns = ["train_" + col for col in columns]
-    val_columns = ["val_" + col for col in columns]
-    total_columns = ["epoch"] + train_columns + val_columns
-    # create single row dataframe
-    results = pd.DataFrame(data=results, columns=total_columns)
-    results["|"] = "|"
-    total_columns = ["epoch"] + train_columns + ["|"] + val_columns
-    results = results[total_columns]
-    results['epoch'] = results['epoch'].astype(int)
+    train_result = results_train.mean(axis=0).to_dict()
+    val_result = results_val.mean(axis=0).to_dict()
+    epoch_result = {"epoch": epoch}
+    for colname in columns:
+        epoch_result["t_" + colname] = train_result[colname]
+    epoch_result["|"] = "|"
+    for colname in columns:
+        epoch_result["v_" + colname] = val_result[colname]
 
     filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
     # if the file existed, append new data to it
     if op.isfile(filepath):
         existing = pd.read_csv(filepath, encoding='utf-8', converters={'epoch': lambda c: int(c)})
-        results = pd.concat([existing, results], axis=0, ignore_index=True)
+        results = existing.append(epoch_result, ignore_index=True)
         results = results.drop_duplicates(subset='epoch', keep='last')
         results = results.sort_values(by=['epoch'])
+    else:
+        results = pd.DataFrame([epoch_result])
+
+    # reorder columns
+    loss_cols = list(opts.LOSS_WEIGHTS.keys())
+    other_cols = [col for col in columns if col not in loss_cols]
+    split_cols = loss_cols + other_cols
+    train_cols = ["t_" + col for col in split_cols]
+    val_cols = ["v_" + col for col in split_cols]
+    total_cols = ["epoch"] + train_cols + ["|"] + val_cols
+    print("total cols", total_cols)
+    print("result", list(results))
+    results = results.loc[:, total_cols]
+
     # write to a file
+    results['epoch'] = results['epoch'].astype(int)
     results.to_csv(filepath, encoding='utf-8', index=False, float_format='%.4f')
+    print(f"write {filename}\n", results.tail())
     return results
-
-
-def save_depths(depth_train, depth_val, filename):
-    """
-    depth_xxx: mean depths from a epoch, true depths in row 0, predicted depths in row 1
-    """
-    stride_train = depth_train.shape[1] // 8
-    depth_train = depth_train[:, 0:-1:stride_train][:, :8]
-    stride_val = depth_val.shape[1] // 4
-    depth_val = depth_val[:, 0:-1:stride_val][:, :4]
-    depths = np.concatenate([depth_train, [[-1], [-2]], depth_val], axis=1)
-    print("save_depths:", depth_train.shape, depth_val.shape, depths.shape)
-    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
-    # if the file existed, append only row 1 to it
-    if op.isfile(filepath):
-        existing = np.loadtxt(filepath)
-        depths = np.concatenate([existing, [depths[1]]], axis=0)
-    # write to a file
-    np.savetxt(filepath, depths, fmt="%7.4f")
 
 
 def draw_and_save_plot(results, filename):
     # plot graphs of loss and metrics
     fig, axes = plt.subplots(3, 1)
     fig.set_size_inches(7, 7)
-    for i, ax, colname, title in zip(range(3), axes, ['loss', 'trj_err', 'rot_err'], ['Loss', 'Trajectory Error', 'Rotation Error']):
-        ax.plot(results['epoch'], results['train_' + colname], label='train_' + colname)
-        ax.plot(results['epoch'], results['val_' + colname], label='val_' + colname)
+    for i, ax, colname, title in zip(range(3), axes, ['loss', 'trjerr', 'roterr'], ['Loss', 'Trajectory Error', 'Rotation Error']):
+        ax.plot(results['epoch'], results['t_' + colname], label='train_' + colname)
+        ax.plot(results['epoch'], results['v_' + colname], label='val_' + colname)
         ax.set_xlabel('epoch')
         ax.set_ylabel(colname)
         ax.set_title(title)
@@ -107,6 +100,7 @@ def make_reconstructed_views(model, dataset):
     stride = 10
     stereo_loss = lm.StereoDepthLoss("L1")
     total_loss = lm.TotalLoss()
+    scaleidx, batchidx, srcidx = 0, 0, 0
 
     for i, features in enumerate(dataset):
         if i < next_idx:
@@ -126,7 +120,6 @@ def make_reconstructed_views(model, dataset):
                                                  pred_depth_ms=predictions["depth_ms"],
                                                  pred_pose=predictions["pose"])
 
-        scaleidx, batchidx, srcidx = 0, 0, 0
         target_depth = predictions["depth_ms"][0][batchidx]
         target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
         time_source = augm_data["source"][batchidx, srcidx*opts.IM_HEIGHT:(srcidx + 1)*opts.IM_HEIGHT]
@@ -159,56 +152,19 @@ def make_reconstructed_views(model, dataset):
     return recon_views
 
 
-def save_loss_scales(model, dataset, steps, is_stereo):
-    if opts.LOG_LOSS:
-        print("\n===== save_loss_scales")
-        losses = collect_losses(model, dataset, steps, is_stereo)
-        save_loss_to_file(losses)
+def save_scales(epoch, results_train, results_val, filename):
+    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
+    results_train = results_train.rename(columns={col: "t_" + col for col in list(results_train)})
+    results_val = results_val.rename(columns={col: "v_" + col for col in list(results_val)})
+    results = pd.concat([results_train, results_val], axis=1)
+    results = results.quantile([0, 0.25, 0.5, 0.75, 1.], axis=0)
+    results["|"] = "|"
+    results = results[list(results_train) + ["|"] + list(results_val)]
 
-
-def collect_losses(model, dataset, steps_per_epoch, is_stereo):
-    results = {"L1": [], "SSIM": [], "smoothe": [], "stereo": []}
-    total_loss = lm.TotalLoss()
-    calc_photo_loss_l1 = lm.PhotometricLossMultiScale("L1")
-    calc_photo_loss_ssim = lm.PhotometricLossMultiScale("SSIM")
-    calc_smootheness_loss = lm.SmoothenessLossMultiScale()
-    calc_stereo_loss = lm.StereoDepthLoss("L1")
-    stride = steps_per_epoch // 20
-
-    for step, features in enumerate(dataset):
-        if step % stride > 0:
-            continue
-
-        preds = model(features)
-        augm_data = total_loss.augment_data(features, preds)
-        if is_stereo:
-            augm_data_rig = total_loss.augment_data(features, preds, "_R")
-            augm_data.update(augm_data_rig)
-
-        photo_l1 = calc_photo_loss_l1(features, preds, augm_data)
-        photo_ssim = calc_photo_loss_ssim(features, preds, augm_data)
-        smoothe = calc_smootheness_loss(features, preds, augm_data)
-        stereo = calc_stereo_loss(features, preds, augm_data)
-
-        results["L1"].append(photo_l1)
-        results["SSIM"].append(photo_ssim)
-        results["smoothe"].append(smoothe)
-        results["stereo"].append(stereo)
-        uf.print_progress_status(f"step: {step} / {steps_per_epoch}")
-
-    print("")
-    results = {key: tf.concat(res, 0).numpy() for key, res in results.items()}
-    return results
-
-
-def save_loss_to_file(losses):
-    with open(op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "loss_scale.txt"), "a") as f:
-        for key, loss in losses.items():
-            f.write(f"> loss type={key}, shape={loss.shape}\n")
-            f.write(f"\tloss min={loss.min():1.4f}, max={loss.max():1.4f}, mean={loss.mean():1.4f}, median={np.median(loss):1.4f}\n")
-            f.write(f"\tloss quantile={np.quantile(loss, np.arange(0, 1, 0.1))}\n")
-        f.write("\n\n")
-        print("loss_scale.txt written !!")
+    with open(filepath, "a") as f:
+        f.write(f"===== epoch: {epoch}\n")
+        f.write(f"{results.to_csv(sep=' ', index=False, float_format='%.4f')}\n\n")
+        print(f"{filename} written !!")
 
 
 def copy_or_check_same():

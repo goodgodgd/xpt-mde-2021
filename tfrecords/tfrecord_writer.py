@@ -1,6 +1,7 @@
 import os.path as op
 from glob import glob
 import tensorflow as tf
+import numpy as np
 import json
 
 import settings
@@ -16,7 +17,6 @@ class TfrecordMaker:
         # check if there is depth data available
         depths = glob(srcpath + "/*/depth")
         poses = glob(srcpath + "/*/pose")
-        print("maker init", poses, depths)
         self.depth_avail = True if depths else False
         self.pose_avail = True if poses else False
         self.stereo = stereo
@@ -50,9 +50,9 @@ class TfrecordMaker:
         feeders = {"image": df.feeder_factory(image_files, "image", "npyfile", self.stereo),
                    "intrinsic": df.feeder_factory(intrin_files, "intrinsic", "npyfile", self.stereo),
                    }
-        if self.depth_avail:
+        if depth_files:
             feeders["depth_gt"] = df.feeder_factory(depth_files, "depth", "npyfile", self.stereo)
-        if self.pose_avail:
+        if pose_files:
             feeders["pose_gt"] = df.feeder_factory(pose_files, "pose", "npyfile", self.stereo)
 
         if self.stereo:
@@ -72,43 +72,27 @@ class TfrecordMaker:
         if not image_files:
             raise ValueError(f"[list_sequence_files] no image file in {self.srcpath}")
 
-        intrin_files = [op.join(op.dirname(file_path), "intrinsic.txt")
-                        for file_path in image_files]
-
-        if self.depth_avail:
-            depth_files = [op.join(op.dirname(file_path), "depth",
-                                   op.basename(file_path).replace(".png", ".txt"))
-                           for file_path in image_files]
-        else:
-            depth_files = []
-
-        if self.pose_avail:
-            pose_files = [op.join(op.dirname(file_path), "pose",
-                                  op.basename(file_path).replace(".png", ".txt"))
-                          for file_path in image_files]
-        else:
-            pose_files = []
-
+        depth_files = self.list_txt_files(image_files, "depth")
+        pose_files = self.list_txt_files(image_files, "pose")
+        intrin_files = self.list_camera_files(image_files, "intrinsic.txt")
+        extrin_files = self.list_camera_files(image_files, "stereo_T_LR.txt")
+        assert intrin_files, "[list_sequence_files] intrinsic data is NOT available"
         if self.stereo:
-            extrin_files = [op.join(op.dirname(file_path), "stereo_T_LR.txt")
-                            for file_path in image_files]
-        else:
-            extrin_files = []
+            assert extrin_files, "[list_sequence_files] extrinsic data is NOT available"
 
         print("## list sequence files")
         print(f"frame: {[file.replace(self.data_root, '') for file in  image_files[0:1000:200]]}")
         print(f"intrin: {[file.replace(self.data_root, '') for file in  intrin_files[0:1000:200]]}")
-        print(f"depth: {[file.replace(self.data_root, '') for file in  depth_files[0:1000:200]]}")
-        print(f"pose: {[file.replace(self.data_root, '') for file in  pose_files[0:1000:200]]}")
-        print(f"extrin: {[file.replace(self.data_root, '') for file in extrin_files[0:1000:200]]}")
+        if depth_files:
+            print(f"depth: {[file.replace(self.data_root, '') for file in  depth_files[0:1000:200]]}")
+        if pose_files:
+            print(f"pose: {[file.replace(self.data_root, '') for file in  pose_files[0:1000:200]]}")
+        if extrin_files:
+            print(f"extrin: {[file.replace(self.data_root, '') for file in extrin_files[0:1000:200]]}")
 
-        results = (image_files, intrin_files, depth_files, pose_files, extrin_files)
-        for files in results:
-            for file in files:
-                assert op.isfile(file), f"{file} NOT exist"
-
-        results = self.slice_shuffle(results)
-        return results
+        file_lists = [image_files, intrin_files, depth_files, pose_files, extrin_files]
+        file_lists = self.shuffle_and_slice(file_lists)
+        return tuple(file_lists)
 
     def write_tfrecord_config(self, feeders):
         config = dict()
@@ -120,6 +104,47 @@ class TfrecordMaker:
         print("## config", config)
         with open(op.join(self.dstpath, "tfr_config.txt"), "w") as fr:
             json.dump(config, fr)
+
+    def list_txt_files(self, image_files, dirname):
+        file_list = []
+        for srcfile in image_files:
+            newfile = op.join(op.dirname(srcfile), dirname, op.basename(srcfile).replace(".png", ".txt"))
+            if not op.isfile(newfile):
+                print(f"[list_sequence_files] {dirname} data is NOT available: {newfile}")
+                return None
+            file_list.append(newfile)
+        print(f"[list_sequence_files] # of {dirname} files is {len(file_list)}")
+        return file_list
+
+    def list_camera_files(self, image_files, filename):
+        file_list = []
+        for srcfile in image_files:
+            newfile = op.join(op.dirname(srcfile), filename)
+            if not op.isfile(newfile):
+                print(f"[list_sequence_files] extrinsic is NOT available: {newfile}")
+                return None
+            file_list.append(newfile)
+        return file_list
+
+    def shuffle_and_slice(self, src_file_lists):
+        if self.max_frames is None and self.shuffle is False:
+            return src_file_lists
+
+        dst_file_lists = []
+        for file_list in src_file_lists:
+            if not file_list:
+                dst_file_lists.append(None)
+                continue
+            if self.shuffle:
+                indices = np.random.permutation(len(file_list))
+            else:
+                indices = np.arnage(len(file_list))
+            if self.max_frames:
+                indices = indices[:self.max_frames]
+            new_list = [file_list[i] for i in indices]
+            dst_file_lists.append(new_list)
+
+        return dst_file_lists
 
     @staticmethod
     def create_next_example_dict(feeders):

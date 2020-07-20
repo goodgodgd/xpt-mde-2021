@@ -1,7 +1,7 @@
 import tensorflow as tf
 from tensorflow.keras import layers
 
-import model.build_model.model_utils as mu
+import model.model_util.layer_ops as lo
 
 # TODO: pretrained model (w/ and w/o pretrained weight)이나 conv가 더 많은 모델 등 활용해보기
 
@@ -16,7 +16,7 @@ class PoseNet:
         batch, snippet, height, width, channel = self.input_shape
         stacked_image_shape = (snippet*height, width, channel)
         snippet_image = layers.Input(shape=stacked_image_shape, batch_size=batch, name="posenet_input")
-        channel_stack_image = layers.Lambda(lambda image: mu.restack_on_channels(image, snippet),
+        channel_stack_image = layers.Lambda(lambda image: lo.restack_on_channels(image, snippet),
                                             name="channel_stack")(snippet_image)
         print("[PoseNet] channel stacked image shape=", channel_stack_image.get_shape())
         num_sources = snippet - 1

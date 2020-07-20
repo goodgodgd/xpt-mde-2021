@@ -1,5 +1,5 @@
 import tensorflow as tf
-import model.build_model.model_utils as mu
+import model.model_util.layer_ops as lo
 from tensorflow.keras import layers
 
 
@@ -36,14 +36,14 @@ def test_func_just_func():
 
 def test_model_dict_inout():
     input1 = layers.Input(shape=(100, 100, 3), batch_size=8, name="input1")
-    conv1 = mu.convolution(input1, 32, 5, strides=1, name="conv1a")
-    conv1 = mu.convolution(conv1, 32, 5, strides=2, name="conv1b")
-    conv1 = mu.convolution(conv1, 64, 5, strides=1, name="conv1c")
+    conv1 = lo.convolution(input1, 32, 5, strides=1, name="conv1a")
+    conv1 = lo.convolution(conv1, 32, 5, strides=2, name="conv1b")
+    conv1 = lo.convolution(conv1, 64, 5, strides=1, name="conv1c")
 
     input2 = layers.Input(shape=(50, 50, 3), batch_size=8, name="input2")
-    conv2 = mu.convolution(input2, 32, 5, strides=1, name="conv2a")
-    conv2 = mu.convolution(conv2, 32, 5, strides=2, name="conv2b")
-    conv2 = mu.convolution(conv2, 64, 5, strides=1, name="conv2c")
+    conv2 = lo.convolution(input2, 32, 5, strides=1, name="conv2a")
+    conv2 = lo.convolution(conv2, 32, 5, strides=2, name="conv2b")
+    conv2 = lo.convolution(conv2, 64, 5, strides=1, name="conv2c")
 
     feature = layers.Input(shape=(10, 10), batch_size=8, name="input1")
 
@@ -104,15 +104,15 @@ def test_name_scope():
 
 def test_hierarchy_model():
     input1 = layers.Input(shape=(100, 100, 3), batch_size=8, name="input1")
-    conv1 = mu.convolution(input1, 32, 5, strides=1, name="conv1a")
-    conv1 = mu.convolution(conv1, 32, 5, strides=2, name="conv1b")
-    conv1 = mu.convolution(conv1, 64, 5, strides=1, name="conv1c")
+    conv1 = lo.convolution(input1, 32, 5, strides=1, name="conv1a")
+    conv1 = lo.convolution(conv1, 32, 5, strides=2, name="conv1b")
+    conv1 = lo.convolution(conv1, 64, 5, strides=1, name="conv1c")
     model1 = tf.keras.Model(inputs=input1, outputs=conv1, name="model1")
 
     input2 = layers.Input(shape=(100, 100, 3), batch_size=8, name="input2")
-    conv2 = mu.convolution(input2, 32, 5, strides=1, name="conv2a")
-    conv2 = mu.convolution(conv2, 64, 5, strides=2, name="conv2b")
-    conv2 = mu.convolution(conv2, 32, 5, strides=1, name="conv2c")
+    conv2 = lo.convolution(input2, 32, 5, strides=1, name="conv2a")
+    conv2 = lo.convolution(conv2, 64, 5, strides=2, name="conv2b")
+    conv2 = lo.convolution(conv2, 32, 5, strides=1, name="conv2c")
     model2 = tf.keras.Model(inputs=input2, outputs=conv2, name="model2")
 
     input3 = layers.Input(shape=(100, 100, 3), batch_size=8, name="input3")

@@ -53,7 +53,7 @@ class CityScapesReader(DataReaderBase):
 
         self.frame_names: full path of frame files without extension
         """
-        self.frame_names = self._find_frame_names(drive_path)
+        self.frame_names, self.frame_indices, self.total_num_frames = self._list_frames(drive_path)
         self.intrinsic = self._find_camera_matrix()
         return len(self.frame_names)
 
@@ -95,14 +95,17 @@ class CityScapesReader(DataReaderBase):
     def get_stereo_extrinsic(self):
         return self.T_left_right
 
-    def get_filename(self, index):
-        filename = op.basename(self.frame_names[index])
+    def get_filename(self, example_index):
+        filename = op.basename(self.frame_names[example_index])
         return filename.split("_")[-1]
+
+    def get_frame_index(self, example_index):
+        return self.frame_indices[example_index]
 
     """
     Private methods used inside this class
     """
-    def _find_frame_names(self, drive_path):
+    def _list_frames(self, drive_path):
         """
         :param drive_path: sequence path like "train/bochum/bochum_000000"
         :return frame_files: list of frame paths like ["train/bochum/bochum_000000_000001"]
@@ -115,7 +118,9 @@ class CityScapesReader(DataReaderBase):
         # list of ["split/city/city_seqind_frameid"]
         frame_files = [op.join(split_city, file) for file in frame_files]
         frame_files.sort()
-        return frame_files
+        frame_indices = [int(file.split("_")[-1]) for file in frame_files]
+        total_num_frames = len(frame_files)
+        return frame_files, frame_indices, total_num_frames
 
     def _find_camera_matrix(self):
         drive_path = "_".join(self.frame_names[0].split("_")[:-1])

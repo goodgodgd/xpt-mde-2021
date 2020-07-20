@@ -11,6 +11,8 @@ class DataReaderBase:
         self.depth_avail = True
         self.frame_count = [0, 0]
         self.frame_names = []
+        self.frame_indices = []
+        self.total_num_frames = 0
         self.intrinsic = None
         self.T_left_right = None
 
@@ -70,7 +72,13 @@ class DataReaderBase:
         """
         raise NotImplementedError()
 
-    def get_filename(self, index):
+    def get_filename(self, example_index):
+        """
+        :return: indexed frame file name
+        """
+        raise NotImplementedError()
+
+    def get_frame_index(self, example_index):
         """
         :return: indexed frame file name
         """

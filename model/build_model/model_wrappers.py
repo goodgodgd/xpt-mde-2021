@@ -56,6 +56,12 @@ class ModelWrapper:
             train_weights.extend(model.trainable_weights)
         return train_weights
 
+    def weights_to_regularize(self):
+        if "flownet" in self.models:
+            return self.models["flownet"].trainable_weights
+        else:
+            return None
+
     def save_weights(self, ckpt_dir_path, suffix):
         for netname, model in self.models.items():
             save_path = op.join(ckpt_dir_path, f"{netname}_{suffix}.h5")
@@ -128,7 +134,6 @@ class StereoPoseModelWrapper(ModelWrapper):
             preds_right = {key + "_R": value for key, value in preds_right.items()}
             predictions.update(preds_right)
 
-        print("!!! stereo wrapper model prediction keys:", predictions.keys())
         if "depth_ms" in predictions:
             predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
         if "depth_ms_R" in predictions:

@@ -5,7 +5,7 @@ from tensorflow.keras import layers
 import cv2
 
 from config import opts
-from model.synthesize.synthesize_base import SynthesizeBatchBasic, SynthesizeMultiScale
+from model.synthesize.synthesize_base import SynthesizeSingleScale, SynthesizeMultiScale
 from model.synthesize.bilinear_interp import BilinearInterpolation
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.convert_pose as cp
@@ -78,7 +78,7 @@ def test_synthesize_batch_view():
         batch, height_sc, width_sc, _ = depth_scaled.get_shape().as_list()
         scale = int(width_ori // width_sc)
         # create synthesizer
-        synthesizer = SynthesizeBatchBasic(shape=(batch, height_sc, width_sc), num_src=4, scale=scale)
+        synthesizer = SynthesizeSingleScale(shape=(batch, height_sc, width_sc), num_src=4, scale=scale)
         # adjust intrinsic upto scale
         intrinsic_sc = layers.Lambda(lambda intrin: synthesizer.scale_intrinsic(intrin, scale),
                                      name=f"scale_intrin_sc{scale}")(intrinsic)
@@ -118,7 +118,7 @@ def test_reshape_source_images():
     print("batch source image shape", source_image.shape)
     # create synthesizer
     batch, height, width, _ = target_image.get_shape().as_list()
-    synthesizer = SynthesizeBatchBasic((batch, int(height/2), int(width/2)), 4, 2)
+    synthesizer = SynthesizeSingleScale((batch, int(height/2), int(width/2)), 4, 2)
 
     # EXECUTE
     reshaped_image = synthesizer.reshape_source_images(source_image)
@@ -148,7 +148,7 @@ def test_scale_intrinsic():
     scale = 2
 
     # EXECUTE
-    intrinsic_sc = SynthesizeBatchBasic(shape=(batch, 1, 1)).scale_intrinsic(intrinsic, scale)
+    intrinsic_sc = SynthesizeSingleScale(shape=(batch, 1, 1)).scale_intrinsic(intrinsic, scale)
 
     print("original intrinsic:", intrinsic[0])
     print("scaled intrinsic:", intrinsic_sc[0])
@@ -162,7 +162,7 @@ def test_pixel2cam():
     shape = (8, 4, 4)
     batch, height, width = shape
     # create synthesizer
-    synthesizer = SynthesizeBatchBasic(shape, 4, 1)
+    synthesizer = SynthesizeSingleScale(shape, 4, 1)
     tgt_pixel_coords = synthesizer.pixel_meshgrid(height, width)
     tgt_pixel_coords = tf.cast(tgt_pixel_coords, dtype=tf.float32)
     intrinsic = np.array([4, 0, height/2, 0, 4, width/2, 0, 0, 1], dtype=np.float32).reshape((1, 3, 3))
@@ -195,7 +195,7 @@ def test_transform_to_source():
     poses = tf.constant(poses, dtype=tf.float32)
 
     # EXECUTE
-    src_coords = SynthesizeBatchBasic().transform_to_source(coords, poses)
+    src_coords = SynthesizeSingleScale().transform_to_source(coords, poses)
 
     print(f"src coordinates: {src_coords.get_shape()}\n{src_coords[2, 1]}")
     assert np.isclose(coords[2, :3]*2 + 1, src_coords[2, 1, :3]).all()
@@ -285,7 +285,7 @@ def test_reconstruct_bilinear_interp():
     depth = tf.constant(depth)
 
     # EXECUTE
-    recon_image = BilinearInterpolation()(pixel_coords, image, depth)
+    recon_image = BilinearInterpolation()(image, pixel_coords, depth)
 
     expected_image = (image + u_add) * expected_mask.reshape((batch, num_src, height, width, 1))
     print("input image", image[0, 0, :, :, 0])

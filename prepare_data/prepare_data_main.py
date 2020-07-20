@@ -33,7 +33,6 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
         return
 
     num_drives = len(drive_paths)
-    half_len = opts.SNIPPET_LEN // 2
 
     for i, drive_path in enumerate(drive_paths):
         num_frames = data_reader.init_drive(drive_path)
@@ -45,14 +44,15 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
             continue
 
         print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {image_path}")
-        snippet_maker.set_reader(data_reader, num_frames)
+        snippet_maker.set_reader(data_reader)
+
         with PathManager(data_paths) as pm:
-            frame_indices = range(0, num_frames) if split in "test" else range(half_len, num_frames - half_len)
-            for index in frame_indices:
-                example = snippet_maker.get_example(index)
-                filename = data_reader.get_filename(index)
+            for example_index in range(num_frames):
+                example = snippet_maker.get_example(example_index)
+                filename = data_reader.get_filename(example_index)
                 mean_depth = save_example(example, filename, data_paths)
-                print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, file={filename} {index}/{num_frames}")
+                print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, "
+                                      f"file={filename} {example_index}/{num_frames}")
 
                 # if index > 10:
                 #     break

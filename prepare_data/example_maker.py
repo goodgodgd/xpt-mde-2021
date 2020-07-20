@@ -49,36 +49,39 @@ class ExampleMaker:
         self.drive_path = ""
         self.num_frames = 0
 
-    def set_reader(self, reader, num_frames):
+    def set_reader(self, reader):
         assert reader.stereo is False
         self.data_reader = reader
-        self.num_frames = num_frames
+        self.num_frames = len(reader.frame_names)
 
-    def get_example(self, index):
-        indices = self.make_snippet_indices(index)
+    def get_example(self, example_index):
+        frame_index = self.data_reader.get_frame_index(example_index)
+        snippet_frame_inds = self.make_snippet_indices(frame_index)
+
         example = dict()
-        example["index"] = index
-        example["image"], raw_img_shape = self.load_snippet_frames(indices)
+        example["index"] = example_index
+        example["image"], raw_img_shape = self.load_snippet_frames(snippet_frame_inds)
         example["intrinsic"] = self.load_intrinsic(raw_img_shape)
         if self.data_reader.pose_avail:
-            example["pose_gt"] = self.load_snippet_poses(indices)
+            example["pose_gt"] = self.load_snippet_poses(snippet_frame_inds)
         if self.data_reader.depth_avail:
-            example["depth_gt"] = self.load_frame_depth(index, raw_img_shape)
+            example["depth_gt"] = self.load_frame_depth(example_index, raw_img_shape)
         if self.data_reader.stereo:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
         return example
 
     def make_snippet_indices(self, frame_idx):
         halflen = self.snippet_len // 2
+        max_frame_index = self.data_reader.total_num_frames - 1
         indices = np.arange(frame_idx-halflen, frame_idx+halflen+1)
-        indices = np.clip(indices, 0, self.num_frames - 1).tolist()
+        indices = np.clip(indices, 0, max_frame_index).tolist()
         return indices
 
-    def load_snippet_frames(self, frame_indices):
+    def load_snippet_frames(self, snippet_ids):
         frames = []
         raw_img_shape = ()
-        for index in frame_indices:
-            frame = self.data_reader.get_image(index)
+        for idnum in snippet_ids:
+            frame = self.data_reader.get_image(idnum)
             raw_img_shape = frame.shape[:2]
             frame = cv2.resize(frame, dsize=(opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
@@ -87,10 +90,10 @@ class ExampleMaker:
         frames = np.concatenate(frames, axis=0)
         return frames, raw_img_shape
 
-    def load_snippet_poses(self, frame_indices):
+    def load_snippet_poses(self, snippet_ids):
         poses = []
-        for ind in frame_indices:
-            pose = self.data_reader.get_quat_pose(ind)
+        for idnum in snippet_ids:
+            pose = self.data_reader.get_quat_pose(idnum)
             poses.append(pose)
 
         poses = np.stack(poses, axis=0)
@@ -130,16 +133,16 @@ class ExampleMakerStereo(ExampleMaker):
     def __init__(self, base_path, snippet_len):
         super().__init__(base_path, snippet_len)
 
-    def set_reader(self, reader, num_frames):
+    def set_reader(self, reader):
         assert reader.stereo
         self.data_reader = reader
-        self.num_frames = num_frames
+        self.num_frames = len(reader.frame_names)
 
-    def load_snippet_frames(self, frame_indices):
+    def load_snippet_frames(self, snippet_ids):
         frames = []
         raw_img_shape = ()
-        for ind in frame_indices:
-            img_lef, img_rig = self.data_reader.get_image(ind)
+        for idnum in snippet_ids:
+            img_lef, img_rig = self.data_reader.get_image(idnum)
             raw_img_shape = img_lef.shape[:2]
             img_lef = cv2.resize(img_lef, (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
             img_lef = cv2.cvtColor(img_lef, cv2.COLOR_RGB2BGR)
@@ -160,10 +163,10 @@ class ExampleMakerStereo(ExampleMaker):
         intrinsic[1, :] = intrinsic[1, :] * sy
         return intrinsic
 
-    def load_snippet_poses(self, frame_indices):
+    def load_snippet_poses(self, snippet_ids):
         pose_seq_lef = []
         pose_seq_rig = []
-        for ind in frame_indices:
+        for ind in snippet_ids:
             pose_lef, pose_rig = self.data_reader.get_quat_pose(ind)
             pose_seq_lef.append(pose_lef)
             pose_seq_rig.append(pose_rig)
