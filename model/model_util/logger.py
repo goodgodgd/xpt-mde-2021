@@ -144,13 +144,13 @@ def make_reconstructed_views(model, dataset, total_steps):
                      }
         # view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
 
+        if "flow_ms" in predictions:
+            view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
+
         if opts.STEREO:
             view_imgs["right_source"] = augm_data["target_R"][batchidx]
             view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
             # view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
-
-        if "flow_ms" in predictions:
-            view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
 
         view1 = uf.stack_titled_images(view_imgs)
         recon_views.append(view1)

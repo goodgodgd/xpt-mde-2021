@@ -63,7 +63,7 @@ class DepthNetBasic:
         depth0, dpconvn1_up, dpconv0 = self.get_scaled_depth(upconv0, height, width, "dp_depth0")
 
         outputs = {"depth_ms": [depth0, depth1, depth2, depth3],
-                   "debug_out": [dpconv0, upconv0, dpconv3, upconv3]}
+                   "debug_out": [upconv0, upconv3]}
         depthnet = tf.keras.Model(inputs=input_tensor, outputs=outputs, name="depthnet")
         return depthnet
 
