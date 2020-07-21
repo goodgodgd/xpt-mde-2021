@@ -171,7 +171,6 @@ class FlowBilinearInterpolation:
         :param flow: optical flow [batch*num_src, height, width, 2(u,v)]
         :return: reconstructed image [batch*num_src, height, width, ?]
         """
-        _, height, width, channels = image.get_shape()
         # -> [batch*num_src, 1, height, width, ?]
         feature = tf.expand_dims(image, axis=1)
         flow = tf.expand_dims(flow, axis=1)
