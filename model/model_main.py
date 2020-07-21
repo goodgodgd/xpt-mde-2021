@@ -38,8 +38,7 @@ def train(final_epoch=opts.EPOCHS):
         result_val = validater.run_an_epoch(dataset_val)
 
         print("save intermediate results ...")
-        log.save_reconstruction_samples(model, dataset_val, epoch)
-        # log.save_loss_scales(model, dataset_val, val_steps, opts.STEREO)
+        log.save_reconstruction_samples(model, dataset_val, val_steps, epoch)
         save_model(model, result_val)
         log.save_log(epoch, result_train, result_val)
 

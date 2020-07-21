@@ -37,6 +37,8 @@ class TotalLoss:
         if self.stereo:
             augm_data_rig = self.augment_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
+            augm_data_stereo = self.synethesize_stereo(features, predictions, augm_data)
+            augm_data.update(augm_data_stereo)
 
         losses = []
         loss_by_type = dict()
@@ -57,8 +59,8 @@ class TotalLoss:
         :param features: {image, intrinsic}
                 image: stacked image snippet [batch, snippet_len*height, width, 3]
                 intrinsic: camera projection matrix [batch, 3, 3]
-        :param predictions: {disp_ms, pose}
-                disp_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
+        :param predictions: {depth_ms, pose}
+                depth_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
                 pose: poses that transform points from target to source [batch, num_src, 6]
         :param suffix: suffix to keys
         :return augm_data: {depth_ms, source, target, target_ms, synth_target_ms}
@@ -95,6 +97,38 @@ class TotalLoss:
             augm_data["warped_target_ms" + suffix] = warped_target_ms
 
         return augm_data
+
+    def synethesize_stereo(self, features, predictions, augm_data):
+        """
+        gather additional data required to compute losses
+        :param features: {image, intrinsic}
+                intrinsic: camera projection matrix [batch, 3, 3]
+        :param predictions: {depth_ms, stereo_T_LR}
+                depth_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
+                stereo_T_LR: poses that transform points from target to source [batch, num_src, 6]
+        :return augm_data: {source, target, target_ms, synth_target_ms}
+                target: target frame [batch, height, width, 3]
+        """
+        synth_stereo = dict()
+        # synthesize left image from right image
+        pose_T_RL = tf.linalg.inv(features["stereo_T_LR"])
+        pose_T_RL = cp.pose_matr2rvec_batch(tf.expand_dims(pose_T_RL, 1))
+        synth_stereo["stereo_synth_ms"] = SynthesizeMultiScale()(
+                                                src_img_stacked=augm_data["target_R"],
+                                                intrinsic=features["intrinsic"],
+                                                pred_depth_ms=predictions["depth_ms"],
+                                                pred_pose=pose_T_RL)
+
+        # synthesize right image from left image
+        pose_T_LR = features["stereo_T_LR"]
+        pose_T_LR = cp.pose_matr2rvec_batch(tf.expand_dims(pose_T_LR, 1))
+        synth_stereo["stereo_synth_ms_R"] = SynthesizeMultiScale()(
+                                                src_img_stacked=augm_data["target"],
+                                                intrinsic=features["intrinsic"],
+                                                pred_depth_ms=predictions["depth_ms_R"],
+                                                pred_pose=pose_T_LR)
+        # synth_stereo_xxx: list of [batch, 1, height/scale, width/scale, 3]
+        return synth_stereo
 
 
 class LossBase:
@@ -208,45 +242,32 @@ class StereoDepthLoss(PhotometricLoss):
         :return: photo_loss [batch]
         """
         # synthesize left image from right image
-        loss_left, _ = self.stereo_synthesize_loss(source_img=augm_data["target_R"],
-                                                   target_ms=augm_data["target_ms"],
-                                                   target_depth_ms=predictions["depth_ms"],
-                                                   pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
-                                                   intrinsic=features["intrinsic"])
+        loss_left = self.stereo_photometric_loss(synth_target_ms=augm_data["stereo_synth_ms"],
+                                                 target_ms=augm_data["target_ms"])
         # synthesize right image from left image
-        loss_right, _ = self.stereo_synthesize_loss(source_img=augm_data["target"],
-                                                    target_ms=augm_data["target_ms_R"],
-                                                    target_depth_ms=predictions["depth_ms_R"],
-                                                    pose_t2s=features["stereo_T_LR"],
-                                                    intrinsic=features["intrinsic_R"],
-                                                    suffix="_R")
+        loss_right = self.stereo_photometric_loss(synth_target_ms=augm_data["stereo_synth_ms_R"],
+                                                  target_ms=augm_data["target_ms_R"],
+                                                  suffix="_R")
         # list concatenation, not summation
         losses = loss_left + loss_right
         # losses: [scales, batch] -> sum -> [batch]
         loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name="photo_loss_sum")(losses)
         return loss_batch
 
-    def stereo_synthesize_loss(self, source_img, target_ms, target_depth_ms, pose_t2s, intrinsic, suffix=""):
+    def stereo_photometric_loss(self, synth_target_ms, target_ms, suffix=""):
         """
         synthesize image from source to target
-        :param source_img: [batch, num_src*height, width, 3]
+        :param synth_target_ms: list of [batch, height/scale, width/scale, 1]
         :param target_ms: list of [batch, height/scale, width/scale, 3]
-        :param target_depth_ms: list of [batch, height/scale, width/scale, 1]
-        :param pose_t2s: [batch, num_src, 4, 4]
-        :param intrinsic: [batch, num_src, 3, 3]
         :param suffix: "" if right to left, else "_R"
         :return losses [scales]
         """
-        pose_stereo = cp.pose_matr2rvec_batch(tf.expand_dims(pose_t2s, 1))
-
-        # synth_target_ms: list of [batch, 1, height/scale, width/scale, 3]
-        synth_target_ms = SynthesizeMultiScale()(source_img, intrinsic, target_depth_ms, pose_stereo)
         losses = []
         for i, (synth_img_sc, target_img_sc) in enumerate(zip(synth_target_ms, target_ms)):
             loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1]),
                                  name=f"photo_loss_{i}" + suffix)([synth_img_sc, target_img_sc])
             losses.append(loss)
-        return losses, synth_target_ms
+        return losses
 
 
 class StereoPoseLoss(LossBase):

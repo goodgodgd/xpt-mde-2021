@@ -13,6 +13,7 @@ def loss_factory(loss_weights=opts.LOSS_WEIGHTS, stereo=opts.STEREO,
                  "smoothe": lm.SmoothenessLossMultiScale(),
                  "smoothe_R": lm.SmoothenessLossMultiScale(key_suffix="_R"),
                  "stereo_L1": lm.StereoDepthLoss("L1"),
+                 "stereo_SSIM": lm.StereoDepthLoss("SSIM"),
                  "stereo_pose": lm.StereoPoseLoss(),
                  "FW_L2_regular": lm.L2Regularizer(weights_to_regularize),
                  }

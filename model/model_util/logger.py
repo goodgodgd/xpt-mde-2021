@@ -87,8 +87,8 @@ def draw_and_save_plot(results, filename):
     plt.close("all")
 
 
-def save_reconstruction_samples(model, dataset, epoch):
-    views = make_reconstructed_views(model, dataset)
+def save_reconstruction_samples(model, dataset, total_steps, epoch):
+    views = make_reconstructed_views(model, dataset, total_steps)
     savepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'reconimg')
     if not op.isdir(savepath):
         os.makedirs(savepath, exist_ok=True)
@@ -97,31 +97,29 @@ def save_reconstruction_samples(model, dataset, epoch):
         cv2.imwrite(filename, view)
 
 
-def make_reconstructed_views(model, dataset):
+def make_reconstructed_views(model, dataset, total_steps):
     recon_views = []
-    next_idx = 0
-    stride = 10
-    stereo_loss = lm.StereoDepthLoss("L1")
+    stride = min(total_steps, 200) // 10
+    max_steps = stride * 10
     total_loss = lm.TotalLoss()
     scaleidx, batchidx, srcidx = 0, 0, 0
 
     for i, features in enumerate(dataset):
-        if i < next_idx:
+        if i % stride != 1:
             continue
-        if i // stride > 5:
-            stride *= 10
-        next_idx += stride
+        if i > max_steps:
+            break
 
+        # predict by model
         predictions = model(features)
+
+        # create intermediate data
         augm_data = total_loss.augment_data(features, predictions)
         if opts.STEREO:
             augm_data_rig = total_loss.augment_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
-
-        synth_target_ms = SynthesizeMultiScale()(src_img_stacked=augm_data["source"],
-                                                 intrinsic=features["intrinsic"],
-                                                 pred_depth_ms=predictions["depth_ms"],
-                                                 pred_pose=predictions["pose"])
+            augm_data_stereo = total_loss.synethesize_stereo(features, predictions, augm_data)
+            augm_data.update(augm_data_stereo)
 
         target_depth = predictions["depth_ms"][0][batchidx]
         target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
@@ -129,24 +127,16 @@ def make_reconstructed_views(model, dataset):
         view_imgs = {"left_target": augm_data["target"][0],
                      "target_depth": target_depth,
                      f"source_{srcidx}": time_source,
-                     f"synthesized_from_src{srcidx}": synth_target_ms[scaleidx][batchidx, srcidx]
+                     f"synthesized_from_src{srcidx}": augm_data["synth_target_ms"][scaleidx][batchidx, srcidx]
                      }
         view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
 
         if opts.STEREO:
-            loss_left, synth_left_ms = \
-                stereo_loss.stereo_synthesize_loss(source_img=augm_data["target_R"],
-                                                   target_ms=augm_data["target_ms"],
-                                                   target_depth_ms=predictions["depth_ms"],
-                                                   pose_t2s=tf.linalg.inv(features["stereo_T_LR"]),
-                                                   intrinsic=features["intrinsic"])
-
             # print("stereo synth size", tf.size(synth_left_ms[scaleidx]).numpy())
             # zeromask = tf.cast(tf.math.equal(synth_left_ms[scaleidx], 0.), tf.int32)
             # print("stereo synth zero count", tf.reduce_sum(zeromask).numpy())
-            print(f"saving synthesized image {i}, stereo loss R2L:", tf.squeeze(loss_left[0]).numpy())
             view_imgs["right_source"] = augm_data["target_R"][batchidx]
-            view_imgs["synthesized_from_right"] = synth_left_ms[scaleidx][batchidx, srcidx]
+            view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
             view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
 
         view1 = uf.stack_titled_images(view_imgs)
