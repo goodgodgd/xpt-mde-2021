@@ -91,6 +91,7 @@ class TotalLoss:
         # warped image is used in both L1 and SSIM photometric losses
         if "flow_ms" + suffix in predictions:
             pred_flow_ms = predictions["flow_ms" + suffix]
+            # flows have lower resolution than depths, so "target_ms" is not appropriate for flows
             flow_target_ms = uf.multi_scale_like_flow(target_image, pred_flow_ms)
             augm_data["flow_target_ms" + suffix] = flow_target_ms
             warped_target_ms = FlowWarpMultiScale()(source_image, pred_flow_ms)

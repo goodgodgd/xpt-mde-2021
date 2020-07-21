@@ -57,10 +57,7 @@ def save_results(epoch, results_train, results_val, columns, filename):
     train_cols = ["t_" + col for col in split_cols]
     val_cols = ["v_" + col for col in split_cols]
     total_cols = ["epoch"] + train_cols + ["|"] + val_cols
-    print("total cols", total_cols)
-    print("result", list(results))
     results = results.loc[:, total_cols]
-    print("LOG: Results:", results)
 
     # write to a file
     results['epoch'] = results['epoch'].astype(int)
@@ -97,10 +94,26 @@ def save_reconstruction_samples(model, dataset, total_steps, epoch):
         cv2.imwrite(filename, view)
 
 
+def save_scales(epoch, results_train, results_val, filename):
+    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
+    results_train = results_train.rename(columns={col: "t_" + col for col in list(results_train)})
+    results_val = results_val.rename(columns={col: "v_" + col for col in list(results_val)})
+    results = pd.concat([results_train, results_val], axis=1)
+    results = results.quantile([0, 0.25, 0.5, 0.75, 1.], axis=0)
+    results["|"] = "|"
+    results = results[list(results_train) + ["|"] + list(results_val)]
+
+    with open(filepath, "a") as f:
+        f.write(f"===== epoch: {epoch}\n")
+        f.write(f"{results.to_csv(sep=' ', index=False, float_format='%.4f')}\n\n")
+        print(f"{filename} written !!")
+
+
 def make_reconstructed_views(model, dataset, total_steps):
     recon_views = []
-    stride = min(total_steps, 200) // 10
-    max_steps = stride * 10
+    # 7 file are in a row in file explorer
+    stride = min(total_steps, 400) // 7
+    max_steps = stride * 7
     total_loss = lm.TotalLoss()
     scaleidx, batchidx, srcidx = 0, 0, 0
 
@@ -129,35 +142,19 @@ def make_reconstructed_views(model, dataset, total_steps):
                      f"source_{srcidx}": time_source,
                      f"synthesized_from_src{srcidx}": augm_data["synth_target_ms"][scaleidx][batchidx, srcidx]
                      }
-        view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
+        # view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
 
         if opts.STEREO:
-            # print("stereo synth size", tf.size(synth_left_ms[scaleidx]).numpy())
-            # zeromask = tf.cast(tf.math.equal(synth_left_ms[scaleidx], 0.), tf.int32)
-            # print("stereo synth zero count", tf.reduce_sum(zeromask).numpy())
             view_imgs["right_source"] = augm_data["target_R"][batchidx]
             view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
-            view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
+            # view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
+
+        if "flow_ms" in predictions:
+            view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
 
         view1 = uf.stack_titled_images(view_imgs)
         recon_views.append(view1)
-
     return recon_views
-
-
-def save_scales(epoch, results_train, results_val, filename):
-    filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
-    results_train = results_train.rename(columns={col: "t_" + col for col in list(results_train)})
-    results_val = results_val.rename(columns={col: "v_" + col for col in list(results_val)})
-    results = pd.concat([results_train, results_val], axis=1)
-    results = results.quantile([0, 0.25, 0.5, 0.75, 1.], axis=0)
-    results["|"] = "|"
-    results = results[list(results_train) + ["|"] + list(results_val)]
-
-    with open(filepath, "a") as f:
-        f.write(f"===== epoch: {epoch}\n")
-        f.write(f"{results.to_csv(sep=' ', index=False, float_format='%.4f')}\n\n")
-        print(f"{filename} written !!")
 
 
 def copy_or_check_same():
