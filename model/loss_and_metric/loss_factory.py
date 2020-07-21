@@ -8,13 +8,14 @@ def loss_factory(loss_weights=opts.LOSS_WEIGHTS, stereo=opts.STEREO,
                  "L1_R": lm.PhotometricLossMultiScale("L1", key_suffix="_R"),
                  "SSIM": lm.PhotometricLossMultiScale("SSIM"),
                  "SSIM_R": lm.PhotometricLossMultiScale("SSIM", key_suffix="_R"),
-                 "FW_L2": lm.FlowWarpLossMultiScale("L2"),
-                 "FW_L2_R": lm.FlowWarpLossMultiScale("L2", key_suffix="_R"),
+                 "flow_L2": lm.FlowWarpLossMultiScale("L2"),
+                 "flow_L2_R": lm.FlowWarpLossMultiScale("L2", key_suffix="_R"),
                  "smoothe": lm.SmoothenessLossMultiScale(),
                  "smoothe_R": lm.SmoothenessLossMultiScale(key_suffix="_R"),
                  "stereo_L1": lm.StereoDepthLoss("L1"),
+                 "stereo_SSIM": lm.StereoDepthLoss("SSIM"),
                  "stereo_pose": lm.StereoPoseLoss(),
-                 "FW_L2_regular": lm.L2Regularizer(weights_to_regularize),
+                 "flow_L2_reg": lm.L2Regularizer(weights_to_regularize),
                  }
 
     losses = dict()

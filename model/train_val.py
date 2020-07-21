@@ -43,14 +43,11 @@ class TrainValBase:
         results = []
         for step, features in enumerate(dataset):
             start = time.time()
-            translation = features["pose_gt"].numpy()[:, :, :3, 3]
-            # if (np.abs(translation) > 10).any():
-            #     print("pose gt too large:\n", translation)
             preds, loss, loss_by_type = self.run_a_batch(features)
             batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
             uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
                                      f"time={time.time() - start:1.4f}...")
-            inspect_model(preds, step, self.steps_per_epoch)
+            inspect_model(preds, features, step, self.steps_per_epoch)
             results.append(batch_result)
 
         print("")
@@ -197,17 +194,24 @@ def get_metric_pose(preds, features, stereo):
         return 0, 0
 
 
-def inspect_model(preds, step, steps_per_epoch):
-    stride = steps_per_epoch // 5
+def inspect_model(preds, features, step, steps_per_epoch):
+    stride = steps_per_epoch // 3
     if step % stride > 0:
         return
 
     print("")
     print("depth0 ", np.quantile(preds["depth_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
-    print("dpconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
-    print("upconv0", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
+    print("upconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
     print("depth3 ", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
-    print("dpconv3", np.quantile(preds["debug_out"][2].numpy(), np.arange(0.1, 1, 0.1)))
-    print("upconv3", np.quantile(preds["debug_out"][3].numpy(), np.arange(0.1, 1, 0.1)))
-    # if "pose_LR" in preds:
-    #     print("pose_LR", preds["pose_LR"][0].numpy())
+    print("upconv3", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
+    # flow: [batch, num_src, height/4, width/4, 2] (4, 4, 32, 96, 2)
+    print("flow0  ", np.quantile(preds["flow_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
+    # pose: [batch, num_src, 6]
+    print("pose_pr", preds["pose"][0, 0, :3].numpy(), preds["pose"][0, 1, :3].numpy())
+    # pose_gt: [batch, num_src, 4, 4]
+    print("pose_gt", features["pose_gt"][0, 0, :3, 3].numpy(), features["pose_gt"][0, 1, :3, 3].numpy())
+    if "pose_LR" in preds:
+        # pose: [batch, num_src, 6]
+        print("T_LR_pr", preds["pose_LR"][0, 0, :3].numpy(), preds["pose_LR"][0, 1, :3].numpy())
+        # stereo_T_LR: [batch, 4, 4]
+        print("T_LR_gt", features["stereo_T_LR"][0, :3, 3].numpy(), features["stereo_T_LR"][0, :3, 3].numpy())

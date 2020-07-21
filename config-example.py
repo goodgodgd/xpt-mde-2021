@@ -7,7 +7,7 @@ RAW_DATA_PATHS = {
     "cityscapes": "/media/ian/IanPrivatePP/Datasets/cityscapes",
     "cityscapes_seq": "/media/ian/IanPrivatePP/Datasets/cityscapes",
 }
-RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data/vode_stereo_0705"
+RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
 
 
 class VodeOptions:
@@ -27,8 +27,8 @@ class VodeOptions:
                            # "cityscapes_seq": ["train"],
                            }
     # only when making small tfrecords to test training
-    LIMIT_FRAMES = None
-    SHUFFLE_TFRECORD_INPUT = False
+    LIMIT_FRAMES = 200
+    SHUFFLE_TFRECORD_INPUT = True
 
     """
     path options
@@ -46,23 +46,24 @@ class VodeOptions:
     """
     training options
     """
-    CKPT_NAME = "vode2"
+    CKPT_NAME = "vode5"
     PER_REPLICA_BATCH = 4
     BATCH_SIZE = PER_REPLICA_BATCH
     EPOCHS = 51
     LEARNING_RATE = 0.0001
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
-    TRAIN_MODE = ["eager", "graph", "distributed"][2]
+    TRAIN_MODE = ["eager", "graph", "distributed"][1]
     DATASET_TO_USE = ["kitti_raw", "kitti_odom"][0]
     STEREO_EXTRINSIC = True
     SSIM_RATIO = 0.8
-    LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO) * 1., "SSIM": SSIM_RATIO * 0.5, "smoothe": 1.,
-                    "L1_R": (1. - SSIM_RATIO) * 1., "SSIM_R": SSIM_RATIO * 0.5, "smoothe_R": 1.,
-                    "stereo_L1": 0.01, "stereo_pose": 0.5,
-                    "FW_L2": 1.,
-                    "FW_L2_R": 1.,
-                    "FW_L2_regular": 0.0004
+    LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
+                    "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
+                    "smoothe": 1., "smoothe_R": 1.,
+                    "stereo_L1": 0.01, "stereo_SSIM": 0.01,
+                    "stereo_pose": 1.,
+                    "flow_L2": 1., "flow_L2_R": 1.,
+                    "flow_L2_reg": 4e-7
                     }
     OPTIMIZER = ["adam_constant"][0]
     DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]

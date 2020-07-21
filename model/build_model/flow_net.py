@@ -18,7 +18,7 @@ class PWCNet:
         batch, snippet, height, width, channel = self.total_shape
         numsrc = snippet - 1
         input_shape = (snippet * height, width, channel)
-        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="flownet_input")
         # target: [batch, height, width, channel]
         # source: [batch*num_src, height, width, channel]
         target, sources = self.split_target_and_sources(input_tensor)
@@ -116,7 +116,9 @@ class PWCNet:
         :return:
         """
         prefix = f"pwc_flow{p}_"
-        cp_r_warp = FlowBilinearInterpolation()(cp_r, up_flowq*flow_scale)
+        cp_r_warp = layers.Lambda(lambda inputs: tfa.image.dense_image_warp(inputs[0], inputs[1]*flow_scale),
+                                  name=prefix + "warp")([cp_r, up_flowq])
+        # cp_r_warp = tfa.image.dense_image_warp(cp_r, up_flowq*flow_scale)
         corrp = self.correlation(cp_l, cp_r_warp, p, name=prefix + "corr")
         return self.predict_flow([corrp, cp_l, up_flowq, up_featq], prefix, up)
 

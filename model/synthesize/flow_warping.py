@@ -5,78 +5,71 @@ import tensorflow_addons as tfa
 
 from config import opts
 from utils.decorators import shape_check
+from model.synthesize.bilinear_interp import BilinearInterpolation
 
 
 class FlowWarpMultiScale:
-    @shape_check
-    def __call__(self, src_img_stacked, flow_ms):
-        """
-        :param src_img_stacked: source images stacked vertically [batch, height*num_src, width, 3]
-        :param flow_ms: predicted optical flow from source to target in multi scale,
-                        list of [batch, num_src, height/scale, width/scale, 1] (scale: 1, 2, 4, 8)
-        :return: reconstructed target view in multi scale, list of [batch, num_src, height/scale, width/scale, 3]}
-        """
-        warped_targets = []
-        for flow_sc in flow_ms:
-            # construct a new graph for each scale
-            warp_target_sc = FlowWarpSingleScale()(src_img_stacked, flow_sc)
-            warped_targets.append(warp_target_sc)
-        return warped_targets
-
-
-class FlowWarpSingleScale:
     def __init__(self):
         # shape is scaled from the original shape, height = original_height / scale
         self.batch, self.height, self.width, self.num_src, self.scale = (0, 0, 0, 0, 0)
         self.suffix = ""
 
-    def __call__(self, src_img_stacked, flow_sc):
+    @shape_check
+    def __call__(self, src_img_stacked, flow_ms):
         """
-        :param src_img_stacked: stacked source images [batch, height*num_src, width, 3]
-        :param flow_sc: scaled predicted optical flow for target image, [batch, num_src, height/scale, width/scale, 1]
-        :return: warped target view in scale, [batch, num_src, height/scale, width/scale, 3]
+        :param src_img_stacked: source images stacked vertically [batch, height*num_src, width, 3]
+        :param flow_ms: predicted optical flow from source to target in multi scale,
+                        list of [batch, num_src, height/scale, width/scale, 2] (scale: 1, 2, 4, 8)
+        :return: reconstructed target view in multi scale, list of [batch, num_src, height/scale, width/scale, 3]}
         """
-        self.read_shape(src_img_stacked, flow_sc)
-        # resize and reshape source images -> [batch*num_src, height/scale, width/scale, 3]
-        src_img_scaled = layers.Lambda(lambda image: self.reshape_source_images(image),
-                                       name=f"flow_reorder_src" + self.suffix)(src_img_stacked)
-        warped_image = self.warp_image(src_img_scaled, flow_sc)
-        return warped_image
+        warped_targets = []
+        for flow_sc in flow_ms:
+            src_img_sc = self.reshape_source_images(src_img_stacked, flow_sc)
+            pixel_coords_sc = self.flow_to_pixel_coordinates(flow_sc)
+            # construct a new graph for each scale
+            warp_target_sc = BilinearInterpolation()(src_img_sc, pixel_coords_sc)
+            warped_targets.append(warp_target_sc)
+        return warped_targets
 
     @shape_check
-    def read_shape(self, src_img_stacked, flow_sc):
-        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
-        self.batch, self.num_src, self.height, self.width, _ = flow_sc.get_shape()
-        self.scale = int(width_orig / self.width)
-        self.suffix = f"_sc{self.scale}"
-
-    @shape_check
-    def reshape_source_images(self, src_img_stacked):
+    def reshape_source_images(self, src_img_stacked, flow_sc):
         """
-        :param src_img_stacked: [batch, height*num_src, width, 3]
+        :param src_img_stacked [batch, height*num_src, width, 3]
+        :param flow_sc [batch, num_src, height/scale, width/scale, 2]
         :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
         """
-        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
-        height_orig = stacked_height // self.num_src
+        batch, num_src, height, width, _ = flow_sc.get_shape()
+        _, stacked_height, width_orig, _ = src_img_stacked.get_shape()
+        height_orig = stacked_height // num_src
         # reshape image -> (batch*num_src, height_orig, width_orig, 3)
-        source_images = tf.reshape(src_img_stacked, shape=(self.batch * self.num_src, height_orig, width_orig, 3))
+        source_images = tf.reshape(src_img_stacked, shape=(batch * num_src, height_orig, width_orig, 3))
         # resize image (scaled) -> (batch*num_src, height, width, 3)
-        scaled_image = tf.image.resize(source_images, size=(self.height, self.width), method="bilinear")
+        scaled_image = tf.image.resize(source_images, size=(height, width), method="bilinear")
+        # reshape image -> (batch, num_src, height, width, 3)
+        scaled_image = tf.reshape(scaled_image, shape=(batch, num_src, height, width, 3))
         return scaled_image
 
-    def warp_image(self, src_img, flow_sc):
+    def flow_to_pixel_coordinates(self, flow):
         """
-        :param src_img: reorganized source images [batch*num_src, height/scale, width/scale, 3]
-        :param flow_sc: optical flow [batch, num_src, height/scale, width/sclae, 2]
-        :return:
+        :param flow: optical flow [batch, num_src, height/scale, width/scale, 2]
+        :return: pixel_coords: source image pixel coordinates [batch, num_src, 2, height/scale*width/scale]
         """
-        # reshape flow -> [batch*num_src, height/scale, width/scale, 2]
-        flow_reshaped = tf.reshape(flow_sc, (self.batch * self.num_src, self.height, self.width, 2))
-        # warped target view from source images -> [batch*num_src, height/scale, width/scale, 3]
-        warped_image = tfa.image.dense_image_warp(src_img, flow_reshaped, name=f"warped" + self.suffix)
-        # reshape warped image-> [batch, num_src, height/scale, width/scale, 3]
-        warped_image = tf.reshape(warped_image, (self.batch, self.num_src, self.height, self.width, 3))
-        return warped_image
+        batch, num_src, height, width, _ = flow.get_shape()
+        u = tf.range(0, width, 1, dtype=tf.float32)
+        v = tf.range(0, height, 1, dtype=tf.float32)
+        ugrid, vgrid = tf.meshgrid(u, v)
+        uvgrid = tf.stack([ugrid, vgrid], axis=0)
+        # uvgrid -> [1, 1, 2, height*width]
+        uvgrid = tf.reshape(uvgrid, (1, 1, 2, -1))
+
+        # uvflow -> [batch, num_src, height*width, 2]
+        uvflow = tf.reshape(flow, (batch, num_src, -1, 2))
+        # uvflow -> [batch, num_src, 2, height*width]
+        uvflow = tf.transpose(uvflow, perm=[0, 1, 3, 2])
+
+        # add flow to basic grid
+        pixel_coords = uvgrid - uvflow
+        return pixel_coords
 
 
 # ==================================================

@@ -130,10 +130,11 @@ def check_tfrecord_including(dataset_dir, key_list):
 
 
 def read_previous_epoch(model_name):
-    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.txt')
+    filename = op.join(opts.DATAPATH_CKP, model_name, 'history.csv')
     if op.isfile(filename):
         history = pd.read_csv(filename, encoding='utf-8', converters={'epoch': lambda c: int(c)})
         if history.empty:
+            print("[read_previous_epoch] EMPTY history:", history)
             return 0
         epochs = history['epoch'].tolist()
         epochs.sort()
@@ -141,6 +142,7 @@ def read_previous_epoch(model_name):
         print(f"[read_previous_epoch] start from epoch {prev_epoch + 1}")
         return prev_epoch + 1
     else:
+        print("[read_previous_epoch] NO history")
         return 0
 
 
@@ -161,15 +163,15 @@ def safe_reciprocal_number(src_tensor):
     return dst_tensor
 
 
-def multi_scale_like_depth(image, disp_ms):
+def multi_scale_like_depth(image, depth_ms):
     """
     :param image: [batch, height, width, 3]
-    :param disp_ms: list of [batch, height/scale, width/scale, 1]
+    :param depth_ms: list of [batch, height/scale, width/scale, 1]
     :return: image_ms: list of [batch, height/scale, width/scale, 3]
     """
     image_ms = []
-    for i, disp in enumerate(disp_ms):
-        batch, height_sc, width_sc, _ = disp.get_shape().as_list()
+    for i, depth in enumerate(depth_ms):
+        batch, height_sc, width_sc, _ = depth.get_shape().as_list()
         image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
                                  name=f"resize_like_depth_{i}")(image)
         image_ms.append(image_sc)
@@ -191,7 +193,7 @@ def multi_scale_like_flow(image, flow_ms):
     return image_ms
 
 
-def stack_titled_images(view_imgs):
+def stack_titled_images(view_imgs, guide_lines=True):
     dsize = (opts.IM_HEIGHT, opts.IM_WIDTH)
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -209,6 +211,9 @@ def stack_titled_images(view_imgs):
         view.append(u8image)
 
     view = np.concatenate(view, axis=0)
+    if guide_lines:
+        view[:, 100] = (0, 0, 255)
+        view[:, -100] = (0, 0, 255)
     return view
 
 
