@@ -140,7 +140,7 @@ class SynthesizeSingleScale:
         # [batch, 3, height*width] = [batch, 3, 3] x [3, height*width]
         cam_coords = tf.tensordot(tf.linalg.inv(intrinsic), pixel_coords, [[2], [0]])
 
-        # [batch, 3, height*width] = [batch, 3, height*width] * [batch, 3, height*width]
+        # [batch, 3, height*width] = [batch, 3, height*width] * [batch, 1, height*width]
         cam_coords *= depth
         # num_pts = height * width
         num_pts = cam_coords.get_shape().as_list()[2]

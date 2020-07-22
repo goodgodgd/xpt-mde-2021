@@ -74,7 +74,8 @@ class ModelTrainer(TrainValBase):
 
     def train_a_step(self, features):
         with tf.GradientTape() as tape:
-            # NOTE! preds = {"depth_ms": ..., "pose": ...} = model(image)
+            features = self.augment_data(features)
+            # preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = self.model(features)
             total_loss, loss_by_type = self.loss_object(preds, features)
 
