@@ -26,7 +26,7 @@ class TotalLoss:
         """
         :param predictions: {"depth_ms": .., "disp_ms": .., "pose": ..}
             disp_ms: multi scale disparity, list of [batch, height/scale, width/scale, 1]
-            pose: 6-DoF poses [batch, num_src, 6]
+            pose: 6-DoF poses [batch, numsrc, 6]
         :param features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
             image: stacked image [batch, height*snippet_len, width, 3]
             intrinsic: camera projection matrix [batch, 3, 3]
@@ -61,17 +61,17 @@ class TotalLoss:
                 intrinsic: camera projection matrix [batch, 3, 3]
         :param predictions: {depth_ms, pose}
                 depth_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
-                pose: poses that transform points from target to source [batch, num_src, 6]
+                pose: poses that transform points from target to source [batch, numsrc, 6]
         :param suffix: suffix to keys
         :return augm_data: {depth_ms, source, target, target_ms, synth_target_ms}
                 depth_ms: multi scale depth, list of [batch, height/scale, width/scale, 1]
-                source: source frames [batch, num_src*height, width, 3]
+                source: source frames [batch, numsrc*height, width, 3]
                 target: target frame [batch, height, width, 3]
                 target_ms: multi scale target frame, list of [batch, height/scale, width/scale, 3]
                 synth_target_ms: multi scale synthesized target frames generated from each source image,
-                                list of [batch, num_src, height/scale, width/scale, 3]
+                                list of [batch, numsrc, height/scale, width/scale, 3]
                 warped_target_ms: multi scale flow warped target frames generated from each source image,
-                                list of [batch, num_src, height/scale, width/scale, 3]
+                                list of [batch, numsrc, height/scale, width/scale, 3]
         """
         augm_data = dict()
         pred_depth_ms = predictions["depth_ms" + suffix]
@@ -106,7 +106,7 @@ class TotalLoss:
                 intrinsic: camera projection matrix [batch, 3, 3]
         :param predictions: {depth_ms, stereo_T_LR}
                 depth_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
-                stereo_T_LR: poses that transform points from target to source [batch, num_src, 6]
+                stereo_T_LR: poses that transform points from target to source [batch, numsrc, 6]
         :return augm_data: {source, target, target_ms, synth_target_ms}
                 target: target frame [batch, height, width, 3]
         """
@@ -280,7 +280,7 @@ class StereoPoseLoss(LossBase):
         pose_rl_true_mat = tf.linalg.inv(pose_lr_true_mat)
         pose_lr_true = cp.pose_matr2rvec_batch(pose_lr_true_mat)
         pose_rl_true = cp.pose_matr2rvec_batch(pose_rl_true_mat)
-        # loss: [batch, num_src]
+        # loss: [batch, numsrc]
         loss = tf.keras.losses.MSE(pose_lr_true, pose_lr_pred) + tf.keras.losses.MSE(pose_rl_true, pose_rl_pred)
         # loss: [batch]
         loss = tf.reduce_mean(loss, axis=1)

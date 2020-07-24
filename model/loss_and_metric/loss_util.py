@@ -5,7 +5,7 @@ from utils.decorators import shape_check
 @shape_check
 def photometric_loss_l1(synt_target, orig_target):
     """
-    :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
+    :param synt_target: scaled synthesized target image [batch, numsrc, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
     :return: photo_loss [batch]
     """
@@ -16,7 +16,7 @@ def photometric_loss_l1(synt_target, orig_target):
 
     # orig_target: [batch, 1, height/scale, width/scale, 3]
     # axis=1 broadcasted in subtraction
-    # photo_error: [batch, num_src, height/scale, width/scale, 3]
+    # photo_error: [batch, numsrc, height/scale, width/scale, 3]
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
     # average per example
@@ -27,7 +27,7 @@ def photometric_loss_l1(synt_target, orig_target):
 @shape_check
 def photometric_loss_l2(synt_target, orig_target):
     """
-    :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
+    :param synt_target: scaled synthesized target image [batch, numsrc, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
     :return: photo_loss [batch]
     """
@@ -38,7 +38,7 @@ def photometric_loss_l2(synt_target, orig_target):
 
     # orig_target: [batch, 1, height/scale, width/scale, 3]
     # axis=1 broadcasted in subtraction
-    # photo_error: [batch, num_src, height/scale, width/scale, 3]
+    # photo_error: [batch, numsrc, height/scale, width/scale, 3]
     photo_error = tf.square(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
     # average per example
@@ -49,19 +49,19 @@ def photometric_loss_l2(synt_target, orig_target):
 @shape_check
 def photometric_loss_ssim(synt_target, orig_target):
     """
-    :param synt_target: scaled synthesized target image [batch, num_src, height/scale, width/scale, 3]
+    :param synt_target: scaled synthesized target image [batch, numsrc, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
     :return: photo_loss [batch]
     """
-    num_src = synt_target.get_shape().as_list()[1]
+    numsrc = synt_target.get_shape().as_list()[1]
     orig_target = tf.expand_dims(orig_target, axis=1)
-    orig_target = tf.tile(orig_target, [1, num_src, 1, 1, 1])
+    orig_target = tf.tile(orig_target, [1, numsrc, 1, 1, 1])
     # create mask to ignore black region
     synt_target_gray = tf.reduce_mean(synt_target, axis=-1, keepdims=True)
     error_mask = tf.equal(synt_target_gray, 0)
 
-    x = orig_target     # [batch, num_src, height/scale, width/scale, 3]
-    y = synt_target     # [batch, num_src, height/scale, width/scale, 3]
+    x = orig_target     # [batch, numsrc, height/scale, width/scale, 3]
+    y = synt_target     # [batch, numsrc, height/scale, width/scale, 3]
     c1 = 0.01 ** 2
     c2 = 0.03 ** 2
     ksize = [1, 3, 3]
@@ -71,7 +71,7 @@ def photometric_loss_ssim(synt_target, orig_target):
     #   when training model with gradient tape in eager mode,
     #   but no error in graph mode by @tf.function
     #   Instead, tf.keras.layers.AveragePooling3D results in NO error in BOTH modes
-    # mu_x, mu_y: [batch, num_src, height/scale, width/scale, 3]
+    # mu_x, mu_y: [batch, numsrc, height/scale, width/scale, 3]
     average_pool = tf.keras.layers.AveragePooling3D(pool_size=ksize, strides=1, padding="SAME")
     mu_x = average_pool(x)
     mu_y = average_pool(y)

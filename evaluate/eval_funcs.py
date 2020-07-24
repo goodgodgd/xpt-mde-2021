@@ -27,7 +27,7 @@ def compute_depth_metrics(gt, pred):
 def recover_pred_snippet_poses(poses):
     """
     :param poses: source poses that transforms points in target to source frame
-                    format=(tx, ty, tz, ux, uy, uz) shape=[num_src, 6]
+                    format=(tx, ty, tz, ux, uy, uz) shape=[numsrc, 6]
     :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
                     format=(4x4 transformation) shape=[snippet_len, 4, 4]
                     order=[source[0], source[1], target, source[2], source[3]]
@@ -42,7 +42,7 @@ def recover_pred_snippet_poses(poses):
 def recover_true_snippet_poses(poses):
     """
     :param poses: source poses that transforms points in target to source frame
-                    format=(4x4 transformation), shape=[num_src, 4, 4]
+                    format=(4x4 transformation), shape=[numsrc, 4, 4]
     :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
                     format=(4x4 transformation) shape=[snippet_len, 4, 4]
                     order=[source[0], source[1], target, source[2], source[3]]
@@ -104,10 +104,10 @@ def calc_rotational_error(pose_pred_mat, pose_true_mat):
 @shape_check
 def calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat, abs_scale=False):
     """
-    :param pose_pred_mat: predicted snippet pose matrices, [batch, num_src, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices, [batch, num_src, 4, 4]
+    :param pose_pred_mat: predicted snippet pose matrices, [batch, numsrc, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices, [batch, numsrc, 4, 4]
     :param abs_scale: if true, trajectory is evaluated in abolute scale
-    :return: trajectory error in meter [batch, num_src]
+    :return: trajectory error in meter [batch, numsrc]
     """
     xyz_pred = pose_pred_mat[:, :, :3, 3]
     xyz_true = pose_true_mat[:, :, :3, 3]
@@ -122,9 +122,9 @@ def calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat, abs_scale=False):
 @shape_check
 def calc_rotational_error_tensor(pose_pred_mat, pose_true_mat):
     """
-    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [batch, num_src, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [batch, num_src, 4, 4]
-    :return: rotational error in rad [batch, num_src]
+    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [batch, numsrc, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [batch, numsrc, 4, 4]
+    :return: rotational error in rad [batch, numsrc]
     """
     rot_pred = pose_pred_mat[:, :, :3, :3]
     rot_true = pose_true_mat[:, :, :3, :3]
@@ -138,7 +138,7 @@ def calc_rotational_error_tensor(pose_pred_mat, pose_true_mat):
 # ==================== tests ====================
 
 def test_calc_trajectory_error_tensor():
-    # shape = [batch, num_src, 6]
+    # shape = [batch, numsrc, 6]
     pose_vec1 = np.random.rand(8, 4, 6) * 2. - 1.
     # pose_vec2 보다 pose_vec3에 두 배의 오차 추가
     # calc_trajectory_error_tensor() 자체에 scale 조절 기능이 있기 때문에 에러의 절대 값을 확인할 순 없음
@@ -171,7 +171,7 @@ def test_calc_trajectory_error_tensor():
 
 
 def test_calc_rotational_error_tensor():
-    # shape = [batch, num_src, 6]
+    # shape = [batch, numsrc, 6]
     pose_vec1 = np.random.rand(8, 4, 6) * 2. - 1.
     norms1 = np.linalg.norm(pose_vec1[:, :, 3:], axis=2, keepdims=True)
     # pose_vec2 에는 0.5, pose_vec3 에는 1 radian의 각도 오차 추가

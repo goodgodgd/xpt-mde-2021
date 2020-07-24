@@ -62,7 +62,7 @@ class TfrecordGenerator:
         """
         :return features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
             image: stacked image [batch, height*snippet_len, width, 3]
-            pose_gt: 4x4 transformation matrix [batch, num_src, 4, 4]
+            pose_gt: 4x4 transformation matrix [batch, numsrc, 4, 4]
             depth_gt: gt depth [batch, height, width, 1]
             intrinsic: camera projection matrix [batch, 3, 3]
         """

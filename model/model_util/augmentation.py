@@ -3,13 +3,13 @@ import tensorflow as tf
 """
 depthnet : only target
 posenet : full stack [... 3*snippet]
-flownet : target [batch] sources [batch*num_src]
+flownet : target [batch] sources [batch*numsrc]
 loss : target [batch]
-SynthesizeSingleScale: sources [batch, num_src]
-FlowWarpMultiScale: sources [batch, num_src]
+SynthesizeSingleScale: sources [batch, numsrc]
+FlowWarpMultiScale: sources [batch, numsrc]
 
 stacked image -> batch*snippet -> augmentation  -> "image" [batch*snippet]
--> "target" [batch] "sources" [batch, num_src]
+-> "target" [batch] "sources" [batch, numsrc]
 """
 
 
@@ -28,6 +28,14 @@ class Preprocess:
         self.suffix = suffix
 
     def __call__(self, features):
+        """
+        :return: features below
+            target: [batch, height, width, 3]
+            sources: [batch, numsrc, height, width, 3]
+            image_aug: [batch, snippet, height, width, 3]
+            intrinsic_aug: [batch, 3, 3]
+            pose_gt_aug: [batch, numsrc, 4, 4]
+        """
         suffix = self.suffix
         image = features["image" + suffix]
         batch, h_stacked, width, channels = image.get_shape()
@@ -36,15 +44,23 @@ class Preprocess:
 
         # [batch, height, width, 3]
         features["target" + suffix] = image_5d[:, self.snippet_len-1]
-        # [batch, num_src, height, width, 3]
+        # [batch, numsrc, height, width, 3]
         features["sources" + suffix] = image_5d[:, :self.snippet_len-1]
         # [batch*snippet, height, width, 3]
-        image_bxs = tf.reshape(image_5d, (batch*self.snippet_len, height, width, channels))
-        features["image_aug"] = image_bxs
+        image_aug = tf.reshape(image_5d, (batch*self.snippet_len, height, width, channels))
+        features["image_aug" + suffix] = image_aug
+        # copy intrinsic
+        features["intrinsic_aug" + suffix] = tf.reshape(features["intrinsic" + suffix], (batch, 3, 3))
+        # copy pose_gt
+        features["pose_gt_aug" + suffix] = tf.reshape(features["pose_gt" + suffix], (batch, 4, 4))
         return features
 
 
 class CropAndResize:
+    """
+    randomly crop "image_aug" and resize it to original size
+    create "intrinsic_aug" as camera matrix for "image_aug"
+    """
     def __init__(self, suffix=""):
         self.half_crop_ratio = 0.1
         self.crop_prob = 0.3
@@ -62,7 +78,7 @@ class CropAndResize:
         image_aug = tf.image.crop_and_resize(image, boxes, box_indices, crop_size)
         features["image_aug" + suffix] = image_aug
 
-        intrin_aug = self.adjust_intrinsic(features["intrinsic" + suffix], boxes, crop_size)
+        intrin_aug = self.adjust_intrinsic(features["intrinsic_aug" + suffix], boxes, crop_size)
         features["intrinsic_aug" + suffix] = intrin_aug
         return features
 
@@ -105,14 +121,55 @@ class CropAndResize:
 
 
 class HorizontalFlip:
-    def __init__(self):
+    """
+    randomly horizontally flip "image_aug" by flip_prob
+    """
+    def __init__(self, suffix=""):
         self.flip_prob = 0.2
+        self.suffix = suffix
 
     def __call__(self, features):
+        suffix = self.suffix
         # (batch*snippet, height, width, 3)
-        image = features["image_aug"]
-        batch, height, width, _ = image.get_shape()
-        flipped = tf.image.flip_left_right(image)
+        image = features["image_aug" + suffix]
+        intrinsic = features["intrinsic_aug" + suffix]
+        pose = features["pose_gt_aug" + suffix]
+        rndval = tf.random.uniform(())
+
+        image_flip, intrin_flip, pose_flip = \
+            tf.cond(rndval < self.flip_prob,
+                    self.flip_features(image, intrinsic, pose),
+                    lambda: (image_flip, intrin_flip, pose_flip)
+                    )
+
+        features["image_aug" + suffix] = image_flip
+        features["intrinsic_aug" + suffix] = intrin_flip
+        features["pose_gt_aug" + suffix] = pose_flip
+        return features
+
+    def flip_features(self, image, intrinsic, pose):
+        """
+        :param image: [batch, height, width,
+        :param intrinsic:
+        :param pose:
+        :return:
+        """
+        image_flip = tf.image.flip_left_right(image)
+        intrin_flip = self.flip_intrinsic(intrinsic, image.get_shape())
+        pose_flip = self.flip_pose(pose)
+        return image_flip, intrin_flip, pose_flip
+
+    def flip_intrinsic(self, intrinsic, imshape):
+        batch, height, width, _ = imshape
+        intrin_wh = tf.constant([[[0, 0, width], [0, 0, 0], [0, 0, 0]]], dtype=tf.float32)
+        intrin_flip = tf.abs(intrin_wh - intrinsic)
+        return intrin_flip
+
+    def flip_pose(self, pose):
+        T_flip = tf.constant([[[[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]]], dtype=tf.float32)
+        # [batch, numsrc, 4, 4] = [1, 1, 4, 4] @ [batch, numsrc, 4, 4] @ [1, 1, 4, 4]
+        pose_flip = T_flip @ pose @ tf.linalg.inv(T_flip)
+        return pose_flip
 
 
 class ColorJitter:
@@ -140,14 +197,17 @@ def test_random_crop_boxes():
 def test_adjust_intrinsic():
     print("===== test test_adjust_intrinsic")
     batch, height, width = 3, 200, 240
+    imsize = tf.constant([height, width], dtype=tf.float32)
+    intrinsic = tf.constant([[[width/2, 0, width/2], [0, height/2, height/2], [0, 0, 1]]], dtype=tf.float32)
+    intrinsic = tf.tile(intrinsic, [batch, 1, 1])
+    print("intrinsic original", intrinsic[0])
+
     xcrop, ycrop = 0.05, 0.1
     cropper = CropAndResize()
     boxes = tf.tile(tf.constant([[xcrop, ycrop, 1-xcrop, 1-ycrop]]), [batch, 1])
     print("crop box:", boxes[0])
-    intrinsic = tf.constant([[[width/2, 0, width/2], [0, height/2, height/2], [0, 0, 1]]], dtype=tf.float32)
-    intrinsic = tf.tile(intrinsic, [batch, 1, 1])
-    print("intrinsic original", intrinsic[0])
-    imsize = tf.constant([height, width], dtype=tf.float32)
+
+    # EXECUTE
     intrin_adj = cropper.adjust_intrinsic(intrinsic, boxes, imsize)
     print("intrinsic adjusted", intrin_adj[0])
 
@@ -159,8 +219,8 @@ def test_adjust_intrinsic():
     print("!!! test_adjust_intrinsic passed")
 
 
-def test_flip_pose():
-    print("===== test test_flip_pose")
+def test_flip_pose_np():
+    print("===== test test_flip_pose_np")
     batch = 2
     pose_vec = np.random.uniform(-2, 2, (batch, 6))
     pose_mat = cp.pose_rvec2matr(pose_vec)
@@ -173,29 +233,68 @@ def test_flip_pose():
     print("pose mat:\n", pose_mat)
     print("pose mat flip:\n", pose_mat_flip)
     print("pose vec flip:\n", pose_vec_flip)
-    print("pose vec rotation:\n", np.linalg.norm(pose_vec[:, 3:], axis=1))
-    print("pose vec flip rotation:\n", np.linalg.norm(pose_vec_flip[:, 3:], axis=1))
+    print("pose vec rotation: (rad)\n", np.linalg.norm(pose_vec[:, 3:], axis=1))
+    print("pose vec flip rotation: (rad)\n", np.linalg.norm(pose_vec_flip[:, 3:], axis=1))
     print("pose == pose_flip:\n", np.isclose(pose_vec, pose_vec_flip))
 
     flip_vec = np.array([[-1, 1, 1, 1, -1, -1]], dtype=np.float32)
     assert np.isclose(pose_vec, pose_vec_flip*flip_vec).all()
-    print("!!! test_flip_pose passed")
+    print("!!! test_flip_pose_np passed")
+
+
+def test_flip_pose_tf():
+    print("===== test test_flip_pose_tf")
+    batch, numsrc = 2, 2
+    pose_vec = tf.random.uniform((batch, numsrc, 6), -2, 2)
+    pose_mat = cp.pose_rvec2matr_batch(pose_vec)
+    flipper = HorizontalFlip()
+    pose_mat_flip = flipper.flip_pose(pose_mat)
+    pose_vec_flip = cp.pose_matr2rvec_batch(pose_mat_flip)
+    print("pose vec:\n", pose_vec[1, 1])
+    print("pose mat:\n", pose_mat[1, 1])
+    print("pose mat flip:\n", pose_mat_flip[1, 1])
+    print("pose vec flip:\n", pose_vec_flip[1, 1])
+    print("pose vec rotation [batch, numsrc]: (rad)\n", np.linalg.norm(pose_vec[:, :, 3:], axis=1))
+    print("pose vec flip rotation [batch, numsrc]: (rad)\n", np.linalg.norm(pose_vec_flip[:, :, 3:], axis=1))
+    print("pose == pose_flip:\n", np.isclose(pose_vec[1, 1], pose_vec_flip[1, 1]))
+
+    flip_vec = tf.constant([[[[-1, 1, 1, 1, -1, -1]]]], dtype=tf.float32)
+    assert np.isclose(pose_vec.numpy(), pose_vec_flip.numpy()*flip_vec).all()
+    print("!!! test_flip_pose_tf passed")
+
+
+def test_flip_intrinsic():
+    print("===== test test_flip_intrinsic")
+    batch, height, width = 3, 200, 240
+    intrinsic = tf.random.uniform((batch, 3, 3), minval=100, maxval=200)
+    print("intrinsic original", intrinsic[0])
+    imshape = (batch, height, width, 3)
+    flipper = HorizontalFlip()
+
+    # EXECUTE
+    intrin_flip = flipper.flip_intrinsic(intrinsic, imshape)
+
+    intrinsic = intrinsic.numpy()
+    intrin_flip = intrin_flip.numpy()
+    # fy, cy: SAME
+    assert np.isclose(intrinsic[:, 1:], intrin_flip[:, 1:]).all(), \
+        f"original\n{intrinsic[:, 1:]}\nflipped\n{intrin_flip[:, 1:]}"
+    # fx: SAME
+    assert np.isclose(intrinsic[:, 0, :2], intrin_flip[:, 0, :2]).all(), \
+        f"original\n{intrinsic[:, 0, :2]}\nflipped\n{intrin_flip[:, 0, :2]}"
+    # cx <- W - cx
+    assert np.isclose(width - intrinsic[:, 0, 2], intrin_flip[:, 0, 2]).all(), \
+        f"original\n{intrinsic[:, 0, 2]}\nflipped\n{intrin_flip[:, 0, 2]}"
+    print("horizontally flipped intrinsic\n", intrin_flip[0])
+    print("!!! test_flip_intrinsic passed")
 
 
 if __name__ == "__main__":
     test_random_crop_boxes()
     test_adjust_intrinsic()
-    test_flip_pose()
-
-
-
-
-
-
-
-
-
-
+    test_flip_pose_np()
+    test_flip_pose_tf()
+    test_flip_intrinsic()
 
 
 

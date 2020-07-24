@@ -11,12 +11,12 @@ class SynthesizeMultiScale:
     @shape_check
     def __call__(self, src_img_stacked, intrinsic, pred_depth_ms, pred_pose):
         """
-        :param src_img_stacked: source images stacked vertically [batch, height*num_src, width, 3]
+        :param src_img_stacked: source images stacked vertically [batch, height*numsrc, width, 3]
         :param intrinsic: [batch, 3, 3]
         :param pred_depth_ms: predicted target depth in multi scale, list of [batch, height/scale, width/scale, 1]}
-        :param pred_pose: predicted source pose in twist vector for each source frame [batch, num_src, 6]
+        :param pred_pose: predicted source pose in twist vector for each source frame [batch, numsrc, 6]
                         it transforms target points to source frame
-        :return: reconstructed target view in multi scale, list of [batch, num_src, height/scale, width/scale, 3]}
+        :return: reconstructed target view in multi scale, list of [batch, numsrc, height/scale, width/scale, 3]}
         """
         # convert pose vector to transformation matrix
         poses_matr = layers.Lambda(lambda pose: pose_rvec2matr_batch(pose),
@@ -30,19 +30,19 @@ class SynthesizeMultiScale:
 
 
 class SynthesizeSingleScale:
-    def __init__(self, shape=(0, 0, 0), num_src=0, scale=0):
+    def __init__(self, shape=(0, 0, 0), numsrc=0, scale=0):
         # shape is scaled from the original shape, height = original_height / scale
         self.batch, self.height, self.width = shape
-        self.num_src = num_src
+        self.numsrc = numsrc
         self.scale = scale
 
     def __call__(self, src_img_stacked, intrinsic, depth_sc, poses_matr):
         """
-        :param src_img_stacked: stacked source images [batch, height*num_src, width, 3]
+        :param src_img_stacked: stacked source images [batch, height*numsrc, width, 3]
         :param intrinsic: intrinsic parameters [batch, 3, 3]
         :param depth_sc: scaled predicted depth for target image, [batch, height/scale, width/scale, 1]
-        :param poses_matr: predicted source pose in matrix form [batch, num_src, 4, 4]
-        :return: reconstructed target view in scale, [batch, num_src, height/scale, width/scale, 3]
+        :param poses_matr: predicted source pose in matrix form [batch, numsrc, 4, 4]
+        :return: reconstructed target view in scale, [batch, numsrc, height/scale, width/scale, 3]
         """
         suffix = f"_sc{self.scale}"
         self.read_shape(src_img_stacked, depth_sc)
@@ -62,7 +62,7 @@ class SynthesizeSingleScale:
         batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape().as_list()
         self.batch, self.height, self.width, _ = depth_sc.get_shape().as_list()
         self.scale = int(width_orig / self.width)
-        self.num_src = int(stacked_height / self.scale / self.height)
+        self.numsrc = int(stacked_height / self.scale / self.height)
 
     def scale_intrinsic(self, intrinsic, scale):
         scaled_part = tf.slice(intrinsic, (0, 0, 0), (-1, 2, -1))
@@ -74,29 +74,29 @@ class SynthesizeSingleScale:
     @shape_check
     def reshape_source_images(self, src_img_stacked):
         """
-        :param src_img_stacked: [batch, height*num_src, width, 3]
-        :return: reorganized source images [batch, num_src, height/scale, width/scale, 3]
+        :param src_img_stacked: [batch, height*numsrc, width, 3]
+        :return: reorganized source images [batch, numsrc, height/scale, width/scale, 3]
         """
         batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
-        height_orig = stacked_height // self.num_src
-        # reshape image -> (batch*num_src, height_orig, width_orig, 3)
-        source_images = tf.reshape(src_img_stacked, shape=(self.batch * self.num_src, height_orig, width_orig, 3))
-        # resize image (scaled) -> (batch*num_src, height, width, 3)
+        height_orig = stacked_height // self.numsrc
+        # reshape image -> (batch*numsrc, height_orig, width_orig, 3)
+        source_images = tf.reshape(src_img_stacked, shape=(self.batch * self.numsrc, height_orig, width_orig, 3))
+        # resize image (scaled) -> (batch*numsrc, height, width, 3)
         scaled_image = tf.image.resize(source_images, size=(self.height, self.width), method="bilinear")
-        # reorganize scaled images -> (batch, num_src, height, width, 3)
-        source_images = tf.reshape(scaled_image, shape=(self.batch, self.num_src, self.height, self.width, 3))
+        # reorganize scaled images -> (batch, numsrc, height, width, 3)
+        source_images = tf.reshape(scaled_image, shape=(self.batch, self.numsrc, self.height, self.width, 3))
         return source_images
 
     @shape_check
     def synthesize_batch_view(self, src_image, tgt_depth, pose, intrinsic, suffix):
         """
         src_image, tgt_depth and intrinsic are scaled
-        :param src_image: source image nearby the target image [batch, num_src, height, width, 3]
+        :param src_image: source image nearby the target image [batch, numsrc, height, width, 3]
         :param tgt_depth: depth map of the target image in meter scale [batch, height, width, 1]
-        :param pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
+        :param pose: pose matrices that transform points from target to source frame [batch, numsrc, 4, 4]
         :param intrinsic: camera projection matrix [batch, 3, 3]
         :param suffix: suffix to tensor name
-        :return: synthesized target image [batch, num_src, height, width, 3]
+        :return: synthesized target image [batch, numsrc, height, width, 3]
         """
         src_pixel_coords = layers.Lambda(lambda inputs: self.warp_pixel_coords(inputs, self.height, self.width),
                                          name="warp_pixel_" + suffix)([tgt_depth, pose, intrinsic])
@@ -152,29 +152,29 @@ class SynthesizeSingleScale:
     def transform_to_source(self, tgt_coords, t2s_pose):
         """
         :param tgt_coords: target frame coordinates like (x,y,z,1) [batch, 4, height*width]
-        :param t2s_pose: pose matrices that transform points from target to source frame [batch, num_src, 4, 4]
-        :return: transformed points in source frame like (x,y,z,1) [batch, num_src, 4, height*width]
+        :param t2s_pose: pose matrices that transform points from target to source frame [batch, numsrc, 4, 4]
+        :return: transformed points in source frame like (x,y,z,1) [batch, numsrc, 4, height*width]
         """
         tgt_coords_expand = tf.expand_dims(tgt_coords, 1)
-        tgt_coords_expand = tf.tile(tgt_coords_expand, (1, self.num_src, 1, 1))
-        # [batch, num_src, 4, height*width] = [batch, num_src, 4, 4] x [batch, num_src, 4, height*width]
+        tgt_coords_expand = tf.tile(tgt_coords_expand, (1, self.numsrc, 1, 1))
+        # [batch, numsrc, 4, height*width] = [batch, numsrc, 4, 4] x [batch, numsrc, 4, height*width]
         src_coords = tf.matmul(t2s_pose, tgt_coords_expand)
         return src_coords
 
     def cam2pixel(self, cam_coords, intrinsic):
         """
-        :param cam_coords: 3D points in source frame (x,y,z,1) [batch, num_src, 4, height*width]
+        :param cam_coords: 3D points in source frame (x,y,z,1) [batch, numsrc, 4, height*width]
         :param intrinsic: intrinsic camera matrix [batch, 3, 3]
-        :return: projected pixel coordinates on source image plane (u,v,1) [batch, num_src, 3, height*width]
+        :return: projected pixel coordinates on source image plane (u,v,1) [batch, numsrc, 3, height*width]
         """
         intrinsic_expand = tf.expand_dims(intrinsic, 1)
-        # [batch, num_src, 3, 3]
-        intrinsic_expand = tf.tile(intrinsic_expand, (1, self.num_src, 1, 1))
+        # [batch, numsrc, 3, 3]
+        intrinsic_expand = tf.tile(intrinsic_expand, (1, self.numsrc, 1, 1))
 
-        # [batch, num_src, 3, height*width] = [batch, num_src, 3, 3] x [batch, num_src, 3, height*width]
+        # [batch, numsrc, 3, height*width] = [batch, numsrc, 3, 3] x [batch, numsrc, 3, height*width]
         point_coords = tf.slice(cam_coords, (0, 0, 0, 0), (-1, -1, 3, -1))
         pixel_coords = tf.matmul(intrinsic_expand, point_coords)
-        # pixel_coords = tf.reshape(pixel_coords, (batch, num_src, 3, length))
+        # pixel_coords = tf.reshape(pixel_coords, (batch, numsrc, 3, length))
         # normalize scale
         pixel_scales = pixel_coords[:, :, 2:3, :]
         pixel_coords = pixel_coords / (pixel_scales + 1e-10)

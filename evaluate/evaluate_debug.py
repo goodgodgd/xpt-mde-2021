@@ -74,7 +74,7 @@ def evaluate_for_debug(data_dir_name, model_name):
 
 
 def evaluate_batch(index, x, model):
-    num_src = opts.SNIPPET_LEN - 1
+    numsrc = opts.SNIPPET_LEN - 1
 
     stacked_image = x['image']
     intrinsic = x['intrinsic']
@@ -92,21 +92,21 @@ def evaluate_batch(index, x, model):
     smooth_loss = compute_smooth_loss(disp_pred_ms[0], target_image)
 
     pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
-    # pose error output: [batch, num_src]
+    # pose error output: [batch, numsrc]
     trj_err, trj_len = compute_trajectory_error(pose_pred_mat, pose_true_mat, scale)
     rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
 
-    # compute photometric loss: [batch, num_src]
+    # compute photometric loss: [batch, numsrc]
     photo_loss = compute_photo_loss(target_image, source_image, intrinsic, depth_pred_ms, pose_pred)
 
     depth_res = [index, smooth_loss, depth_err]
-    # pose_res: [num_src, -1]
-    pose_res = np.stack([np.array([index] * 4), np.arange(num_src), photo_loss.numpy().reshape(-1),
+    # pose_res: [numsrc, -1]
+    pose_res = np.stack([np.array([index] * 4), np.arange(numsrc), photo_loss.numpy().reshape(-1),
                          trj_err.numpy().reshape(-1), trj_len.numpy().reshape(-1),
                          rot_err.numpy().reshape(-1)], axis=1)
 
     # to collect trajectory
-    trajectory = np.concatenate([np.array([index] * 4)[:, np.newaxis], np.arange(num_src)[:, np.newaxis],
+    trajectory = np.concatenate([np.array([index] * 4)[:, np.newaxis], np.arange(numsrc)[:, np.newaxis],
                                  pose_true_mat.numpy()[:, :, :3, 3].reshape((-1, 3)),
                                  pose_pred_mat.numpy()[:, :, :3, 3].reshape((-1, 3))*scale], axis=1)
     return depth_res, pose_res, trajectory
@@ -117,7 +117,7 @@ def compute_photo_loss(target_true, source_image, intrinsic, depth_pred_ms, pose
     synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, depth_pred_ms, pose_pred)
     losses = []
     target_pred = synth_target_ms[0]
-    # photometric loss: [batch, num_src]
+    # photometric loss: [batch, numsrc]
     loss = photometric_loss(target_pred, target_true)
     return loss
 
@@ -131,10 +131,10 @@ def compute_smooth_loss(disparity, target_image):
 
 def compute_trajectory_error(pose_pred_mat, pose_true_mat, scale):
     """
-    :param pose_pred_mat: predicted snippet pose matrices, [batch, num_src, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices, [batch, num_src, 4, 4]
+    :param pose_pred_mat: predicted snippet pose matrices, [batch, numsrc, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices, [batch, numsrc, 4, 4]
     :param scale: scale for pose_pred to have real scale
-    :return: trajectory error in meter [batch, num_src]
+    :return: trajectory error in meter [batch, numsrc]
     """
     xyz_pred = pose_pred_mat[:, :, :3, 3]
     xyz_true = pose_true_mat[:, :, :3, 3]

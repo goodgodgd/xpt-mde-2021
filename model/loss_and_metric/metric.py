@@ -5,8 +5,8 @@ import evaluate.eval_funcs as ef
 
 def compute_metric_pose(pose_pred, pose_true_mat, stereo=False):
     """
-    :param pose_pred: 6-DoF poses [batch, num_src, 6]
-    :param pose_true_mat: 4x4 transformation matrix [batch, num_src, 4, 4]
+    :param pose_pred: 6-DoF poses [batch, numsrc, 6]
+    :param pose_true_mat: 4x4 transformation matrix [batch, numsrc, 4, 4]
     :param stereo: if stereo true, metric is evaluated in ABSOLUTE scale
     """
     pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
