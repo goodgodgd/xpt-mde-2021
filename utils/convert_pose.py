@@ -35,7 +35,7 @@ def pose_rvec2matr_batch(poses):
     """
     # shape to [batch, N, 6, 1]
     poses = tf.expand_dims(poses, -1)
-    batch, numsrc, _, _ = poses.get_shape().as_list()
+    batch, numsrc, _, _ = poses.get_shape()
     # split into translation and rotation [batch, N, 3]
     trans = poses[:, :, :3]
     uvec = poses[:, :, 3:]

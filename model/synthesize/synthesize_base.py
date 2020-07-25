@@ -59,8 +59,8 @@ class SynthesizeSingleScale:
 
     @shape_check
     def read_shape(self, src_img_stacked, depth_sc):
-        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape().as_list()
-        self.batch, self.height, self.width, _ = depth_sc.get_shape().as_list()
+        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
+        self.batch, self.height, self.width, _ = depth_sc.get_shape()
         self.scale = int(width_orig / self.width)
         self.numsrc = int(stacked_height / self.scale / self.height)
 
