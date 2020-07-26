@@ -31,19 +31,19 @@ class ModelWrapper:
     def predict(self, dataset, total_steps):
         return self.predict_oneside(dataset, "image", total_steps)
 
-    def predict_oneside(self, dataset, image_key, total_steps):
-        print(f"===== start prediction from [{image_key}] key")
+    def predict_oneside(self, dataset, suffix, total_steps):
+        print(f"===== start prediction from [image{suffix}] key")
         predictions = {"depth": [], "pose": []}
         for step, features in enumerate(dataset):
-            depth_ms = self.models["depthnet"](features[image_key])
-            predictions["depth"].append(depth_ms[0])
-            pose = self.models["posenet"](features[image_key])
-            predictions["pose"].append(pose)
+            depth_ms = self.models["depthnet"](features["image" + suffix])
+            predictions["depth" + suffix].append(depth_ms[0])
+            pose = self.models["posenet"](features["image" + suffix])
+            predictions["pose" + suffix].append(pose)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
 
         print("")
-        predictions["depth"] = np.concatenate(predictions["depth"], axis=0)
-        predictions["pose"] = np.concatenate(predictions["pose"], axis=0)
+        predictions["depth" + suffix] = np.concatenate(predictions["depth" + suffix], axis=0)
+        predictions["pose" + suffix] = np.concatenate(predictions["pose" + suffix], axis=0)
         return predictions
 
     def compile(self, optimizer="sgd", loss="mean_absolute_error"):
