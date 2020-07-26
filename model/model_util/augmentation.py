@@ -1,4 +1,6 @@
 import tensorflow as tf
+from config import opts
+from utils.util_class import WrongInputException
 
 """
 depthnet : only target
@@ -13,27 +15,55 @@ stacked image -> batch*snippet -> augmentation  -> "image" [batch*snippet]
 """
 
 
+def augmentation_factory(augment_probs=opts.AUGMENT_PROBS):
+    augmenters = []
+    for key, prob in augment_probs.items():
+        if key is "CropAndResize":
+            augm = CropAndResize(prob)
+        elif key is "HorizontalFlip":
+            augm = HorizontalFlip(prob)
+        elif key is "ColorJitter":
+            augm = ColorJitter(prob)
+        else:
+            raise WrongInputException(f"Wrong augmentation type: {key}")
+        augmenters.append(augm)
+    total_augment = TotalAugment(augmenters)
+    return total_augment
+
+
 class TotalAugment:
     def __init__(self, augment_objects):
         self.augment_objects = augment_objects
 
     def __call__(self, features):
+        features = self.augment_oneside(features)
+        if "image_R" in features:
+            print("right side sugment")
+            features = self.augment_oneside(features, "_R")
+        return features
+
+    def augment_oneside(self, features, suffix=""):
+        features = Preprocess()(features, suffix)
         for augmenter in self.augment_objects:
-            features = augmenter(features)
+            features = augmenter(features, suffix)
+        features = Postprocess()(features, suffix)
+        return features
 
 
 class AugmentBase:
-    def __init__(self, suffix, aug_prob=0.):
-        self.suffix = suffix
+    def __init__(self, aug_prob=0.):
         self.aug_prob = aug_prob
         self.param = 0
 
+    def __call__(self, features, suffix):
+        raise NotImplementedError()
+
 
 class Preprocess(AugmentBase):
-    def __init__(self, suffix=""):
-        super().__init__(suffix)
+    def __init__(self):
+        super().__init__()
 
-    def __call__(self, features):
+    def __call__(self, features, suffix=""):
         """
         :return: append features below
             image_aug: [batch*snippet, height, width, 3]
@@ -41,7 +71,6 @@ class Preprocess(AugmentBase):
             intrinsic_aug: [batch, 3, 3]
             pose_gt_aug: [batch, numsrc, 4, 4]
         """
-        suffix = self.suffix
         image5d = features["image5d" + suffix]
         batch, snippet, height, width, channels = image5d.get_shape()
         numsrc = snippet - 1
@@ -61,10 +90,10 @@ class Preprocess(AugmentBase):
 
 
 class Postprocess(AugmentBase):
-    def __init__(self, suffix=""):
-        super().__init__(suffix)
+    def __init__(self):
+        super().__init__()
 
-    def __call__(self, features):
+    def __call__(self, features, suffix=""):
         """
         :return: append features below
             image_aug: [batch, snippet, height, width, 3] <- only change!
@@ -72,7 +101,6 @@ class Postprocess(AugmentBase):
             intrinsic_aug: [batch, 3, 3]
             pose_gt_aug: [batch, numsrc, 4, 4]
         """
-        suffix = self.suffix
         image5d = features["image5d" + suffix]
         batch, snippet, height, width, channels = image5d.get_shape()
         imkey = "image_aug" + suffix
@@ -85,12 +113,11 @@ class CropAndResize(AugmentBase):
     randomly crop "image_aug" and resize it to original size
     create "intrinsic_aug" as camera matrix for "image_aug"
     """
-    def __init__(self, suffix="", aug_prob=0.3):
-        super().__init__(suffix, aug_prob)
+    def __init__(self, aug_prob=0.3):
+        super().__init__(aug_prob)
         self.half_crop_ratio = 0.1
 
-    def __call__(self, features):
-        suffix = self.suffix
+    def __call__(self, features, suffix=""):
         batch, snippet, height, width, channels = features["image5d"].get_shape()
         image = features["image_aug" + suffix]
         crop_size = tf.constant([height, width])
@@ -99,7 +126,6 @@ class CropAndResize(AugmentBase):
         boxes = self.random_crop_boxes(num_box)
         self.param = boxes[0]
 
-        print("crop and resize:", image.get_shape(), boxes.get_shape())
         image_aug = tf.image.crop_and_resize(image, boxes, box_indices, crop_size)
         features["image_aug" + suffix] = image_aug
         intrin_aug = self.adjust_intrinsic(features["intrinsic_aug" + suffix], boxes, crop_size)
@@ -157,11 +183,10 @@ class HorizontalFlip(AugmentBase):
     """
     randomly horizontally flip "image_aug" by aug_prob
     """
-    def __init__(self, suffix="", aug_prob=0.2):
-        super().__init__(suffix, aug_prob)
+    def __init__(self, aug_prob=0.2):
+        super().__init__(aug_prob)
 
-    def __call__(self, features):
-        suffix = self.suffix
+    def __call__(self, features, suffix=""):
         image = features["image_aug" + suffix]
         intrinsic = features["intrinsic_aug" + suffix]
         pose = features["pose_gt_aug" + suffix]
@@ -212,11 +237,10 @@ class HorizontalFlip(AugmentBase):
 
 
 class ColorJitter(AugmentBase):
-    def __init__(self, suffix="", aug_prob=0.2):
-        super().__init__(suffix, aug_prob)
+    def __init__(self, aug_prob=0.2):
+        super().__init__(aug_prob)
 
-    def __call__(self, features):
-        suffix = self.suffix
+    def __call__(self, features, suffix=""):
         image = features["image_aug" + suffix]
         rndval = tf.random.uniform(())
         # srcimg = image[0, 0:100:20, 0:300:60, 1].numpy()
@@ -398,6 +422,8 @@ def test_augmentations():
         if key == ord('q'):
             break
 
+    cv2.destroyAllWindows()
+
 
 def show_result(features, name, param):
     batch, snippet, height, width, chann = features["image5d"].get_shape()
@@ -446,6 +472,41 @@ def prep_synthesize(features, suffix):
     return sources, target, intrinsic, depth_gt_ms, pose_gt
 
 
+def test_augmentation_factory():
+    print("===== test test_augmentations")
+    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
+    dataset = tfrgen.get_generator()
+    augmenter = augmentation_factory(opts.AUGMENT_PROBS)
+
+    for bi, features in enumerate(dataset):
+        print(f"\n!!~~~~~~~~~~ {bi}: new features ~~~~~~~~~~!!")
+        print("before augment features:")
+        fkeys = list(features.keys())
+        for i in range(len(features.keys()) // 5):
+            print(fkeys[i*5:(i+1)*5])
+
+        features = augmenter(features)
+
+        print("after augment features:")
+        fkeys = list(features.keys())
+        for i in range(np.ceil(len(features.keys())/5.).astype(int)):
+            print(fkeys[i*5:(i+1)*5])
+
+        image = to_uint8_image(features["image5d_R"])
+        image_aug = to_uint8_image(features["image_aug_R"])
+        batch, snippet, height, width, chann = image.get_shape()
+        image = image.numpy()[1].reshape(-1, width, chann)
+        image_aug = image_aug.numpy()[1].reshape(-1, width, chann)
+        image = np.concatenate([image, image_aug], axis=1)
+        cv2.imshow("image vs augmented", image)
+        cv2.waitKey(1000)
+        key = cv2.waitKey()
+        if key == ord('q'):
+            break
+
+    cv2.destroyAllWindows()
+
+
 if __name__ == "__main__":
     test_random_crop_boxes()
     test_adjust_intrinsic()
@@ -453,6 +514,7 @@ if __name__ == "__main__":
     test_flip_pose_tf()
     test_flip_intrinsic()
     test_augmentations()
+    test_augmentation_factory()
 
 
 
