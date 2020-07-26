@@ -23,49 +23,60 @@ class TotalAugment:
 
 
 class AugmentBase:
-    def __init__(self, suffix, aug_prob):
+    def __init__(self, suffix, aug_prob=0.):
         self.suffix = suffix
         self.aug_prob = aug_prob
         self.param = 0
 
 
 class Preprocess(AugmentBase):
-    def __init__(self, snippet_len, suffix=""):
-        super().__init__(suffix, 0)
-        self.snippet_len = snippet_len
-        self.suffix = suffix
+    def __init__(self, suffix=""):
+        super().__init__(suffix)
 
     def __call__(self, features):
         """
-        :return: features below
-            target: [batch, height, width, 3]
-            sources: [batch, numsrc, height, width, 3]
+        :return: append features below
             image_aug: [batch*snippet, height, width, 3]
+            depth_gt_aug: [batch, height, width, 1]
             intrinsic_aug: [batch, 3, 3]
             pose_gt_aug: [batch, numsrc, 4, 4]
         """
         suffix = self.suffix
-        snippet = self.snippet_len
+        image5d = features["image5d" + suffix]
+        batch, snippet, height, width, channels = image5d.get_shape()
         numsrc = snippet - 1
-        image = features["image" + suffix]
-        batch, h_stacked, width, channels = image.get_shape()
-        height = h_stacked // snippet
-        image_5d = tf.reshape(image, (batch, snippet, height, width, channels))
 
-        # [batch, height, width, 3]
-        features["target" + suffix] = image_5d[:, numsrc]
-        # [batch, numsrc, height, width, 3]
-        features["sources" + suffix] = image_5d[:, :numsrc]
-        # [batch*snippet, height, width, 3]
-        image_aug = tf.reshape(image_5d, (batch*snippet, height, width, channels))
+        # to use tf.image functions, reshape to [batch*snippet, height, width, 3]
+        image_aug = tf.reshape(image5d, (batch*snippet, height, width, channels))
         features["image_aug" + suffix] = image_aug
         # copy intrinsic
         features["intrinsic_aug" + suffix] = tf.reshape(features["intrinsic" + suffix], (batch, 3, 3))
         # copy pose_gt
-        features["pose_gt_aug" + suffix] = tf.reshape(features["pose_gt" + suffix], (batch, numsrc, 4, 4))
+        if "pose_gt" + suffix in features:
+            features["pose_gt_aug" + suffix] = tf.reshape(features["pose_gt" + suffix], (batch, numsrc, 4, 4))
         # copy depth_gt
         if "depth_gt" + suffix in features:
             features["depth_gt_aug" + suffix] = tf.reshape(features["depth_gt" + suffix], (batch, height, width, 1))
+        return features
+
+
+class Postprocess(AugmentBase):
+    def __init__(self, suffix=""):
+        super().__init__(suffix)
+
+    def __call__(self, features):
+        """
+        :return: append features below
+            image_aug: [batch, snippet, height, width, 3] <- only change!
+            depth_gt_aug: [batch, height, width, 1]
+            intrinsic_aug: [batch, 3, 3]
+            pose_gt_aug: [batch, numsrc, 4, 4]
+        """
+        suffix = self.suffix
+        image5d = features["image5d" + suffix]
+        batch, snippet, height, width, channels = image5d.get_shape()
+        imkey = "image_aug" + suffix
+        features[imkey] = tf.reshape(features[imkey], (batch, snippet, height, width, channels))
         return features
 
 
@@ -80,14 +91,15 @@ class CropAndResize(AugmentBase):
 
     def __call__(self, features):
         suffix = self.suffix
-        # [batch*snippet, height, width, 3]
+        batch, snippet, height, width, channels = features["image5d"].get_shape()
         image = features["image_aug" + suffix]
-        batch, height, width, _ = image.get_shape()
         crop_size = tf.constant([height, width])
-        box_indices = tf.range(0, batch)
-        boxes = self.random_crop_boxes(batch)
+        num_box = batch*snippet
+        box_indices = tf.range(0, num_box)
+        boxes = self.random_crop_boxes(num_box)
         self.param = boxes[0]
 
+        print("crop and resize:", image.get_shape(), boxes.get_shape())
         image_aug = tf.image.crop_and_resize(image, boxes, box_indices, crop_size)
         features["image_aug" + suffix] = image_aug
         intrin_aug = self.adjust_intrinsic(features["intrinsic_aug" + suffix], boxes, crop_size)
@@ -150,7 +162,6 @@ class HorizontalFlip(AugmentBase):
 
     def __call__(self, features):
         suffix = self.suffix
-        # (batch*snippet, height, width, 3)
         image = features["image_aug" + suffix]
         intrinsic = features["intrinsic_aug" + suffix]
         pose = features["pose_gt_aug" + suffix]
@@ -354,10 +365,11 @@ def test_augmentations():
     print("===== test test_augmentations")
     tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
     dataset = tfrgen.get_generator()
-    data_aug = {"Preprocess": Preprocess(opts.SNIPPET_LEN),
+    data_aug = {"Preprocess": Preprocess(),
                 "CropAndResize": CropAndResize(aug_prob=0.5),
                 "HorizontalFlip": HorizontalFlip(aug_prob=0.5),
-                "ColorJitter": ColorJitter(aug_prob=0.5)}
+                "ColorJitter": ColorJitter(aug_prob=0.5),
+                "Postprocess": Postprocess()}
 
     for bi, features in enumerate(dataset):
         print(f"\n!!~~~~~~~~~~ {bi}: new features ~~~~~~~~~~!!")
@@ -388,15 +400,13 @@ def test_augmentations():
 
 
 def show_result(features, name, param):
-    image = features["image_aug"]
-    batch, height, width, chann = image.get_shape()
-    snippet = opts.SNIPPET_LEN
+    batch, snippet, height, width, chann = features["image5d"].get_shape()
     numsrc = snippet - 1
-    batch = batch // snippet
 
     print(f"----- augmentation: {name}")
     print("parameter:", param)
-    image = features["image_aug"]
+    print("image shape", features["image_aug"].get_shape())
+    image = tf.reshape(features["image_aug"], (batch*snippet, height, width, chann))
     image_u8 = to_uint8_image(image)
     target = image_u8[numsrc].numpy()
     intrin = features["intrinsic_aug"]
@@ -418,14 +428,12 @@ def synthesize_target(features, suffix=""):
 
 
 def prep_synthesize(features, suffix):
-    image = features["image" + suffix]
-    batch, height, width, chann = image.get_shape()
-    snippet = opts.SNIPPET_LEN
+    batch, snippet, height, width, chann = features["image5d"].get_shape()
     numsrc = snippet - 1
-    if suffix:
-        batch = batch // snippet
+    if suffix is "_aug":
+        image = features["image" + suffix]
     else:
-        height = height // snippet
+        image = features["image5d"]
 
     image_5d = tf.reshape(image, (batch, snippet, height, width, chann))
     sources = tf.reshape(image_5d[:, :numsrc], (batch, numsrc*height, width, chann))

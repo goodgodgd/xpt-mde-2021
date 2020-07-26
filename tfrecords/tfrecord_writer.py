@@ -10,7 +10,7 @@ import tfrecords.data_feeders as df
 
 
 class TfrecordMaker:
-    def __init__(self, srcpath, dstpath, stereo, max_frames=None, shuffle=False):
+    def __init__(self, srcpath, dstpath, stereo, imshape, max_frames=None, shuffle=False):
         self.srcpath = srcpath
         self.dstpath = dstpath
         self.data_root = op.dirname(op.dirname(dstpath))
@@ -20,6 +20,7 @@ class TfrecordMaker:
         self.depth_avail = True if depths else False
         self.pose_avail = True if poses else False
         self.stereo = stereo
+        self.imshape = imshape
         self.max_frames = max_frames
         self.shuffle = shuffle
 
@@ -100,7 +101,8 @@ class TfrecordMaker:
             single_config = {"parse_type": feeder.parse_type, "decode_type": feeder.decode_type, "shape": feeder.shape}
             config[key] = single_config
 
-        config["length"] = len(feeders['image'])
+        config["length"] = len(feeders["image"])
+        config["imshape"] = self.imshape
         print("## config", config)
         with open(op.join(self.dstpath, "tfr_config.txt"), "w") as fr:
             json.dump(config, fr)
