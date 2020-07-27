@@ -16,35 +16,50 @@ class ModelWrapper:
     2) preds = model.predict(image_tensor) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
     3) preds = model.predict({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
     """
-    def __init__(self, models):
+    def __init__(self, models, augmenter):
         self.models = models
+        self.augmenter = augmenter
 
     def __call__(self, features):
-        predictions = dict()
-        for netname, model in self.models.items():
-            pred = model(features["image"])
-            predictions.update(pred)
-        if "depth_ms" in predictions:
-            predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
+        features = self.augmenter(features)
+        predictions = self.predict_batch(features)
         return predictions
 
     def predict(self, dataset, total_steps):
-        return self.predict_oneside(dataset, "image", total_steps)
-
-    def predict_oneside(self, dataset, suffix, total_steps):
-        print(f"===== start prediction from [image{suffix}] key")
-        predictions = {"depth": [], "pose": []}
+        print(f"===== [ModelWrapper] start prediction")
+        outputs = {name[:-3]: [] for name, model in self.models.items()}
         for step, features in enumerate(dataset):
-            depth_ms = self.models["depthnet"](features["image" + suffix])
-            predictions["depth" + suffix].append(depth_ms[0])
-            pose = self.models["posenet"](features["image" + suffix])
-            predictions["pose" + suffix].append(pose)
+            predictions = self.predict_batch(features)
+            outputs = self.append_outputs(predictions, outputs)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
 
         print("")
-        predictions["depth" + suffix] = np.concatenate(predictions["depth" + suffix], axis=0)
-        predictions["pose" + suffix] = np.concatenate(predictions["pose" + suffix], axis=0)
+        # concatenate batch outputs along batch axis
+        for key, data in outputs.items():
+            outputs[key] = np.concatenate(data, axis=0)
+        return outputs
+
+    def predict_batch(self, features, suffix=""):
+        predictions = dict()
+        for netname, model in self.models.items():
+            pred = model(features["image_aug" + suffix])
+            predictions.update(pred)
+
+        predictions = {key + suffix: value for key, value in predictions.items()}
         return predictions
+
+    def append_outputs(self, predictions, outputs, suffix=""):
+        if "pose" + suffix in predictions:
+            pose = predictions["pose" + suffix]         # [batch, numsrc, 6]
+            outputs["pose" + suffix].append(pose)
+        # only the highest resolution ouput is used for evaluation
+        if "depthnet" + suffix in self.models:
+            depth_ms = predictions["depth_ms" + suffix] # [batch, height, width, 1]
+            outputs["depth" + suffix].append(depth_ms[0])
+        if "flownet" + suffix in self.models:
+            flow_ms = predictions["flow_ms" + suffix]   # [batch, numsrc, height, width, 2]
+            outputs["flow" + suffix].append(flow_ms[0])
+        return outputs
 
     def compile(self, optimizer="sgd", loss="mean_absolute_error"):
         for model in self.models.values():
@@ -96,62 +111,65 @@ class ModelWrapper:
 
 
 class StereoModelWrapper(ModelWrapper):
-    def __init__(self, models):
-        super().__init__(models)
+    def __init__(self, models, augmenter):
+        super().__init__(models, augmenter)
 
     def __call__(self, features):
-        predictions = dict()
-        for netname, model in self.models.items():
-            pred = model(features["image"])
-            predictions.update(pred)
-            preds_right = model(features["image_R"])
-            preds_right = {key + "_R": value for key, value in preds_right.items()}
-            predictions.update(preds_right)
-        if "depth_ms" in predictions:
-            predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
-        if "depth_ms_R" in predictions:
-            predictions["disp_ms_R"] = uf.safe_reciprocal_number_ms(predictions["depth_ms_R"])
-        return predictions
-
-    def predict(self, dataset, total_steps):
-        predictions = self.predict_oneside(dataset, "image", total_steps)
-        preds_right = self.predict_oneside(dataset, "image_R", total_steps)
-        preds_right = {key + "_R": value for key, value in preds_right.items()}
+        features = self.augmenter(features)
+        predictions = self.predict_batch(features)
+        preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
         return predictions
 
+    def predict(self, dataset, total_steps):
+        print(f"===== [ModelWrapper] start prediction")
+        outputs = {name[:-3]: [] for name, model in self.models.items()}
+        outputs_right = {name[:-3] + "_R": [] for name, model in self.models.items()}
+        outputs.update(outputs_right)
+
+        for step, features in enumerate(dataset):
+            predictions = self.predict_batch(features)
+            preds_right = self.predict_batch(features, "_R")
+            predictions.update(preds_right)
+            outputs = self.append_outputs(predictions, outputs)
+            outputs = self.append_outputs(predictions, outputs, "_R")
+            uf.print_progress_status(f"Progress: {step} / {total_steps}")
+
+        print("")
+        # concatenate batch outputs along batch axis
+        for key, data in outputs.items():
+            outputs[key] = tf.concat(data, axis=0)
+        return outputs
+
 
 class StereoPoseModelWrapper(ModelWrapper):
-    def __init__(self, models):
-        super().__init__(models)
+    def __init__(self, models, augmenter):
+        super().__init__(models, augmenter)
 
     def __call__(self, features):
-        predictions = dict()
-        for netname, model in self.models.items():
-            pred = model(features["image"])
-            predictions.update(pred)
-            preds_right = model(features["image_R"])
-            preds_right = {key + "_R": value for key, value in preds_right.items()}
-            predictions.update(preds_right)
-
-        if "depth_ms" in predictions:
-            predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
-        if "depth_ms_R" in predictions:
-            predictions["disp_ms_R"] = uf.safe_reciprocal_number_ms(predictions["depth_ms_R"])
-
-        # predicts stereo extrinsic in both directions: left to right, right to left
+        features = self.augmenter(features)
+        predictions = self.predict_batch(features)
+        preds_right = self.predict_batch(features, "_R")
+        predictions.update(preds_right)
         if "posenet" in self.models:
-            posenet = self.models["posenet"]
-            left_source, left_target = uf.split_into_source_and_target(features["image"])
-            right_source, right_target = uf.split_into_source_and_target(features["image_R"])
-            numsrc = opts.SNIPPET_LEN - 1
-            lr_input = layers.concatenate([right_target] * numsrc + [left_target], axis=1)
-            rl_input = layers.concatenate([left_target] * numsrc + [right_target], axis=1)
-            # pose that transforms points from right to left (T_LR)
-            pose_lr = posenet(lr_input)
-            # pose that transforms points from left to right (T_RL)
-            pose_rl = posenet(rl_input)
-            predictions["pose_LR"] = pose_lr["pose"]
-            predictions["pose_RL"] = pose_rl["pose"]
-
+            stereo_pose = self.predict_stereo_pose(features)
+            predictions.update(stereo_pose)
         return predictions
+
+    def predict_stereo_pose(self, features):
+        # predicts stereo extrinsic in both directions: left to right, right to left
+        posenet = self.models["posenet"]
+        left_target = features["image_aug"][:, -1]
+        right_target = features["image_aug_R"][:, -1]
+        numsrc = opts.SNIPPET_LEN - 1
+        lr_input = tf.stack([right_target] * numsrc + [left_target], axis=1)
+        rl_input = tf.stack([left_target] * numsrc + [right_target], axis=1)
+        # lr_input = layers.concatenate([right_target] * numsrc + [left_target], axis=1)
+        # rl_input = layers.concatenate([left_target] * numsrc + [right_target], axis=1)
+
+        # pose that transforms points from right to left (T_LR)
+        pose_lr = posenet(lr_input)
+        # pose that transforms points from left to right (T_RL)
+        pose_rl = posenet(rl_input)
+        outputs = {"pose_LR": pose_lr["pose"], "pose_RL": pose_rl["pose"]}
+        return outputs

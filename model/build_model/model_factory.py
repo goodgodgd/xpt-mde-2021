@@ -9,6 +9,7 @@ from model.build_model.pose_net import PoseNet
 from model.build_model.flow_net import PWCNet
 import model.build_model.model_wrappers as mw
 import model.model_util.layer_ops as lo
+from model.model_util.augmentation import augmentation_factory
 
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
@@ -20,12 +21,14 @@ class ModelFactory:
                  net_names=opts.NET_NAMES,
                  depth_activation=opts.DEPTH_ACTIVATION,
                  pretrained_weight=opts.PRETRAINED_WEIGHT,
+                 augment_probs=opts.AUGMENT_PROBS,
                  stereo=opts.STEREO,
                  stereo_extrinsic=opts.STEREO_EXTRINSIC):
         self.input_shape = input_shape
         self.net_names = net_names
         self.activation = depth_activation
         self.pretrained_weight = pretrained_weight
+        self.augment_probs = augment_probs
         self.stereo = stereo
         self.stereo_extrinsic = stereo_extrinsic
 
@@ -33,11 +36,11 @@ class ModelFactory:
         models = dict()
 
         if "depth" in self.net_names:
-            depth_activation = self.activation_factory(self.activation)
             conv_depth = self.conv2d_factory(opts.DEPTH_CONV_ARGS)
-            upsample_interp_d = opts.DEPTH_UPSAMPLE_INTERP
+            depth_activation = self.activation_factory(self.activation)
+            depth_upsample_method = opts.DEPTH_UPSAMPLE_INTERP
             depthnet = self.depth_net_factory(self.net_names["depth"], conv_depth,
-                                              depth_activation, upsample_interp_d)
+                                              depth_activation, depth_upsample_method)
             models["depthnet"] = depthnet
 
         if "camera" in self.net_names:
@@ -50,12 +53,14 @@ class ModelFactory:
             flownet = self.flow_net_factory(self.net_names["flow"], conv_flow)
             models["flownet"] = flownet
 
+        augmenter = augmentation_factory(opts.AUGMENT_PROBS)
+
         if self.stereo_extrinsic:
-            model_wrapper = mw.StereoPoseModelWrapper(models)
+            model_wrapper = mw.StereoPoseModelWrapper(models, augmenter)
         elif self.stereo:
-            model_wrapper = mw.StereoModelWrapper(models)
+            model_wrapper = mw.StereoModelWrapper(models, augmenter)
         else:
-            model_wrapper = mw.ModelWrapper(models)
+            model_wrapper = mw.ModelWrapper(models, augmenter)
 
         return model_wrapper
 
@@ -136,6 +141,9 @@ class ExponentialActivation:
 
 # ==================================================
 import os.path as op
+import cv2
+from config import opts
+from tfrecords.tfrecord_reader import TfrecordGenerator
 
 
 def test_build_model():
@@ -159,7 +167,13 @@ def test_build_model():
     with open(summary_file, 'w') as fh:
         vode_model.summary(print_fn=lambda x: fh.write(x + '\n'))
 
-    print("trainable weights", type(vode_model.trainable_weights()), len(vode_model.trainable_weights()))
+
+def test_model_predictions():
+    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
+    dataset = tfrgen.get_generator()
+
+    for bi, features in enumerate(dataset):
+        pass
 
 
 if __name__ == "__main__":

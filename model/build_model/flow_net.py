@@ -42,7 +42,7 @@ class PWCNet:
         flow_ms = [flow2, flow3, flow4, flow5]
 
         # reshape back to normal bactch size
-        # -> list of [batch, numsrc, height//scale, width//scale, channel]
+        # -> list of [batch, numsrc, height/scale, width/scale, 2]
         flow_ms = self.reshape_batch_back(flow_ms)
         pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flow_ms": flow_ms}, name="PWCNet")
         return pwcnet

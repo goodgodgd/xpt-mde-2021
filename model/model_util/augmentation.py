@@ -1,21 +1,8 @@
 import tensorflow as tf
-from config import opts
 from utils.util_class import WrongInputException
 
-"""
-depthnet : only target
-posenet : full stack [... 3*snippet]
-flownet : target [batch] sources [batch*numsrc]
-loss : target [batch]
-SynthesizeSingleScale: sources [batch, numsrc]
-FlowWarpMultiScale: sources [batch, numsrc]
 
-stacked image -> batch*snippet -> augmentation  -> "image" [batch*snippet]
--> "target" [batch] "sources" [batch, numsrc]
-"""
-
-
-def augmentation_factory(augment_probs=opts.AUGMENT_PROBS):
+def augmentation_factory(augment_probs):
     augmenters = []
     for key, prob in augment_probs.items():
         if key is "CropAndResize":
