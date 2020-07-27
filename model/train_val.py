@@ -74,7 +74,8 @@ class ModelTrainer(TrainValBase):
 
     def train_a_step(self, features):
         with tf.GradientTape() as tape:
-            # NOTE! preds = {"depth_ms": ..., "pose": ...} = model(image)
+            features = self.augment_data(features)
+            # preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = self.model(features)
             total_loss, loss_by_type = self.loss_object(preds, features)
 
@@ -204,14 +205,14 @@ def inspect_model(preds, features, step, steps_per_epoch):
     print("upconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
     print("depth3 ", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
     print("upconv3", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
-    # flow: [batch, num_src, height/4, width/4, 2] (4, 4, 32, 96, 2)
+    # flow: [batch, numsrc, height/4, width/4, 2] (4, 4, 32, 96, 2)
     print("flow0  ", np.quantile(preds["flow_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
-    # pose: [batch, num_src, 6]
+    # pose: [batch, numsrc, 6]
     print("pose_pr", preds["pose"][0, 0, :3].numpy(), preds["pose"][0, 1, :3].numpy())
-    # pose_gt: [batch, num_src, 4, 4]
+    # pose_gt: [batch, numsrc, 4, 4]
     print("pose_gt", features["pose_gt"][0, 0, :3, 3].numpy(), features["pose_gt"][0, 1, :3, 3].numpy())
     if "pose_LR" in preds:
-        # pose: [batch, num_src, 6]
+        # pose: [batch, numsrc, 6]
         print("T_LR_pr", preds["pose_LR"][0, 0, :3].numpy(), preds["pose_LR"][0, 1, :3].numpy())
         # stereo_T_LR: [batch, 4, 4]
         print("T_LR_gt", features["stereo_T_LR"][0, :3, 3].numpy(), features["stereo_T_LR"][0, :3, 3].numpy())

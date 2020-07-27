@@ -12,7 +12,7 @@ class ModelWrapper:
     tf.keras.Model output formats according to prediction methods
     1) preds = model(image_tensor) -> dict('disp_ms': disp_ms, 'pose': pose)
         disp_ms: list of [batch, height/scale, width/scale, 1]
-        pose: [batch, num_src, 6]
+        pose: [batch, numsrc, 6]
     2) preds = model.predict(image_tensor) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
     3) preds = model.predict({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
     """
@@ -144,9 +144,9 @@ class StereoPoseModelWrapper(ModelWrapper):
             posenet = self.models["posenet"]
             left_source, left_target = uf.split_into_source_and_target(features["image"])
             right_source, right_target = uf.split_into_source_and_target(features["image_R"])
-            num_src = opts.SNIPPET_LEN - 1
-            lr_input = layers.concatenate([right_target] * num_src + [left_target], axis=1)
-            rl_input = layers.concatenate([left_target] * num_src + [right_target], axis=1)
+            numsrc = opts.SNIPPET_LEN - 1
+            lr_input = layers.concatenate([right_target] * numsrc + [left_target], axis=1)
+            rl_input = layers.concatenate([left_target] * numsrc + [right_target], axis=1)
             # pose that transforms points from right to left (T_LR)
             pose_lr = posenet(lr_input)
             # pose that transforms points from left to right (T_RL)

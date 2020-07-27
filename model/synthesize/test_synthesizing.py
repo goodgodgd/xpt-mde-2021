@@ -78,7 +78,7 @@ def test_synthesize_batch_view():
         batch, height_sc, width_sc, _ = depth_scaled.get_shape().as_list()
         scale = int(width_ori // width_sc)
         # create synthesizer
-        synthesizer = SynthesizeSingleScale(shape=(batch, height_sc, width_sc), num_src=4, scale=scale)
+        synthesizer = SynthesizeSingleScale(shape=(batch, height_sc, width_sc), numsrc=4, scale=scale)
         # adjust intrinsic upto scale
         intrinsic_sc = layers.Lambda(lambda intrin: synthesizer.scale_intrinsic(intrin, scale),
                                      name=f"scale_intrin_sc{scale}")(intrinsic)
@@ -179,7 +179,7 @@ def test_pixel2cam():
 
 def test_transform_to_source():
     print("===== start test_transform_to_source")
-    batch, num_pts, num_src = (8, 6, 3)
+    batch, num_pts, numsrc = (8, 6, 3)
     # create integer coordinates
     coords = np.arange(1, 4*num_pts+1).reshape((num_pts, 4)).T
     coords[3, :] = 1
@@ -190,7 +190,7 @@ def test_transform_to_source():
     poses = np.identity(4)*2
     poses[:3, 3] = 1
     poses[3, 3] = 1
-    poses = np.tile(poses, (batch, num_src, 1, 1))
+    poses = np.tile(poses, (batch, numsrc, 1, 1))
     print(f"poses: {poses.shape}\n{poses[2, 1]}")
     poses = tf.constant(poses, dtype=tf.float32)
 
@@ -204,9 +204,9 @@ def test_transform_to_source():
 
 def test_pixel_weighting():
     print("===== start test_pixel_weighting")
-    batch, num_src, height, width = (8, 4, 5, 5)
+    batch, numsrc, height, width = (8, 4, 5, 5)
     # create random coordinates
-    pixel_coords = np.random.uniform(0.1, 3.9, (batch, num_src, 3, height*width))
+    pixel_coords = np.random.uniform(0.1, 3.9, (batch, numsrc, 3, height*width))
     # to check 'out of image' pixels
     pixel_coords[:, :, :, 0] = -1.5
     pixel_coords[:, :, :, 1] = 7
@@ -221,7 +221,7 @@ def test_pixel_weighting():
     print(f"pixel coords original \n{pixel_coords[1, 1, :, :6]}")
     print("----- start test neighbor_int_pixels")
 
-    # EXECUTE -> pixel_floorceil[batch, num_src, :, i] = [u_ceil, u_floor, v_ceil, v_floor]
+    # EXECUTE -> pixel_floorceil[batch, numsrc, :, i] = [u_ceil, u_floor, v_ceil, v_floor]
     pixel_floorceil = BilinearInterpolation().neighbor_int_pixels(pixel_coords, height, width)
 
     print(f"pixel coords floorceil \n{pixel_floorceil[1, 1, :, :6]}")
@@ -234,7 +234,7 @@ def test_pixel_weighting():
     # EXECUTE
     valid_mask = BilinearInterpolation().make_valid_mask(pixel_floorceil)
 
-    # EXECUTE -> weights[batch, num_src, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
+    # EXECUTE -> weights[batch, numsrc, :, i] = (w_uf_vf, w_uf_vc, w_uc_vf, w_uc_vc)
     weights = BilinearInterpolation().calc_neighbor_weights([pixel_coords, pixel_floorceil, valid_mask])
 
     print(f"pixel weights \n{weights[1, 1, :, :6]}")
@@ -252,15 +252,15 @@ def test_pixel_weighting():
 def test_reconstruct_bilinear_interp():
     print("===== start test_reconstruct_bilinear_interp")
     print("----- start test neighbor_int_pixels and make_valid_mask")
-    batch, num_src, height, width = (8, 4, 5, 5)
+    batch, numsrc, height, width = (8, 4, 5, 5)
 
     pixel_coords = np.meshgrid(np.arange(0, height), np.arange(0, width))
     pixel_coords = np.stack(pixel_coords, axis=0).reshape((1, 1, 2, 5, 5)).astype(np.float32)
     # add x coords by 0.3
     u_add = 1.3
     pixel_coords[0, 0, 0] += u_add
-    pixel_coords = np.tile(pixel_coords, (batch, num_src, 1, 1, 1))
-    pixel_coords = np.reshape(pixel_coords, (batch, num_src, 2, height*width))
+    pixel_coords = np.tile(pixel_coords, (batch, numsrc, 1, 1, 1))
+    pixel_coords = np.reshape(pixel_coords, (batch, numsrc, 2, height*width))
     pixel_coords = tf.constant(pixel_coords)
 
     # EXECUTE
@@ -269,15 +269,15 @@ def test_reconstruct_bilinear_interp():
     mask = BilinearInterpolation().make_valid_mask(pixel_floorceil)
 
     print("valid mask\n", mask[0, 0, 0].numpy().reshape((height, width)))
-    expected_mask = np.zeros((batch, num_src, height, width), dtype=np.float)
+    expected_mask = np.zeros((batch, numsrc, height, width), dtype=np.float)
     expected_mask[:, :, :4, :3] = 1
-    expected_mask = expected_mask.reshape((batch, num_src, 1, height*width))
+    expected_mask = expected_mask.reshape((batch, numsrc, 1, height*width))
     assert np.isclose(expected_mask, mask).all()
     print("!!! test neighbor_int_pixels and make_valid_mask passed")
 
     print("----- start test reconstruct_bilinear_interp")
     image = np.meshgrid(np.arange(0, height), np.arange(0, width))[0].reshape((1, 1, height, width, 1))
-    image = np.tile(image, (batch, num_src, 1, 1, 3)).astype(np.float32)
+    image = np.tile(image, (batch, numsrc, 1, 1, 3)).astype(np.float32)
     image = tf.constant(image)
 
     depth = np.ones((height, width)).reshape((1, height, width, 1))
@@ -287,7 +287,7 @@ def test_reconstruct_bilinear_interp():
     # EXECUTE
     recon_image = BilinearInterpolation()(image, pixel_coords, depth)
 
-    expected_image = (image + u_add) * expected_mask.reshape((batch, num_src, height, width, 1))
+    expected_image = (image + u_add) * expected_mask.reshape((batch, numsrc, height, width, 1))
     print("input image", image[0, 0, :, :, 0])
     print(f"expected image shifted by {u_add} along u-axis", expected_image[0, 0, :, :, 0])
     print("reconstructed image", recon_image[0, 0, :, :, 0])

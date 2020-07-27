@@ -73,9 +73,6 @@ def split_into_source_and_target(stacked_image):
     border = imheight*(opts.SNIPPET_LEN-1)
     source_image = stacked_image[:, :border]
     target_image = stacked_image[:, border:]
-    # source_image = tf.slice(stacked_image, (0, 0, 0, 0), (-1, imheight*(opts.SNIPPET_LEN-1), -1, -1))
-    # target_image = tf.slice(stacked_image, (0, imheight*(opts.SNIPPET_LEN-1), 0, 0),
-    #                         (-1, imheight, -1, -1))
     return source_image, target_image
 
 
@@ -181,12 +178,12 @@ def multi_scale_like_depth(image, depth_ms):
 def multi_scale_like_flow(image, flow_ms):
     """
     :param image: [batch, height, width, 3]
-    :param flow_ms: list of [batch, num_src, height/scale, width/scale, 1]
+    :param flow_ms: list of [batch, numsrc, height/scale, width/scale, 1]
     :return: image_ms: list of [batch, height/scale, width/scale, 3]
     """
     image_ms = []
     for i, flow in enumerate(flow_ms):
-        batch, num_src, height_sc, width_sc, _ = flow.get_shape().as_list()
+        batch, numsrc, height_sc, width_sc, _ = flow.get_shape().as_list()
         image_sc = layers.Lambda(lambda img: tf.image.resize(img, size=(height_sc, width_sc), method="bilinear"),
                                  name=f"resize_like_flow_{i}")(image)
         image_ms.append(image_sc)

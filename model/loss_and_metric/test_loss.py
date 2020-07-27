@@ -65,7 +65,7 @@ def test_photometric_loss_quality(suffix=""):
             cv2.imshow("photo loss", view)
             cv2.waitKey(WAIT_KEY)
 
-        losses = tf.stack(losses, axis=2)       # [batch, num_src, num_scales]
+        losses = tf.stack(losses, axis=2)       # [batch, numsrc, num_scales]
         print("all photometric loss:", tf.reduce_sum(losses, axis=1))
         print("batch mean photometric loss:", tf.reduce_sum(losses, axis=[1, 2]))
         print("scale mean photometric loss:", tf.reduce_sum(losses, axis=[0, 1]))
@@ -139,7 +139,7 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
             recon_target = uf.to_uint8_image(synt_target).numpy()
             recon_image = cv2.resize(recon_target[0, 0], (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_NEAREST)
 
-    losses = tf.stack(losses, axis=2)   # [batch, num_src, num_scales]
+    losses = tf.stack(losses, axis=2)   # [batch, numsrc, num_scales]
     batch_loss = tf.reduce_sum(losses, axis=[1, 2])
     scale_loss = tf.reduce_sum(losses, axis=[0, 1])
     print("all photometric loss:", losses)
@@ -164,14 +164,14 @@ def test_smootheness_loss_quantity():
             intrinsic: camera projection matrix [batch, 3, 3]
     :param predictions: {disp_ms, pose}
             disp_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
-            pose: poses that transform points from target to source [batch, num_src, 6]
+            pose: poses that transform points from target to source [batch, numsrc, 6]
     :return augm_data: {depth_ms, source, target, target_ms, synth_target_ms}
             depth_ms: multi scale depth, list of [batch, height/scale, width/scale, 1]
-            source: source frames [batch, num_src*height, width, 3]
+            source: source frames [batch, numsrc*height, width, 3]
             target: target frame [batch, height, width, 3]
             target_ms: multi scale target frame, list of [batch, height/scale, width/scale, 3]
             synth_target_ms: multi scale synthesized target frames generated from each source image,
-                            list of [batch, num_src, height/scale, width/scale, 3]
+                            list of [batch, numsrc, height/scale, width/scale, 3]
     """
 
     for i, features in enumerate(dataset):

@@ -20,14 +20,14 @@ class PWCNet:
         input_shape = (snippet * height, width, channel)
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="flownet_input")
         # target: [batch, height, width, channel]
-        # source: [batch*num_src, height, width, channel]
+        # source: [batch*numsrc, height, width, channel]
         target, sources = self.split_target_and_sources(input_tensor)
 
         # encode left (target) and right (source) image
         c1l, c2l, c3l, c4l, c5l, c6l = self.pwc_encode(target, "_l")
         c1r, c2r, c3r, c4r, c5r, c6r = self.pwc_encode(sources, "_r")
 
-        # repeate target numsrc times -> [batch*num_src, height/scale, width/scale, channel]
+        # repeate target numsrc times -> [batch*numsrc, height/scale, width/scale, channel]
         c1l, c2l, c3l, c4l, c5l, c6l = self.repeat_features((c1l, c2l, c3l, c4l, c5l, c6l), numsrc)
 
         corr6 = self.correlation(c6l, c6r, 6, "pwc_flow6_corr")
@@ -42,7 +42,7 @@ class PWCNet:
         flow_ms = [flow2, flow3, flow4, flow5]
 
         # reshape back to normal bactch size
-        # -> list of [batch, num_src, height//scale, width//scale, channel]
+        # -> list of [batch, numsrc, height//scale, width//scale, channel]
         flow_ms = self.reshape_batch_back(flow_ms)
         pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flow_ms": flow_ms}, name="PWCNet")
         return pwcnet
@@ -107,11 +107,11 @@ class PWCNet:
     def upconv_flow(self, p, cp_l, cp_r, flow_scale, up_flowq, up_featq, up=True):
         """
         :param p: current layer level, q = p+1, feature resolution is (H/2^p, W/2^p)
-        :param cp_l: p-th encoded feature from left image [batch*num_src, height/2^p, width/2^p, channel_p]
-        :param cp_r: p-th encoded feature from left image [batch*num_src, height/2^p, width/2^p, channel_p]
+        :param cp_l: p-th encoded feature from left image [batch*numsrc, height/2^p, width/2^p, channel_p]
+        :param cp_r: p-th encoded feature from left image [batch*numsrc, height/2^p, width/2^p, channel_p]
         :param flow_scale: flow scale factor for flow scale to be 1/20
-        :param up_flowq: upsampled flow from q-th level [batch*num_src, height/2^p, width/2^p, 2]
-        :param up_featq: upsampled flow from q-th level [batch*num_src, height/2^p, width/2^p, channel_q]
+        :param up_flowq: upsampled flow from q-th level [batch*numsrc, height/2^p, width/2^p, 2]
+        :param up_featq: upsampled flow from q-th level [batch*numsrc, height/2^p, width/2^p, channel_q]
         :param up: whether to return upsample flow and feature
         :return:
         """

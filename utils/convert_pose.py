@@ -35,7 +35,7 @@ def pose_rvec2matr_batch(poses):
     """
     # shape to [batch, N, 6, 1]
     poses = tf.expand_dims(poses, -1)
-    batch, num_src, _, _ = poses.get_shape().as_list()
+    batch, numsrc, _, _ = poses.get_shape()
     # split into translation and rotation [batch, N, 3]
     trans = poses[:, :, :3]
     uvec = poses[:, :, 3:]
@@ -46,7 +46,7 @@ def pose_rvec2matr_batch(poses):
     w1 = uvec[:, :, 0:1]
     w2 = uvec[:, :, 1:2]
     w3 = uvec[:, :, 2:3]
-    z = tf.zeros(shape=(batch, num_src, 1, 1))
+    z = tf.zeros(shape=(batch, numsrc, 1, 1))
 
     # w_hat.shape = [batch, N, 9, 1]
     # NOTE: 원래 책에는 이렇게 하라고 되어 있지만 이렇게 하면 반대 회전이 나옴
@@ -54,19 +54,19 @@ def pose_rvec2matr_batch(poses):
     # 회전 방향을 맞추기 위해 부호 반대로
     w_hat = tf.concat([z, w3, -w2, -w3, z, w1, w2, -w1, z], axis=2)
     # w_hat.shape = [batch, N, 3, 3]
-    w_hat = tf.reshape(w_hat, shape=(batch, num_src, 3, 3))
+    w_hat = tf.reshape(w_hat, shape=(batch, numsrc, 3, 3))
 
     # identity.shape = [1, 1, 3, 3]
     identity = tf.expand_dims(tf.expand_dims(tf.eye(3), axis=0), axis=0)
     # identity.shape = [batch, N, 3, 3]
-    identity = tf.tile(identity, (batch, num_src, 1, 1))
+    identity = tf.tile(identity, (batch, numsrc, 1, 1))
     tmpmat = identity + w_hat*tf.sin(unorm) + tf.matmul(w_hat, w_hat)*(1 - tf.cos(unorm))
     rotmat = tf.where(tf.abs(unorm) < 0.00001, identity, tmpmat)
 
     tmat = tf.concat([rotmat, trans], axis=3)
-    last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, num_src, 1, 1))
+    last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, numsrc, 1, 1))
     tmat = tf.concat([tmat, last_row], axis=2)
-    tmat = tf.reshape(tmat, (batch, num_src, 4, 4))
+    tmat = tf.reshape(tmat, (batch, numsrc, 4, 4))
     return tmat
 
 
@@ -75,6 +75,7 @@ def pose_rvec2matr(poses):
     :param poses: poses with twist coordinates in np.array, (tx, ty, tz, u1, u2, u3) [N, 6]
     :return: poses in transformation matrix [N, 4, 4]
     """
+    poses = np.copy(poses)
     poses = np.expand_dims(poses, axis=-1)
     trj_len, _, _ = poses.shape
     trans = poses[:, :3]
@@ -108,21 +109,45 @@ def pose_rvec2matr(poses):
 
 def pose_matr2rvec_batch(poses):
     """ shape checked!
-    :param poses: poses in transformation matrix as tf.tensor, [batch, num_src, 4, 4]
-    :return: poses with twist coordinates as tf.tensor, [batch, num_src, 6]
+    :param poses: poses in transformation matrix as tf.tensor, [batch, numsrc, 4, 4]
+    :return: poses with twist coordinates as tf.tensor, [batch, numsrc, 6]
     """
+    poses = np.copy(poses)
     # matrix에서 twist 형식으로 변환
     R = poses[:, :, :3, :3]
     theta = tf.math.acos((tf.linalg.trace(R) - 1.) / 2.)
-    # theta: [batch, num_src] -> [batch, num_src, 1]
+    # theta: [batch, numsrc] -> [batch, numsrc, 1]
     theta = tf.expand_dims(theta, -1)
-    # axis: [batch, num_src, 3]
+    # axis: [batch, numsrc, 3]
     axis = tf.stack([R[:, :, 1, 2] - R[:, :, 2, 1],
                      R[:, :, 2, 0] - R[:, :, 0, 2],
                      R[:, :, 0, 1] - R[:, :, 1, 0]], axis=-1)
     rvec = tf.where(tf.abs(theta) < 0.00001, axis / 2., axis / (2 * tf.math.sin(theta)) * theta)
     trans = poses[:, :, :3, 3]
     pose_vec = tf.concat([trans, rvec], axis=-1)
+    return pose_vec
+
+
+def pose_matr2rvec(poses):
+    """ shape checked!
+    :param poses: poses in transformation matrix as np.array, [N, 4, 4]
+    :return: poses with twist coordinates as np.array, [N, 6]
+    """
+    # matrix에서 twist 형식으로 변환
+    R = poses[:, :3, :3]
+    theta = np.arccos((np.trace(R, axis1=1, axis2=2) - 1.) / 2.)
+    # theta: [batch] -> [batch, 1]
+    theta = theta[:, np.newaxis]
+    # axis: [batch, 3]
+    axis = np.stack([R[:, 1, 2] - R[:, 2, 1],
+                     R[:, 2, 0] - R[:, 0, 2],
+                     R[:, 0, 1] - R[:, 1, 0]], axis=-1)
+    # rvec: [batch, 3]
+    rvec = np.where(np.abs(theta) < 0.00001, axis / 2., axis / (2 * np.sin(theta)) * theta)
+    # trans: [batch, 3]
+    trans = poses[:, :3, 3]
+    # pose_vec: [batch, 6]
+    pose_vec = np.concatenate([trans, rvec], axis=-1)
     return pose_vec
 
 

@@ -115,9 +115,9 @@ def evaluate_depth(depth_pred, depth_true):
 def evaluate_pose(pose_pred, pose_true):
     """
     :param pose_pred: predicted source poses that transforms points in target to source frame
-                    format=(tx, ty, tz, ux, uy, uz) shape=[num_src, 6]
+                    format=(tx, ty, tz, ux, uy, uz) shape=[numsrc, 6]
     :param pose_true: ground truth source poses that transforms points in target to source frame
-                    format=(4x4 transformation), shape=[num_src, 4, 4]
+                    format=(4x4 transformation), shape=[numsrc, 4, 4]
     """
     # convert source and target poses to relative poses w.r.t first source pose
     # in 4x4 transformation matrix form

@@ -1,6 +1,5 @@
 import os
 import os.path as op
-import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
@@ -11,7 +10,6 @@ import shutil
 from config import opts
 import utils.util_funcs as uf
 import model.loss_and_metric.losses as lm
-from model.synthesize.synthesize_base import SynthesizeMultiScale
 
 
 def save_log(epoch, results_train, results_val):
