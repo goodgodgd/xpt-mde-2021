@@ -25,7 +25,6 @@ class TotalAugment:
     def __call__(self, features):
         features = self.augment_oneside(features)
         if "image_R" in features:
-            print("right side sugment")
             features = self.augment_oneside(features, "_R")
         return features
 

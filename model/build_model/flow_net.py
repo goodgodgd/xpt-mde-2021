@@ -17,7 +17,7 @@ class PWCNet:
     def __call__(self):
         batch, snippet, height, width, channel = self.total_shape
         numsrc = snippet - 1
-        input_shape = (snippet * height, width, channel)
+        input_shape = (snippet, height, width, channel)
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="flownet_input")
         # target: [batch, height, width, channel]
         # source: [batch*numsrc, height, width, channel]
@@ -55,8 +55,8 @@ class PWCNet:
         """
         batch, snippet, height, width, channel = self.total_shape
         numsrc = snippet - 1
-        target = input_tensor[:, numsrc*height:]
-        sources = input_tensor[:, :numsrc*height]
+        target = input_tensor[:, -1]
+        sources = input_tensor[:, :-1]
         sources = tf.reshape(sources, (batch*numsrc, height, width, channel))
         return target, sources
 
@@ -311,15 +311,13 @@ def test_lambda_layer():
     x = tf.random.uniform((batch, height, width, channel), -2, 2)
     conv2d = lo.CustomConv2D(activation=layers.LeakyReLU(0.1))
     y = convnet(conv2d, x)
-    print("normally build convnet, y shape:", y.get_shape())
+    print("normally build convnet, output shape:", y.get_shape())
 
     try:
-        y = layers.Lambda(lambda inputs: convnet(conv2d, inputs),
-                          name=f"convnet")(x)
-        print("lambda layer output, y shape:", y.get_shape())
+        y = layers.Lambda(lambda inputs: convnet(conv2d, inputs), name=f"convnet")(x)
         print("!!! test_lambda_layer passed")
     except ValueError as ve:
-        print("[test_lambda_layer]", ve)
+        print("!!! Exception raised in test_lambda_layer:", ve)
 
 
 def convnet(conv_op, x):
@@ -332,7 +330,7 @@ def convnet(conv_op, x):
 def test_pwcnet():
     print("\n===== start test_pwcnet")
     total_shape = batch, snippet, height, width, channel = (8, 4, 128, 256, 10)
-    input_tensor = tf.random.uniform((batch, snippet*height, width, channel), -2, 2)
+    input_tensor = tf.random.uniform(total_shape, -2, 2)
     conv_layer = lo.CustomConv2D(activation=tf.keras.layers.LeakyReLU(0.1),
                                  kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.025),
                                  kernel_regularizer=tf.keras.regularizers.l2(0.0004)
@@ -340,13 +338,14 @@ def test_pwcnet():
 
     # EXECUTE
     pwc_net = PWCNet(total_shape, conv_layer)()
-    pwc_net.summary()
+    # pwc_net.summary()
 
-    flows = run_net(pwc_net, input_tensor)
-    for flow in flows:
+    flow_ms = run_net(pwc_net, input_tensor)
+    flow_ms = flow_ms["flow_ms"]
+    for flow in flow_ms:
         print("PWCNet flow shape:", flow.get_shape())
-    assert flows[0].get_shape() == (batch, snippet - 1, height // 4, width // 4, 2)
-    assert flows[1].get_shape() == (batch, snippet - 1, height // 8, width // 8, 2)
+    assert flow_ms[0].get_shape() == (batch, snippet - 1, height // 4, width // 4, 2)
+    assert flow_ms[1].get_shape() == (batch, snippet - 1, height // 8, width // 8, 2)
     print("!!! test_pwcnet passed")
 
 
@@ -358,10 +357,10 @@ def run_net(net, input_tensor):
 if __name__ == "__main__":
     test_correlation()
     test_warp_simple()
-    # test_warp_multiple()
-    # test_conv2d_5dtensor()
-    # test_layer_input()
-    # test_reshape_tensor()
-    # test_lambda_layer()
-    # test_pwcnet()
+    test_warp_multiple()
+    test_conv2d_5dtensor()
+    test_layer_input()
+    test_reshape_tensor()
+    test_lambda_layer()
+    test_pwcnet()
 

@@ -104,6 +104,9 @@ class TfrecordGenerator:
         dataset = dataset.batch(batch_size=self.batch_size, drop_remainder=True)
         return dataset
 
+    def get_total_steps(self):
+        return self.config["length"] // self.batch_size
+
 
 # --------------------------------------------------------------------------------
 # TESTS

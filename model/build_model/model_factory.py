@@ -141,41 +141,60 @@ class ExponentialActivation:
 
 # ==================================================
 import os.path as op
-import cv2
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 
 
 def test_build_model():
+    print("\n===== start test_build_model")
     vode_model = ModelFactory(stereo=True).get_model()
     vode_model.summary()
     print("model input shapes:")
     for i, input_tensor in enumerate(vode_model.inputs()):
         print("input", i, input_tensor.name, input_tensor.get_shape())
 
-    print("model output shapes:")
-    for name, output in vode_model.outputs().items():
-        if isinstance(output, list):
-            for out in output:
-                print(name, out.name, out.get_shape())
-        else:
-            print(name, output.name, output.get_shape())
+    print_dict_tensor_shape(vode_model.outputs(), "model output")
 
     # record model architecture into text and image files
     vode_model.plot_model(op.dirname(opts.PROJECT_ROOT))
     summary_file = op.join(opts.PROJECT_ROOT, "../summary.txt")
     with open(summary_file, 'w') as fh:
         vode_model.summary(print_fn=lambda x: fh.write(x + '\n'))
+    print("!!! test_build_model passed")
 
 
 def test_model_predictions():
+    print("\n===== start test_model_predictions")
     tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
     dataset = tfrgen.get_generator()
+    total_steps = tfrgen.get_total_steps()
+    vode_model = ModelFactory(stereo=True).get_model()
 
+    print("----- model wrapper __call__() output")
     for bi, features in enumerate(dataset):
-        pass
+        print("\nbatch index:", bi)
+        outputs = vode_model(features)
+        print_dict_tensor_shape(outputs, "output")
+        if bi > 0:
+            break
+
+    print("\n----- model wrapper predict() output")
+    predictions = vode_model.predict(dataset, total_steps)
+    print_dict_tensor_shape(predictions, "predict")
+
+    print("!!! test_model_predictions passed")
+
+
+def print_dict_tensor_shape(dictdata, title):
+    for name, data in dictdata.items():
+        if isinstance(data, list):
+            for datum in data:
+                print(f"{title}: key={name}, shape={datum.get_shape()}")
+        else:
+            print(f"{title}: key={name}, shape={data.get_shape()}")
 
 
 if __name__ == "__main__":
-    test_build_model()
+    # test_build_model()
+    test_model_predictions()
 

@@ -26,9 +26,9 @@ class ModelWrapper:
         return predictions
 
     def predict(self, dataset, total_steps):
-        print(f"===== [ModelWrapper] start prediction")
         outputs = {name[:-3]: [] for name, model in self.models.items()}
         for step, features in enumerate(dataset):
+            features = self.augmenter(features)
             predictions = self.predict_batch(features)
             outputs = self.append_outputs(predictions, outputs)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
@@ -49,14 +49,14 @@ class ModelWrapper:
         return predictions
 
     def append_outputs(self, predictions, outputs, suffix=""):
-        if "pose" + suffix in predictions:
+        if ("pose" + suffix in predictions) and ("pose" + suffix in outputs):
             pose = predictions["pose" + suffix]         # [batch, numsrc, 6]
             outputs["pose" + suffix].append(pose)
         # only the highest resolution ouput is used for evaluation
-        if "depthnet" + suffix in self.models:
+        if ("depth_ms" + suffix in predictions) and ("depth" + suffix in outputs):
             depth_ms = predictions["depth_ms" + suffix] # [batch, height, width, 1]
             outputs["depth" + suffix].append(depth_ms[0])
-        if "flownet" + suffix in self.models:
+        if ("flow_ms" + suffix in predictions) and ("flow" + suffix in outputs):
             flow_ms = predictions["flow_ms" + suffix]   # [batch, numsrc, height, width, 2]
             outputs["flow" + suffix].append(flow_ms[0])
         return outputs
@@ -122,12 +122,12 @@ class StereoModelWrapper(ModelWrapper):
         return predictions
 
     def predict(self, dataset, total_steps):
-        print(f"===== [ModelWrapper] start prediction")
         outputs = {name[:-3]: [] for name, model in self.models.items()}
         outputs_right = {name[:-3] + "_R": [] for name, model in self.models.items()}
         outputs.update(outputs_right)
 
         for step, features in enumerate(dataset):
+            features = self.augmenter(features)
             predictions = self.predict_batch(features)
             preds_right = self.predict_batch(features, "_R")
             predictions.update(preds_right)
@@ -137,12 +137,16 @@ class StereoModelWrapper(ModelWrapper):
 
         print("")
         # concatenate batch outputs along batch axis
+        results = dict()
         for key, data in outputs.items():
-            outputs[key] = tf.concat(data, axis=0)
-        return outputs
+            if data:
+                results[key] = tf.concat(data, axis=0)
+            else:
+                print(f"{key} is EMPTY!!")
+        return results
 
 
-class StereoPoseModelWrapper(ModelWrapper):
+class StereoPoseModelWrapper(StereoModelWrapper):
     def __init__(self, models, augmenter):
         super().__init__(models, augmenter)
 
