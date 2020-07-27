@@ -33,9 +33,9 @@ class TotalLoss:
         :return loss: final loss of frames in batch (scalar)
                 losses: list of losses computed from loss_objects
         """
-        augm_data = self.augment_data(features, predictions)
+        augm_data = self.append_data(features, predictions)
         if self.stereo:
-            augm_data_rig = self.augment_data(features, predictions, "_R")
+            augm_data_rig = self.append_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
             augm_data_stereo = self.synethesize_stereo(features, predictions, augm_data)
             augm_data.update(augm_data_stereo)
@@ -53,7 +53,7 @@ class TotalLoss:
         total_loss = layers.Lambda(lambda x: tf.reduce_sum(x), name="total_loss")(losses)
         return total_loss, loss_by_type
 
-    def augment_data(self, features, predictions, suffix=""):
+    def append_data(self, features, predictions, suffix=""):
         """
         gather additional data required to compute losses
         :param features: {image, intrinsic}
@@ -160,7 +160,7 @@ class PhotometricLossMultiScale(PhotometricLoss):
 
     def __call__(self, features, predictions, augm_data):
         """
-        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        desciptions of inputs are available in 'TotalLoss.append_data()'
         :return: photo_loss [batch]
         """
         original_target_ms = augm_data["target_ms" + self.key_suffix]
@@ -239,7 +239,7 @@ class StereoDepthLoss(PhotometricLoss):
 
     def __call__(self, features, predictions, augm_data):
         """
-        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        desciptions of inputs are available in 'TotalLoss.append_data()'
         :return: photo_loss [batch]
         """
         # synthesize left image from right image
@@ -294,7 +294,7 @@ class FlowWarpLossMultiScale(PhotometricLoss):
 
     def __call__(self, features, predictions, augm_data):
         """
-        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        desciptions of inputs are available in 'TotalLoss.append_data()'
         :return: photo_loss [batch]
         """
         flow_target_ms = augm_data["flow_target_ms" + self.key_suffix]

@@ -51,6 +51,9 @@ class Preprocess(AugmentBase):
 
     def __call__(self, features, suffix=""):
         """
+        !!NOTE!!
+        when changing input dict key or value, you MUST copy a dict like
+            feat_aug = {key: val for key, val in features.items()}
         :return: append features below
             image_aug: [batch*snippet, height, width, 3]
             depth_gt_aug: [batch, height, width, 1]
@@ -61,18 +64,19 @@ class Preprocess(AugmentBase):
         batch, snippet, height, width, channels = image5d.get_shape()
         numsrc = snippet - 1
 
+        feat_aug = {key: val for key, val in features.items()}
         # to use tf.image functions, reshape to [batch*snippet, height, width, 3]
         image_aug = tf.reshape(image5d, (batch*snippet, height, width, channels))
-        features["image_aug" + suffix] = image_aug
+        feat_aug["image_aug" + suffix] = image_aug
         # copy intrinsic
-        features["intrinsic_aug" + suffix] = tf.reshape(features["intrinsic" + suffix], (batch, 3, 3))
+        feat_aug["intrinsic_aug" + suffix] = tf.reshape(feat_aug["intrinsic" + suffix], (batch, 3, 3))
         # copy pose_gt
         if "pose_gt" + suffix in features:
-            features["pose_gt_aug" + suffix] = tf.reshape(features["pose_gt" + suffix], (batch, numsrc, 4, 4))
+            feat_aug["pose_gt_aug" + suffix] = tf.reshape(feat_aug["pose_gt" + suffix], (batch, numsrc, 4, 4))
         # copy depth_gt
         if "depth_gt" + suffix in features:
-            features["depth_gt_aug" + suffix] = tf.reshape(features["depth_gt" + suffix], (batch, height, width, 1))
-        return features
+            feat_aug["depth_gt_aug" + suffix] = tf.reshape(feat_aug["depth_gt" + suffix], (batch, height, width, 1))
+        return feat_aug
 
 
 class Postprocess(AugmentBase):
