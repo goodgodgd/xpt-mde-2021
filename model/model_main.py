@@ -35,12 +35,12 @@ def train(final_epoch=opts.EPOCHS):
     for epoch in range(initial_epoch, final_epoch):
         print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
         result_train = trainer.run_an_epoch(dataset_train)
-        result_val = validater.run_an_epoch(dataset_val)
+        # result_val = validater.run_an_epoch(dataset_val)
 
         print("save intermediate results ...")
-        log.save_reconstruction_samples(model, dataset_val, val_steps, epoch)
-        save_model(model, result_val)
-        log.save_log(epoch, result_train, result_val)
+        # log.save_reconstruction_samples(model, dataset_val, val_steps, epoch)
+        # save_model(model, result_val)
+        # log.save_log(epoch, result_train, result_val)
 
 
 def set_configs():

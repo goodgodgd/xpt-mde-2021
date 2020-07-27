@@ -43,6 +43,7 @@ class TrainValBase:
         results = []
         for step, features in enumerate(dataset):
             start = time.time()
+            print("run a batch:", features.keys())
             preds, loss, loss_by_type = self.run_a_batch(features)
             batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
             uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
@@ -73,8 +74,8 @@ class ModelTrainer(TrainValBase):
         return self.train_a_step(features)
 
     def train_a_step(self, features):
+        print("train a step", features.keys())
         with tf.GradientTape() as tape:
-            features = self.augment_data(features)
             # preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = self.model(features)
             total_loss, loss_by_type = self.loss_object(preds, features)

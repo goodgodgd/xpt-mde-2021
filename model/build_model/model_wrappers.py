@@ -1,6 +1,5 @@
 import numpy as np
 import tensorflow as tf
-from tensorflow.keras import layers
 import os.path as op
 
 from config import opts
@@ -8,28 +7,19 @@ import utils.util_funcs as uf
 
 
 class ModelWrapper:
-    """
-    tf.keras.Model output formats according to prediction methods
-    1) preds = model(image_tensor) -> dict('disp_ms': disp_ms, 'pose': pose)
-        disp_ms: list of [batch, height/scale, width/scale, 1]
-        pose: [batch, numsrc, 6]
-    2) preds = model.predict(image_tensor) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
-    3) preds = model.predict({'image':, ...}) -> [disp_s1, disp_s2, disp_s4, disp_s8, pose]
-    """
     def __init__(self, models, augmenter):
         self.models = models
         self.augmenter = augmenter
 
     def __call__(self, features):
         features = self.augmenter(features)
-        predictions = self.predict_batch(features)
+        predictions = self.predict_batch(features, "image_aug")
         return predictions
 
     def predict(self, dataset, total_steps):
         outputs = {name[:-3]: [] for name, model in self.models.items()}
         for step, features in enumerate(dataset):
-            features = self.augmenter(features)
-            predictions = self.predict_batch(features)
+            predictions = self.predict_batch(features, "image5d")
             outputs = self.append_outputs(predictions, outputs)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
 
@@ -39,11 +29,14 @@ class ModelWrapper:
             outputs[key] = np.concatenate(data, axis=0)
         return outputs
 
-    def predict_batch(self, features, suffix=""):
+    def predict_batch(self, features, imkey, suffix=""):
         predictions = dict()
         for netname, model in self.models.items():
-            pred = model(features["image_aug" + suffix])
+            pred = model(features[imkey + suffix])
             predictions.update(pred)
+
+        if "depth_ms" in predictions:
+            predictions["disp_ms"] = uf.safe_reciprocal_number_ms(predictions["depth_ms"])
 
         predictions = {key + suffix: value for key, value in predictions.items()}
         return predictions
@@ -116,8 +109,8 @@ class StereoModelWrapper(ModelWrapper):
 
     def __call__(self, features):
         features = self.augmenter(features)
-        predictions = self.predict_batch(features)
-        preds_right = self.predict_batch(features, "_R")
+        predictions = self.predict_batch(features, "image_aug")
+        preds_right = self.predict_batch(features, "image_aug", "_R")
         predictions.update(preds_right)
         return predictions
 
@@ -127,9 +120,8 @@ class StereoModelWrapper(ModelWrapper):
         outputs.update(outputs_right)
 
         for step, features in enumerate(dataset):
-            features = self.augmenter(features)
-            predictions = self.predict_batch(features)
-            preds_right = self.predict_batch(features, "_R")
+            predictions = self.predict_batch(features, "image5d")
+            preds_right = self.predict_batch(features, "image5d", "_R")
             predictions.update(preds_right)
             outputs = self.append_outputs(predictions, outputs)
             outputs = self.append_outputs(predictions, outputs, "_R")
@@ -152,8 +144,8 @@ class StereoPoseModelWrapper(StereoModelWrapper):
 
     def __call__(self, features):
         features = self.augmenter(features)
-        predictions = self.predict_batch(features)
-        preds_right = self.predict_batch(features, "_R")
+        predictions = self.predict_batch(features, "image_aug")
+        preds_right = self.predict_batch(features, "image_aug", "_R")
         predictions.update(preds_right)
         if "posenet" in self.models:
             stereo_pose = self.predict_stereo_pose(features)

@@ -152,9 +152,9 @@ class CropAndResize(AugmentBase):
         """
         imsize = tf.cast(imsize, tf.float32)
         # size: [1, 3, 3], contents: [[0, 0, x1_ratio*width], [0, 0, y1_ratio*height], [0, 0, 0]]
-        center_change = tf.stack([tf.concat([0., 0., boxes[0, 1]*imsize[1]], axis=0),
-                                  tf.concat([0., 0., boxes[0, 0]*imsize[0]], axis=0),
-                                  tf.concat([0., 0., 0.], axis=0)],
+        center_change = tf.stack([tf.stack([0., 0., boxes[0, 1]*imsize[1]], axis=0),
+                                  tf.stack([0., 0., boxes[0, 0]*imsize[0]], axis=0),
+                                  tf.stack([0., 0., 0.], axis=0)],
                                  axis=0)
         # cx'=cx-x1, cy'=cy-y1
         intrin_crop = intrinsic - center_change
@@ -244,7 +244,7 @@ class ColorJitter(AugmentBase):
         image = (image + 1.) / 2.
         gamma = tf.random.uniform((), minval=0.5, maxval=1.5)
         saturation = tf.random.uniform((), minval=0.5, maxval=1.5)
-        param = tf.concat([gamma, saturation], axis=0)
+        param = tf.stack([gamma, saturation], axis=0)
         image = tf.image.adjust_saturation(image, saturation)
         image = tf.image.adjust_gamma(image, gamma=gamma, gain=1.)
         image = image * 2. - 1.
