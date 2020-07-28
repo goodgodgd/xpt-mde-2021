@@ -15,16 +15,16 @@ class FlowWarpMultiScale:
         self.suffix = ""
 
     @shape_check
-    def __call__(self, src_img_stacked, flow_ms):
+    def __call__(self, source_image, flow_ms):
         """
-        :param src_img_stacked: source images stacked vertically [batch, height*numsrc, width, 3]
+        :param source_image: source images [batch, numsrc, height, width, 3]
         :param flow_ms: predicted optical flow from source to target in multi scale,
                         list of [batch, numsrc, height/scale, width/scale, 2] (scale: 1, 2, 4, 8)
         :return: reconstructed target view in multi scale, list of [batch, numsrc, height/scale, width/scale, 3]}
         """
         warped_targets = []
         for flow_sc in flow_ms:
-            src_img_sc = self.reshape_source_images(src_img_stacked, flow_sc)
+            src_img_sc = self.reshape_source_images(source_image, flow_sc)
             pixel_coords_sc = self.flow_to_pixel_coordinates(flow_sc)
             # construct a new graph for each scale
             warp_target_sc = BilinearInterpolation()(src_img_sc, pixel_coords_sc)
@@ -32,21 +32,20 @@ class FlowWarpMultiScale:
         return warped_targets
 
     @shape_check
-    def reshape_source_images(self, src_img_stacked, flow_sc):
+    def reshape_source_images(self, source_image, flow_sc):
         """
-        :param src_img_stacked [batch, height*numsrc, width, 3]
+        :param source_image: source images [batch, numsrc, height, width, 3]
         :param flow_sc [batch, numsrc, height/scale, width/scale, 2]
         :return: reorganized source images [batch, numsrc, height/scale, width/scale, 3]
         """
-        batch, numsrc, height, width, _ = flow_sc.get_shape()
-        _, stacked_height, width_orig, _ = src_img_stacked.get_shape()
-        height_orig = stacked_height // numsrc
-        # reshape image -> (batch*numsrc, height_orig, width_orig, 3)
-        source_images = tf.reshape(src_img_stacked, shape=(batch * numsrc, height_orig, width_orig, 3))
-        # resize image (scaled) -> (batch*numsrc, height, width, 3)
-        scaled_image = tf.image.resize(source_images, size=(height, width), method="bilinear")
+        batch, numsrc, height_sc, width_sc, _ = flow_sc.get_shape()
+        batch, numsrc, height_ori, width_ori, _ = source_image.get_shape()
+        # reshape image -> (batch*numsrc, height_ori, width_ori, 3)
+        source_images = tf.reshape(source_image, shape=(batch * numsrc, height_ori, width_ori, 3))
+        # resize image (scaled) -> (batch*numsrc, height_sc, width_sc, 3)
+        scaled_image = tf.image.resize(source_images, size=(height_sc, width_sc), method="bilinear")
         # reshape image -> (batch, numsrc, height, width, 3)
-        scaled_image = tf.reshape(scaled_image, shape=(batch, numsrc, height, width, 3))
+        scaled_image = tf.reshape(scaled_image, shape=(batch, numsrc, height_sc, width_sc, 3))
         return scaled_image
 
     def flow_to_pixel_coordinates(self, flow):

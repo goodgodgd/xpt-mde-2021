@@ -9,15 +9,15 @@ from model.loss_and_metric.metric import compute_metric_pose
 from model.model_util.distributer import DistributionStrategy, ReplicaOutputIntegrator
 
 
-def train_val_factory(mode_sel, model, loss_object, steps_per_epoch, stereo, optimizer):
+def train_val_factory(mode_sel, model, augmenter, loss_object, steps_per_epoch, stereo, optimizer):
     if mode_sel == "eager":
-        trainer = ModelTrainer(model, loss_object, steps_per_epoch, stereo, optimizer)
+        trainer = ModelTrainer(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         validater = ModelValidater(model, loss_object, steps_per_epoch, stereo)
     elif mode_sel == "graph":
-        trainer = ModelTrainerGraph(model, loss_object, steps_per_epoch, stereo, optimizer)
+        trainer = ModelTrainerGraph(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         validater = ModelValidaterGraph(model, loss_object, steps_per_epoch, stereo)
     elif mode_sel == "distributed":
-        trainer = ModelTrainerDistrib(model, loss_object, steps_per_epoch, stereo, optimizer)
+        trainer = ModelTrainerDistrib(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         validater = ModelValidaterDistrib(model, loss_object, steps_per_epoch, stereo)
     else:
         raise uc.WrongInputException(f"training mode '{mode_sel}' is NOT available")
@@ -26,8 +26,9 @@ def train_val_factory(mode_sel, model, loss_object, steps_per_epoch, stereo, opt
 
 
 class TrainValBase:
-    def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer=None):
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter=None, optimizer=None):
         self.model = model
+        self.augmenter = augmenter
         self.loss_object = loss_object
         self.train_val_name = "train_val"
         self.steps_per_epoch = steps_per_epoch
@@ -65,8 +66,8 @@ class TrainValBase:
 
 
 class ModelTrainer(TrainValBase):
-    def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer):
-        super().__init__(model, loss_object, steps_per_epoch, stereo, optimizer)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter, optimizer):
+        super().__init__(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         self.set_name("Train (eager)")
 
     def run_a_batch(self, features):
@@ -74,6 +75,7 @@ class ModelTrainer(TrainValBase):
 
     def train_a_step(self, features):
         with tf.GradientTape() as tape:
+            features = self.augmenter(features)
             # preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = self.model(features)
             total_loss, loss_by_type = self.loss_object(preds, features)
@@ -89,8 +91,8 @@ class ModelTrainer(TrainValBase):
 
 
 class ModelTrainerGraph(ModelTrainer):
-    def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer):
-        super().__init__(model, loss_object, steps_per_epoch, stereo, optimizer)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter, optimizer):
+        super().__init__(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         self.set_name("Train (graph)")
 
     @tf.function
@@ -99,8 +101,8 @@ class ModelTrainerGraph(ModelTrainer):
 
 
 class ModelTrainerDistrib(ModelTrainer):
-    def __init__(self, model, loss_object, steps_per_epoch, stereo, optimizer):
-        super().__init__(model, loss_object, steps_per_epoch, stereo, optimizer)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter, optimizer):
+        super().__init__(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         self.strategy = DistributionStrategy.get_strategy()
         self.replica_integrator = ReplicaOutputIntegrator()
         self.set_name("Train (distributed)")

@@ -437,9 +437,7 @@ def synthesize_target(features, suffix=""):
     synth_target_ms = SynthesizeMultiScale()(sources, intrinsic, depth_gt_ms, pose_gt)
     synth_u8 = to_uint8_image(synth_target_ms[0])
     synth_u8 = synth_u8[0, 0].numpy()
-    height = synth_u8.shape[0]
-    source_u8 = to_uint8_image(sources)
-    source_u8 = source_u8[0, :height].numpy()
+    source_u8 = source_u8.numpy()
     return source_u8, synth_u8
 
 
@@ -452,7 +450,7 @@ def prep_synthesize(features, suffix):
         image = features["image5d"]
 
     image_5d = tf.reshape(image, (batch, snippet, height, width, chann))
-    sources = tf.reshape(image_5d[:, :numsrc], (batch, numsrc*height, width, chann))
+    sources = tf.reshape(image_5d[:, :numsrc], (batch, numsrc, height, width, chann))
     target = image_5d[:, numsrc]
     intrinsic = features["intrinsic" + suffix]
     pose_gt = features["pose_gt" + suffix]

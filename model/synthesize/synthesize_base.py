@@ -9,9 +9,9 @@ from utils.convert_pose import pose_rvec2matr_batch
 
 class SynthesizeMultiScale:
     @shape_check
-    def __call__(self, src_img_stacked, intrinsic, pred_depth_ms, pred_pose):
+    def __call__(self, source_image, intrinsic, pred_depth_ms, pred_pose):
         """
-        :param src_img_stacked: source images stacked vertically [batch, height*numsrc, width, 3]
+        :param source_image: source images stacked vertically [batch, numsrc, height, width, 3]
         :param intrinsic: [batch, 3, 3]
         :param pred_depth_ms: predicted target depth in multi scale, list of [batch, height/scale, width/scale, 1]}
         :param pred_pose: predicted source pose in twist vector for each source frame [batch, numsrc, 6]
@@ -23,7 +23,7 @@ class SynthesizeMultiScale:
                                    name="pose2matrix")(pred_pose)
         synth_targets = []
         for depth_sc in pred_depth_ms:
-            synth_target_sc = SynthesizeSingleScale()(src_img_stacked, intrinsic, depth_sc, poses_matr)
+            synth_target_sc = SynthesizeSingleScale()(source_image, intrinsic, depth_sc, poses_matr)
             synth_targets.append(synth_target_sc)
 
         return synth_targets
@@ -32,37 +32,36 @@ class SynthesizeMultiScale:
 class SynthesizeSingleScale:
     def __init__(self, shape=(0, 0, 0), numsrc=0, scale=0):
         # shape is scaled from the original shape, height = original_height / scale
-        self.batch, self.height, self.width = shape
+        self.batch, self.height_sc, self.width_sc = shape
         self.numsrc = numsrc
         self.scale = scale
 
-    def __call__(self, src_img_stacked, intrinsic, depth_sc, poses_matr):
+    def __call__(self, source_image, intrinsic, depth_sc, poses_matr):
         """
-        :param src_img_stacked: stacked source images [batch, height*numsrc, width, 3]
+        :param source_image: stacked source images [batch, numsrc, height, width, 3]
         :param intrinsic: intrinsic parameters [batch, 3, 3]
         :param depth_sc: scaled predicted depth for target image, [batch, height/scale, width/scale, 1]
         :param poses_matr: predicted source pose in matrix form [batch, numsrc, 4, 4]
         :return: reconstructed target view in scale, [batch, numsrc, height/scale, width/scale, 3]
         """
         suffix = f"_sc{self.scale}"
-        self.read_shape(src_img_stacked, depth_sc)
+        self.read_shape(source_image, depth_sc)
         # adjust intrinsic upto scale
         intrinsic_sc = layers.Lambda(lambda intrin: self.scale_intrinsic(intrin, self.scale),
                                      name=f"scale_intrin" + suffix)(intrinsic)
-        # reorganize and resize source images: [batch, 4, height/scale, width/scale, 3]
-        source_images_sc = layers.Lambda(lambda image: self.reshape_source_images(image),
-                                         name=f"reorder_source" + suffix)(src_img_stacked)
+        # resize source images: [batch, numsrc, height/scale, width/scale, 3]
+        source_images_sc = layers.Lambda(lambda image: self.resize_source_images(image),
+                                         name=f"resize_source" + suffix)(source_image)
         # reconstruct target view from source images
         recon_image_sc = self.synthesize_batch_view(source_images_sc, depth_sc, poses_matr,
                                                     intrinsic_sc, suffix=f"sc{self.scale}")
         return recon_image_sc
 
     @shape_check
-    def read_shape(self, src_img_stacked, depth_sc):
-        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
-        self.batch, self.height, self.width, _ = depth_sc.get_shape()
-        self.scale = int(width_orig / self.width)
-        self.numsrc = int(stacked_height / self.scale / self.height)
+    def read_shape(self, source_image, depth_sc):
+        batch, self.numsrc, height_orig, _, _ = source_image.get_shape()
+        self.batch, self.height_sc, self.width_sc, _ = depth_sc.get_shape()
+        self.scale = int(height_orig // self.height_sc)
 
     def scale_intrinsic(self, intrinsic, scale):
         scaled_part = tf.slice(intrinsic, (0, 0, 0), (-1, 2, -1))
@@ -72,20 +71,18 @@ class SynthesizeSingleScale:
         return scaled_intrinsic
 
     @shape_check
-    def reshape_source_images(self, src_img_stacked):
+    def resize_source_images(self, source_image):
         """
-        :param src_img_stacked: [batch, height*numsrc, width, 3]
+        :param source_image: [batch, numsrc, height, width, 3]
         :return: reorganized source images [batch, numsrc, height/scale, width/scale, 3]
         """
-        batch_size, stacked_height, width_orig, _ = src_img_stacked.get_shape()
-        height_orig = stacked_height // self.numsrc
-        # reshape image -> (batch*numsrc, height_orig, width_orig, 3)
-        source_images = tf.reshape(src_img_stacked, shape=(self.batch * self.numsrc, height_orig, width_orig, 3))
-        # resize image (scaled) -> (batch*numsrc, height, width, 3)
-        scaled_image = tf.image.resize(source_images, size=(self.height, self.width), method="bilinear")
-        # reorganize scaled images -> (batch, numsrc, height, width, 3)
-        source_images = tf.reshape(scaled_image, shape=(self.batch, self.numsrc, self.height, self.width, 3))
-        return source_images
+        batch, numsrc, height_orig, width_orig, _ = source_image.get_shape()
+        source_image = tf.reshape(source_image, shape=(batch*numsrc, height_orig, width_orig, 3))
+        # resize image (scaled) -> (batch*numsrc, height/scale, width/scale, 3)
+        source_image = tf.image.resize(source_image, size=(self.height_sc, self.width_sc), method="bilinear")
+        # reorganize scaled images -> (batch, numsrc, height/scale, width/scale, 3)
+        source_image = tf.reshape(source_image, shape=(batch, numsrc, self.height_sc, self.width_sc, 3))
+        return source_image
 
     @shape_check
     def synthesize_batch_view(self, src_image, tgt_depth, pose, intrinsic, suffix):
@@ -98,7 +95,7 @@ class SynthesizeSingleScale:
         :param suffix: suffix to tensor name
         :return: synthesized target image [batch, numsrc, height, width, 3]
         """
-        src_pixel_coords = layers.Lambda(lambda inputs: self.warp_pixel_coords(inputs, self.height, self.width),
+        src_pixel_coords = layers.Lambda(lambda inputs: self.warp_pixel_coords(inputs, self.height_sc, self.width_sc),
                                          name="warp_pixel_" + suffix)([tgt_depth, pose, intrinsic])
         tgt_image_synthesized = layers.Lambda(lambda inputs:
                                               BilinearInterpolation()(inputs[0], inputs[1], inputs[2]),

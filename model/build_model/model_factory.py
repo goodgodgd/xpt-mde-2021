@@ -9,7 +9,6 @@ from model.build_model.pose_net import PoseNet
 from model.build_model.flow_net import PWCNet
 import model.build_model.model_wrappers as mw
 import model.model_util.layer_ops as lo
-from model.model_util.augmentation import augmentation_factory
 
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
@@ -21,14 +20,12 @@ class ModelFactory:
                  net_names=opts.NET_NAMES,
                  depth_activation=opts.DEPTH_ACTIVATION,
                  pretrained_weight=opts.PRETRAINED_WEIGHT,
-                 augment_probs=opts.AUGMENT_PROBS,
                  stereo=opts.STEREO,
                  stereo_extrinsic=opts.STEREO_EXTRINSIC):
         self.input_shape = input_shape
         self.net_names = net_names
         self.activation = depth_activation
         self.pretrained_weight = pretrained_weight
-        self.augment_probs = augment_probs
         self.stereo = stereo
         self.stereo_extrinsic = stereo_extrinsic
 
@@ -53,14 +50,12 @@ class ModelFactory:
             flownet = self.flow_net_factory(self.net_names["flow"], conv_flow)
             models["flownet"] = flownet
 
-        augmenter = augmentation_factory(opts.AUGMENT_PROBS)
-
         if self.stereo_extrinsic:
-            model_wrapper = mw.StereoPoseModelWrapper(models, augmenter)
+            model_wrapper = mw.StereoPoseModelWrapper(models)
         elif self.stereo:
-            model_wrapper = mw.StereoModelWrapper(models, augmenter)
+            model_wrapper = mw.StereoModelWrapper(models)
         else:
-            model_wrapper = mw.ModelWrapper(models, augmenter)
+            model_wrapper = mw.ModelWrapper(models)
 
         return model_wrapper
 

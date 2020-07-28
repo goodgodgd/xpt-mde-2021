@@ -8,6 +8,7 @@ from config import opts
 from tfrecords.tfrecord_reader import TfrecordGenerator
 import utils.util_funcs as uf
 from model.build_model.model_factory import ModelFactory
+from model.model_util.augmentation import augmentation_factory
 from model.loss_and_metric.loss_factory import loss_factory
 from model.model_util.optimizers import optimizer_factory
 import model.model_util.logger as log
@@ -23,12 +24,12 @@ def train(final_epoch=opts.EPOCHS):
 
     set_configs()
     log.copy_or_check_same()
-    model, loss_object, optimizer = create_training_parts(initial_epoch)
+    model, augmenter, loss_object, optimizer = create_training_parts(initial_epoch)
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
     dataset_train, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
     dataset_val, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
-    trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, loss_object,
+    trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, augmenter, loss_object,
                                               train_steps, opts.STEREO, optimizer)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
@@ -68,9 +69,10 @@ def create_training_parts(initial_epoch):
     model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
+    augmenter = augmentation_factory(opts.AUGMENT_PROBS)
     loss_object = loss_factory(weights_to_regularize=model.weights_to_regularize())
     optimizer = optimizer_factory(opts.OPTIMIZER, opts.LEARNING_RATE, initial_epoch)
-    return model, loss_object, optimizer
+    return model, augmenter, loss_object, optimizer
 
 
 def try_load_weights(model, weights_suffix='latest'):

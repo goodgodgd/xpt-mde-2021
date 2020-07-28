@@ -7,12 +7,10 @@ import utils.util_funcs as uf
 
 
 class ModelWrapper:
-    def __init__(self, models, augmenter):
+    def __init__(self, models):
         self.models = models
-        self.augmenter = augmenter
 
     def __call__(self, features):
-        features = self.augmenter(features)
         predictions = self.predict_batch(features, "image_aug")
         return predictions
 
@@ -104,11 +102,10 @@ class ModelWrapper:
 
 
 class StereoModelWrapper(ModelWrapper):
-    def __init__(self, models, augmenter):
-        super().__init__(models, augmenter)
+    def __init__(self, models):
+        super().__init__(models)
 
     def __call__(self, features):
-        features = self.augmenter(features)
         predictions = self.predict_batch(features, "image_aug")
         preds_right = self.predict_batch(features, "image_aug", "_R")
         predictions.update(preds_right)
@@ -139,11 +136,10 @@ class StereoModelWrapper(ModelWrapper):
 
 
 class StereoPoseModelWrapper(StereoModelWrapper):
-    def __init__(self, models, augmenter):
-        super().__init__(models, augmenter)
+    def __init__(self, models):
+        super().__init__(models)
 
     def __call__(self, features):
-        features = self.augmenter(features)
         predictions = self.predict_batch(features, "image_aug")
         preds_right = self.predict_batch(features, "image_aug", "_R")
         predictions.update(preds_right)

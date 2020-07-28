@@ -12,13 +12,12 @@ class PoseNet:
 
     def __call__(self):
         batch, snippet, height, width, channel = self.input_shape
+        numsrc = snippet - 1
         image_shape = (snippet, height, width, channel)
         input_tensor = layers.Input(shape=image_shape, batch_size=batch, name="posenet_input")
         # posenet_input: [batch, height, width, snippet*channel]
         posenet_input = layers.Lambda(lambda image: self.restack_on_channels(image),
                                       name="channel_stack")(input_tensor)
-        print("[PoseNet] channel stacked image shape=", posenet_input.get_shape())
-        numsrc = snippet - 1
 
         conv1 = self.conv2d_p(posenet_input, 16, 7, strides=2, name="vo_conv1")
         conv2 = self.conv2d_p(conv1, 32, 5, strides=2, name="vo_conv2")
