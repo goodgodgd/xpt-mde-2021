@@ -123,7 +123,7 @@ class ModelValidater(TrainValBase):
         return self.validate_a_step(features)
 
     def validate_a_step(self, features):
-        preds = self.model.predict(features)
+        preds = self.model(features)
         total_loss, loss_by_type = self.loss_object(preds, features)
         return preds, total_loss, loss_by_type
 

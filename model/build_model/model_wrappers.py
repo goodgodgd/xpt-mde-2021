@@ -111,12 +111,6 @@ class StereoModelWrapper(ModelWrapper):
         predictions.update(preds_right)
         return
 
-    def predict(self, features):
-        predictions = self.predict_batch(features)
-        preds_right = self.predict_batch(features, "_R")
-        predictions.update(preds_right)
-        return predictions
-
     def predict_dataset(self, dataset, total_steps):
         outputs = {name[:-3]: [] for name, model in self.models.items()}
         outputs_right = {name[:-3] + "_R": [] for name, model in self.models.items()}
@@ -146,15 +140,6 @@ class StereoPoseModelWrapper(StereoModelWrapper):
         super().__init__(models)
 
     def __call__(self, features):
-        predictions = self.predict_batch(features)
-        preds_right = self.predict_batch(features, "_R")
-        predictions.update(preds_right)
-        if "posenet" in self.models:
-            stereo_pose = self.predict_stereo_pose(features)
-            predictions.update(stereo_pose)
-        return predictions
-
-    def predict(self, features):
         predictions = self.predict_batch(features)
         preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
