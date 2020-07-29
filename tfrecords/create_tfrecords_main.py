@@ -22,6 +22,7 @@ def convert_to_tfrecords():
             with PathManager([tfrpath]) as pm:
                 os.makedirs(tfrpath, exist_ok=True)
                 tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO,
+                                         (opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3),
                                          opts.LIMIT_FRAMES, opts.SHUFFLE_TFRECORD_INPUT)
                 tfrmaker.make()
                 # if set_ok() was NOT excuted, the generated path is removed

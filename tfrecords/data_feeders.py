@@ -184,7 +184,7 @@ class ImageReader(FileReader):
         return image
 
     def preprocess(self, image):
-        height = opts.IM_HEIGHT
+        height, width = opts.IM_HEIGHT, opts.IM_WIDTH
         half_len = int(opts.SNIPPET_LEN // 2)
         # TODO IMPORTANT!
         #   image in 'srcdata': [src--, src-, target, src+, src++]

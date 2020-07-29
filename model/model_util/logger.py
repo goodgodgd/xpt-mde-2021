@@ -125,16 +125,16 @@ def make_reconstructed_views(model, dataset, total_steps):
         predictions = model(features)
 
         # create intermediate data
-        augm_data = total_loss.augment_data(features, predictions)
+        augm_data = total_loss.append_data(features, predictions)
         if opts.STEREO:
-            augm_data_rig = total_loss.augment_data(features, predictions, "_R")
+            augm_data_rig = total_loss.append_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
             augm_data_stereo = total_loss.synethesize_stereo(features, predictions, augm_data)
             augm_data.update(augm_data_stereo)
 
         target_depth = predictions["depth_ms"][0][batchidx]
         target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
-        time_source = augm_data["source"][batchidx, srcidx*opts.IM_HEIGHT:(srcidx + 1)*opts.IM_HEIGHT]
+        time_source = augm_data["source"][batchidx, srcidx]
         view_imgs = {"left_target": augm_data["target"][0],
                      "target_depth": target_depth,
                      f"source_{srcidx}": time_source,

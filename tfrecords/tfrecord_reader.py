@@ -61,7 +61,8 @@ class TfrecordGenerator:
     def get_generator(self):
         """
         :return features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
-            image: stacked image [batch, height*snippet_len, width, 3]
+            image: image stacked in height [batch, snippet*height, width, 3]
+            image5d: image stacked in new dimension [batch, snippet, height, width, 3]
             pose_gt: 4x4 transformation matrix [batch, numsrc, 4, 4]
             depth_gt: gt depth [batch, height, width, 1]
             intrinsic: camera projection matrix [batch, 3, 3]
@@ -87,8 +88,11 @@ class TfrecordGenerator:
 
         # raw uint8 type may saturate during bilinear interpolation -> float (-1 ~ 1)
         decoded["image"] = uf.to_float_image(decoded["image"])
+        # reshape image to clarify image shape
+        decoded["image5d"] = tf.reshape(decoded["image"], self.config["imshape"])
         if "image_R" in self.config:
             decoded["image_R"] = uf.to_float_image(decoded["image_R"])
+            decoded["image5d_R"] = tf.reshape(decoded["image_R"], self.config["imshape"])
         return decoded
 
     def dataset_process(self, dataset):
@@ -99,6 +103,9 @@ class TfrecordGenerator:
         dataset = dataset.repeat(self.epochs)
         dataset = dataset.batch(batch_size=self.batch_size, drop_remainder=True)
         return dataset
+
+    def get_total_steps(self):
+        return self.config["length"] // self.batch_size
 
 
 # --------------------------------------------------------------------------------
@@ -120,8 +127,10 @@ def test_read_dataset():
         print("stereo pose\n", x["stereo_T_LR"][0].numpy())
         print("gt poses:\n", x['pose_gt'].numpy()[0])
         image = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8).numpy()
+        image5d = tf.image.convert_image_dtype((x["image5d"] + 1.) / 2., dtype=tf.uint8).numpy()
         cv2.imshow("image", image[0])
-        cv2.waitKey(0)
+        cv2.imshow("target", image5d[0, -1])
+        cv2.waitKey(1000)
 
 
 import numpy as np

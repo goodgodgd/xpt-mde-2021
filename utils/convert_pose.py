@@ -112,7 +112,6 @@ def pose_matr2rvec_batch(poses):
     :param poses: poses in transformation matrix as tf.tensor, [batch, numsrc, 4, 4]
     :return: poses with twist coordinates as tf.tensor, [batch, numsrc, 6]
     """
-    poses = np.copy(poses)
     # matrix에서 twist 형식으로 변환
     R = poses[:, :, :3, :3]
     theta = tf.math.acos((tf.linalg.trace(R) - 1.) / 2.)

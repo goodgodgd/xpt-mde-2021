@@ -50,18 +50,6 @@ def resize_image(src, dst_height, dst_width, scope):
             image, size=[dst_height, dst_width], method="bilinear"), name=scope+"_resize")(src)
 
 
-def restack_on_channels(vertical_stack, num_stack):
-    batch, imheight, imwidth, _ = vertical_stack.get_shape().as_list()
-    imheight = int(imheight // num_stack)
-    # create channel for snippet sequence
-    channel_stack_image = tf.reshape(vertical_stack, shape=(batch, -1, imheight, imwidth, 3))
-    # move snippet dimension to 3
-    channel_stack_image = tf.transpose(channel_stack_image, (0, 2, 3, 1, 4))
-    # stack snippet images on channels
-    channel_stack_image = tf.reshape(channel_stack_image, shape=(batch, imheight, imwidth, -1))
-    return channel_stack_image
-
-
 # ===== TEST FUNCTIONS
 
 def test_custom_conv2d():

@@ -33,9 +33,9 @@ class TotalLoss:
         :return loss: final loss of frames in batch (scalar)
                 losses: list of losses computed from loss_objects
         """
-        augm_data = self.augment_data(features, predictions)
+        augm_data = self.append_data(features, predictions)
         if self.stereo:
-            augm_data_rig = self.augment_data(features, predictions, "_R")
+            augm_data_rig = self.append_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
             augm_data_stereo = self.synethesize_stereo(features, predictions, augm_data)
             augm_data.update(augm_data_stereo)
@@ -53,7 +53,7 @@ class TotalLoss:
         total_loss = layers.Lambda(lambda x: tf.reduce_sum(x), name="total_loss")(losses)
         return total_loss, loss_by_type
 
-    def augment_data(self, features, predictions, suffix=""):
+    def append_data(self, features, predictions, suffix=""):
         """
         gather additional data required to compute losses
         :param features: {image, intrinsic}
@@ -65,7 +65,7 @@ class TotalLoss:
         :param suffix: suffix to keys
         :return augm_data: {depth_ms, source, target, target_ms, synth_target_ms}
                 depth_ms: multi scale depth, list of [batch, height/scale, width/scale, 1]
-                source: source frames [batch, numsrc*height, width, 3]
+                source: source frames [batch, numsrc, height, width, 3]
                 target: target frame [batch, height, width, 3]
                 target_ms: multi scale target frame, list of [batch, height/scale, width/scale, 3]
                 synth_target_ms: multi scale synthesized target frames generated from each source image,
@@ -77,9 +77,10 @@ class TotalLoss:
         pred_depth_ms = predictions["depth_ms" + suffix]
         pred_pose = predictions["pose" + suffix]
 
-        stacked_image = features["image" + suffix]
+        image5d = features["image5d" + suffix]
         intrinsic = features["intrinsic" + suffix]
-        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        source_image = image5d[:, :-1]
+        target_image = image5d[:, -1]
         target_ms = uf.multi_scale_like_depth(target_image, pred_depth_ms)
         augm_data["source" + suffix] = source_image
         augm_data["target" + suffix] = target_image
@@ -107,15 +108,16 @@ class TotalLoss:
         :param predictions: {depth_ms, stereo_T_LR}
                 depth_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
                 stereo_T_LR: poses that transform points from target to source [batch, numsrc, 6]
-        :return augm_data: {source, target, target_ms, synth_target_ms}
+        :param augm_data: {source, target, target_ms, synth_target_ms}
                 target: target frame [batch, height, width, 3]
         """
         synth_stereo = dict()
         # synthesize left image from right image
         pose_T_RL = tf.linalg.inv(features["stereo_T_LR"])
         pose_T_RL = cp.pose_matr2rvec_batch(tf.expand_dims(pose_T_RL, 1))
+        stereo_source = tf.expand_dims(augm_data["target_R"], 1)
         synth_stereo["stereo_synth_ms"] = SynthesizeMultiScale()(
-                                                src_img_stacked=augm_data["target_R"],
+                                                source_image=stereo_source,
                                                 intrinsic=features["intrinsic"],
                                                 pred_depth_ms=predictions["depth_ms"],
                                                 pred_pose=pose_T_RL)
@@ -123,8 +125,9 @@ class TotalLoss:
         # synthesize right image from left image
         pose_T_LR = features["stereo_T_LR"]
         pose_T_LR = cp.pose_matr2rvec_batch(tf.expand_dims(pose_T_LR, 1))
+        stereo_source = tf.expand_dims(augm_data["target"], 1)
         synth_stereo["stereo_synth_ms_R"] = SynthesizeMultiScale()(
-                                                src_img_stacked=augm_data["target"],
+                                                source_image=stereo_source,
                                                 intrinsic=features["intrinsic"],
                                                 pred_depth_ms=predictions["depth_ms_R"],
                                                 pred_pose=pose_T_LR)
@@ -160,7 +163,7 @@ class PhotometricLossMultiScale(PhotometricLoss):
 
     def __call__(self, features, predictions, augm_data):
         """
-        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        desciptions of inputs are available in 'TotalLoss.append_data()'
         :return: photo_loss [batch]
         """
         original_target_ms = augm_data["target_ms" + self.key_suffix]
@@ -239,7 +242,7 @@ class StereoDepthLoss(PhotometricLoss):
 
     def __call__(self, features, predictions, augm_data):
         """
-        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        desciptions of inputs are available in 'TotalLoss.append_data()'
         :return: photo_loss [batch]
         """
         # synthesize left image from right image
@@ -294,7 +297,7 @@ class FlowWarpLossMultiScale(PhotometricLoss):
 
     def __call__(self, features, predictions, augm_data):
         """
-        desciptions of inputs are available in 'TotalLoss.augment_data()'
+        desciptions of inputs are available in 'TotalLoss.append_data()'
         :return: photo_loss [batch]
         """
         flow_target_ms = augm_data["flow_target_ms" + self.key_suffix]
@@ -322,7 +325,7 @@ class L2Regularizer(LossBase):
         for weight in self.weights:
             loss += tf.nn.l2_loss(weight)
         # scalar -> [batch]
-        batch = features["image"].get_shape()[0]
+        batch = features["image5d"].get_shape()[0]
         loss_batch = tf.tile([loss], [batch])
         return loss_batch
 

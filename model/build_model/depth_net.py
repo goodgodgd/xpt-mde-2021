@@ -30,10 +30,9 @@ class DepthNetBasic:
         conv'n' implies that it is scaled by 1/2^n
         """
         batch, snippet, height, width, channel = self.total_shape
-        input_shape = (height*snippet, width, channel)
+        input_shape = (snippet, height, width, channel)
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
-        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
-                                                   name="depthnet_split_image")(input_tensor)
+        target_image = layers.Lambda(lambda image: image[:, -1], name="depthnet_target")(input_tensor)
 
         conv0 = self.conv2d_d(target_image, 32, 7, strides=1, name="dp_conv0b")
         conv1 = self.conv2d_d(conv0, 32, 7, strides=2, name="dp_conv1a")
@@ -124,10 +123,9 @@ class DepthNetFromPretrained(DepthNetNoResize):
 
     def __call__(self):
         batch, snippet, height, width, channel = self.total_shape
-        input_shape = (height*snippet, width, channel)
+        input_shape = (snippet, height, width, channel)
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
-        source_image, target_image = layers.Lambda(lambda image: uf.split_into_source_and_target(image),
-                                                   name="depthnet_split_image")(input_tensor)
+        target_image = layers.Lambda(lambda input_t: input_t[:, -1], name="depthnet_target")(input_tensor)
 
         features_ms = PretrainedModel(self.net_name, self.pretrained_weight).encode(target_image)
         outputs = self.decode(features_ms)

@@ -7,7 +7,8 @@ RAW_DATA_PATHS = {
     "cityscapes": "/media/ian/IanPrivatePP/Datasets/cityscapes",
     "cityscapes_seq": "/media/ian/IanPrivatePP/Datasets/cityscapes",
 }
-RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
+# RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
+RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data/vode_stereo_0705"
 
 
 class VodeOptions:
@@ -29,6 +30,9 @@ class VodeOptions:
     # only when making small tfrecords to test training
     LIMIT_FRAMES = 200
     SHUFFLE_TFRECORD_INPUT = True
+    AUGMENT_PROBS = {"CropAndResize": 0.2,
+                     "HorizontalFlip": 0.2,
+                     "ColorJitter": 0.2}
 
     """
     path options
@@ -46,7 +50,7 @@ class VodeOptions:
     """
     training options
     """
-    CKPT_NAME = "vode5"
+    CKPT_NAME = "vode6"
     PER_REPLICA_BATCH = 4
     BATCH_SIZE = PER_REPLICA_BATCH
     EPOCHS = 51
