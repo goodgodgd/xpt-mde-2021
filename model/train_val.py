@@ -50,8 +50,6 @@ class TrainValBase:
                                      f"time={time.time() - start:1.4f}...")
             inspect_model(preds, features, step, self.steps_per_epoch)
             results.append(batch_result)
-            if step > 5:
-                break
 
         print("")
         # list of dict -> dataframe -> mean: single row dataframe -> to_dict: dict of mean values

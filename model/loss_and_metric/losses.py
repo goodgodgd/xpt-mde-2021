@@ -108,7 +108,7 @@ class TotalLoss:
         :param predictions: {depth_ms, stereo_T_LR}
                 depth_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
                 stereo_T_LR: poses that transform points from target to source [batch, numsrc, 6]
-        :return augm_data: {source, target, target_ms, synth_target_ms}
+        :param augm_data: {source, target, target_ms, synth_target_ms}
                 target: target frame [batch, height, width, 3]
         """
         synth_stereo = dict()

@@ -444,7 +444,44 @@ def test_augmentation_factory():
         image_aug = image_aug.numpy().reshape(-1, width, chann)
         image = np.concatenate([image, image_aug], axis=1)
         cv2.imshow("image vs augmented", image)
-        cv2.waitKey(1000)
+        key = cv2.waitKey()
+        if key == ord('q'):
+            break
+
+    cv2.destroyAllWindows()
+
+
+import utils.util_funcs as uf
+
+
+def test_stereo_augmentation():
+    print("===== test test_augmentations")
+    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
+    dataset = tfrgen.get_generator()
+    augmenter = augmentation_factory(opts.AUGMENT_PROBS)
+    batidx, sclidx = 0, 0
+
+    for bi, features in enumerate(dataset):
+        print(f"\n!!~~~~~~~~~~ {bi} step ~~~~~~~~~~!!")
+        view_imgs = dict()
+        feat_aug = augmenter(features)
+
+        pose_T_RL = tf.linalg.inv(feat_aug["stereo_T_LR"])
+        pose_T_RL = cp.pose_matr2rvec_batch(tf.expand_dims(pose_T_RL, 1))
+        right_target = tf.expand_dims(feat_aug["image5d_R"][:, -1], 1)
+        depth_ms = uf.multi_scale_depths(feat_aug["depth_gt"], [1, 2, 4, 8])
+        synth_stereo_left = SynthesizeMultiScale()(source_image=right_target,
+                                                   intrinsic=feat_aug["intrinsic"],
+                                                   pred_depth_ms=depth_ms,
+                                                   pred_pose=pose_T_RL)
+
+        view_imgs["raw_left_target"] = features["image5d"][batidx, -1]
+        view_imgs["raw_right_target"] = features["image5d_R"][batidx, -1]
+        view_imgs["aug_left_target_orig"] = feat_aug["image5d"][batidx, -1]
+        view_imgs["aug_left_target_synt"] = synth_stereo_left[sclidx][batidx, 0]
+        view_imgs["aug_right_target"] = feat_aug["image5d_R"][batidx, -1]
+        view = uf.stack_titled_images(view_imgs)
+        cv2.imshow("stereo synthesis", view)
         key = cv2.waitKey()
         if key == ord('q'):
             break
@@ -460,6 +497,7 @@ if __name__ == "__main__":
     test_flip_intrinsic()
     test_augmentations()
     test_augmentation_factory()
+    test_stereo_augmentation()
 
 
 
