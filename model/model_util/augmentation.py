@@ -2,7 +2,8 @@ import tensorflow as tf
 from utils.util_class import WrongInputException
 
 
-def augmentation_factory(augment_probs):
+def augmentation_factory(augment_probs=None):
+    augment_probs = augment_probs if augment_probs else dict()
     augmenters = []
     for key, prob in augment_probs.items():
         if key is "CropAndResize":
@@ -29,27 +30,13 @@ class TotalAugment:
         return features
 
     def augment_oneside(self, features, suffix=""):
-        features = Preprocess()(features, suffix)
+        features = self.preprocess(features, suffix)
         for augmenter in self.augment_objects:
             features = augmenter(features, suffix)
-        features = Postprocess()(features, suffix)
+        features = self.postprocess(features, suffix)
         return features
 
-
-class AugmentBase:
-    def __init__(self, aug_prob=0.):
-        self.aug_prob = aug_prob
-        self.param = 0
-
-    def __call__(self, features, suffix):
-        raise NotImplementedError()
-
-
-class Preprocess(AugmentBase):
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, features, suffix=""):
+    def preprocess(self, features, suffix=""):
         """
         !!NOTE!!
         when changing input dict key or value, you MUST copy a dict like
@@ -78,12 +65,7 @@ class Preprocess(AugmentBase):
             feat_aug["depth_gt_aug" + suffix] = tf.reshape(feat_aug["depth_gt" + suffix], (batch, height, width, 1))
         return feat_aug
 
-
-class Postprocess(AugmentBase):
-    def __init__(self):
-        super().__init__()
-
-    def __call__(self, features, suffix=""):
+    def postprocess(self, features, suffix=""):
         """
         :return: append features below
             image_aug: [batch, snippet, height, width, 3] <- only change!
@@ -96,6 +78,15 @@ class Postprocess(AugmentBase):
         imkey = "image_aug" + suffix
         features[imkey] = tf.reshape(features[imkey], (batch, snippet, height, width, channels))
         return features
+
+
+class AugmentBase:
+    def __init__(self, aug_prob=0.):
+        self.aug_prob = aug_prob
+        self.param = 0
+
+    def __call__(self, features, suffix):
+        raise NotImplementedError()
 
 
 class CropAndResize(AugmentBase):
@@ -437,7 +428,8 @@ def synthesize_target(features, suffix=""):
     synth_target_ms = SynthesizeMultiScale()(sources, intrinsic, depth_gt_ms, pose_gt)
     synth_u8 = to_uint8_image(synth_target_ms[0])
     synth_u8 = synth_u8[0, 0].numpy()
-    source_u8 = source_u8.numpy()
+    source_u8 = to_uint8_image(sources)
+    source_u8 = source_u8[0, 0].numpy()
     return source_u8, synth_u8
 
 
