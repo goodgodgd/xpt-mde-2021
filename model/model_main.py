@@ -24,13 +24,13 @@ def train(final_epoch=opts.EPOCHS):
 
     set_configs()
     log.copy_or_check_same()
-    model, augmenter_train, augmenter_val, loss_object, optimizer = create_training_parts(initial_epoch)
+    model, augmenter, loss_object, optimizer = create_training_parts(initial_epoch)
 
     # TODO WARNING! using "test" split for training dataset is just to check training process
     dataset_train, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
     dataset_val, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
-    trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, augmenter_train, augmenter_val,
-                                              loss_object, train_steps, opts.STEREO, optimizer)
+    trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, loss_object,
+                                              train_steps, opts.STEREO, augmenter, optimizer)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
     for epoch in range(initial_epoch, final_epoch):
@@ -69,11 +69,10 @@ def create_training_parts(initial_epoch):
     model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
-    augmenter_train = augmentation_factory(opts.AUGMENT_PROBS)
-    augmenter_val = augmentation_factory()
+    augmenter = augmentation_factory(opts.AUGMENT_PROBS)
     loss_object = loss_factory(weights_to_regularize=model.weights_to_regularize())
     optimizer = optimizer_factory(opts.OPTIMIZER, opts.LEARNING_RATE, initial_epoch)
-    return model, augmenter_train, augmenter_val, loss_object, optimizer
+    return model, augmenter, loss_object, optimizer
 
 
 def try_load_weights(model, weights_suffix='latest'):

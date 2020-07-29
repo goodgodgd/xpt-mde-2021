@@ -11,17 +11,13 @@ class ModelWrapper:
         self.models = models
 
     def __call__(self, features):
-        predictions = self.predict_batch(features, "image_aug")
-        return predictions
-
-    def predict(self, features):
-        predictions = self.predict_batch(features, "image5d")
+        predictions = self.predict_batch(features)
         return predictions
 
     def predict_dataset(self, dataset, total_steps):
         outputs = {name[:-3]: [] for name, model in self.models.items()}
         for step, features in enumerate(dataset):
-            predictions = self.predict_batch(features, "image5d")
+            predictions = self.predict_batch(features)
             outputs = self.append_outputs(predictions, outputs)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
 
@@ -31,10 +27,10 @@ class ModelWrapper:
             outputs[key] = np.concatenate(data, axis=0)
         return outputs
 
-    def predict_batch(self, features, imkey, suffix=""):
+    def predict_batch(self, features, suffix=""):
         predictions = dict()
         for netname, model in self.models.items():
-            pred = model(features[imkey + suffix])
+            pred = model(features["image5d" + suffix])
             predictions.update(pred)
 
         if "depth_ms" in predictions:
@@ -110,14 +106,14 @@ class StereoModelWrapper(ModelWrapper):
         super().__init__(models)
 
     def __call__(self, features):
-        predictions = self.predict_batch(features, "image_aug")
-        preds_right = self.predict_batch(features, "image_aug", "_R")
+        predictions = self.predict_batch(features)
+        preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
         return
 
     def predict(self, features):
-        predictions = self.predict_batch(features, "image5d")
-        preds_right = self.predict_batch(features, "image5d", "_R")
+        predictions = self.predict_batch(features)
+        preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
         return predictions
 
@@ -127,8 +123,8 @@ class StereoModelWrapper(ModelWrapper):
         outputs.update(outputs_right)
 
         for step, features in enumerate(dataset):
-            predictions = self.predict_batch(features, "image5d")
-            preds_right = self.predict_batch(features, "image5d", "_R")
+            predictions = self.predict_batch(features)
+            preds_right = self.predict_batch(features, "_R")
             predictions.update(preds_right)
             outputs = self.append_outputs(predictions, outputs)
             outputs = self.append_outputs(predictions, outputs, "_R")
@@ -150,28 +146,28 @@ class StereoPoseModelWrapper(StereoModelWrapper):
         super().__init__(models)
 
     def __call__(self, features):
-        predictions = self.predict_batch(features, "image_aug")
-        preds_right = self.predict_batch(features, "image_aug", "_R")
+        predictions = self.predict_batch(features)
+        preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
         if "posenet" in self.models:
-            stereo_pose = self.predict_stereo_pose(features, "image_aug")
+            stereo_pose = self.predict_stereo_pose(features)
             predictions.update(stereo_pose)
         return predictions
 
     def predict(self, features):
-        predictions = self.predict_batch(features, "image5d")
-        preds_right = self.predict_batch(features, "image5d", "_R")
+        predictions = self.predict_batch(features)
+        preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
         if "posenet" in self.models:
-            stereo_pose = self.predict_stereo_pose(features, "image5d")
+            stereo_pose = self.predict_stereo_pose(features)
             predictions.update(stereo_pose)
         return predictions
 
-    def predict_stereo_pose(self, features, imkey):
+    def predict_stereo_pose(self, features):
         # predicts stereo extrinsic in both directions: left to right, right to left
         posenet = self.models["posenet"]
-        left_target = features[imkey][:, -1]
-        right_target = features[imkey + "_R"][:, -1]
+        left_target = features["image5d"][:, -1]
+        right_target = features["image5d_R"][:, -1]
         numsrc = opts.SNIPPET_LEN - 1
         lr_input = tf.stack([right_target] * numsrc + [left_target], axis=1)
         rl_input = tf.stack([left_target] * numsrc + [right_target], axis=1)

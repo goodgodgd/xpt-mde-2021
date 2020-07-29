@@ -77,8 +77,8 @@ class TotalLoss:
         pred_depth_ms = predictions["depth_ms" + suffix]
         pred_pose = predictions["pose" + suffix]
 
-        image5d = features["image_aug" + suffix]
-        intrinsic = features["intrinsic_aug" + suffix]
+        image5d = features["image5d" + suffix]
+        intrinsic = features["intrinsic" + suffix]
         source_image = image5d[:, :-1]
         target_image = image5d[:, -1]
         target_ms = uf.multi_scale_like_depth(target_image, pred_depth_ms)

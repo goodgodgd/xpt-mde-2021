@@ -9,16 +9,16 @@ from model.loss_and_metric.metric import compute_metric_pose
 from model.model_util.distributer import DistributionStrategy, ReplicaOutputIntegrator
 
 
-def train_val_factory(mode_sel, model, augmenter_train, augmenter_val, loss_object, steps_per_epoch, stereo, optimizer):
+def train_val_factory(mode_sel, model, loss_object, steps_per_epoch, stereo, augmenter, optimizer):
     if mode_sel == "eager":
-        trainer = ModelTrainer(model, augmenter_train, loss_object, steps_per_epoch, stereo, optimizer)
-        validater = ModelValidater(model, augmenter_val, loss_object, steps_per_epoch, stereo)
+        trainer = ModelTrainer(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
+        validater = ModelValidater(model, loss_object, steps_per_epoch, stereo)
     elif mode_sel == "graph":
-        trainer = ModelTrainerGraph(model, augmenter_train, loss_object, steps_per_epoch, stereo, optimizer)
-        validater = ModelValidaterGraph(model, augmenter_val, loss_object, steps_per_epoch, stereo)
+        trainer = ModelTrainerGraph(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
+        validater = ModelValidaterGraph(model, loss_object, steps_per_epoch, stereo)
     elif mode_sel == "distributed":
-        trainer = ModelTrainerDistrib(model, augmenter_train, loss_object, steps_per_epoch, stereo, optimizer)
-        validater = ModelValidaterDistrib(model, augmenter_val, loss_object, steps_per_epoch, stereo)
+        trainer = ModelTrainerDistrib(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
+        validater = ModelValidaterDistrib(model, loss_object, steps_per_epoch, stereo)
     else:
         raise uc.WrongInputException(f"training mode '{mode_sel}' is NOT available")
 
@@ -26,7 +26,7 @@ def train_val_factory(mode_sel, model, augmenter_train, augmenter_val, loss_obje
 
 
 class TrainValBase:
-    def __init__(self, model, augmenter, loss_object, steps_per_epoch, stereo, optimizer=None):
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter=None, optimizer=None):
         self.model = model
         self.augmenter = augmenter
         self.loss_object = loss_object
@@ -50,7 +50,7 @@ class TrainValBase:
                                      f"time={time.time() - start:1.4f}...")
             inspect_model(preds, features, step, self.steps_per_epoch)
             results.append(batch_result)
-            if step > 10:
+            if step > 5:
                 break
 
         print("")
@@ -68,16 +68,16 @@ class TrainValBase:
 
 
 class ModelTrainer(TrainValBase):
-    def __init__(self, model, augmenter, loss_object, steps_per_epoch, stereo, optimizer):
-        super().__init__(model, augmenter, loss_object, steps_per_epoch, stereo, optimizer)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter, optimizer):
+        super().__init__(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         self.set_name("Train (eager)")
 
     def run_a_batch(self, features):
         return self.train_a_step(features)
 
     def train_a_step(self, features):
+        features = self.augmenter(features)
         with tf.GradientTape() as tape:
-            features = self.augmenter(features)
             # preds = {"depth_ms": ..., "pose": ...} = model(image)
             preds = self.model(features)
             total_loss, loss_by_type = self.loss_object(preds, features)
@@ -93,8 +93,8 @@ class ModelTrainer(TrainValBase):
 
 
 class ModelTrainerGraph(ModelTrainer):
-    def __init__(self, model, augmenter, loss_object, steps_per_epoch, stereo, optimizer):
-        super().__init__(model, augmenter, loss_object, steps_per_epoch, stereo, optimizer)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter, optimizer):
+        super().__init__(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         self.set_name("Train (graph)")
 
     @tf.function
@@ -103,8 +103,8 @@ class ModelTrainerGraph(ModelTrainer):
 
 
 class ModelTrainerDistrib(ModelTrainer):
-    def __init__(self, model, augmenter, loss_object, steps_per_epoch, stereo, optimizer):
-        super().__init__(model, augmenter, loss_object, steps_per_epoch, stereo, optimizer)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo, augmenter, optimizer):
+        super().__init__(model, loss_object, steps_per_epoch, stereo, augmenter, optimizer)
         self.strategy = DistributionStrategy.get_strategy()
         self.replica_integrator = ReplicaOutputIntegrator()
         self.set_name("Train (distributed)")
@@ -117,8 +117,8 @@ class ModelTrainerDistrib(ModelTrainer):
 
 
 class ModelValidater(TrainValBase):
-    def __init__(self, model, augmenter, loss_object, steps_per_epoch, stereo):
-        super().__init__(model, augmenter, loss_object, steps_per_epoch, stereo)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo):
+        super().__init__(model, loss_object, steps_per_epoch, stereo)
         self.set_name("Validate (eager)")
 
     def run_a_batch(self, features):
@@ -131,8 +131,8 @@ class ModelValidater(TrainValBase):
 
 
 class ModelValidaterGraph(ModelValidater):
-    def __init__(self, model, augmenter, loss_object, steps_per_epoch, stereo):
-        super().__init__(model, augmenter, loss_object, steps_per_epoch, stereo)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo):
+        super().__init__(model, loss_object, steps_per_epoch, stereo)
         self.set_name("Validate (graph)")
 
     @tf.function
@@ -141,8 +141,8 @@ class ModelValidaterGraph(ModelValidater):
 
 
 class ModelValidaterDistrib(ModelValidater):
-    def __init__(self, model, augmenter, loss_object, steps_per_epoch, stereo):
-        super().__init__(model, augmenter, loss_object, steps_per_epoch, stereo)
+    def __init__(self, model, loss_object, steps_per_epoch, stereo):
+        super().__init__(model, loss_object, steps_per_epoch, stereo)
         self.set_name("Validate (distributed)")
         self.strategy = DistributionStrategy.get_strategy()
         self.replica_integrator = ReplicaOutputIntegrator()

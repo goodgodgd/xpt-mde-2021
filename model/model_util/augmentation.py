@@ -20,64 +20,38 @@ def augmentation_factory(augment_probs=None):
 
 
 class TotalAugment:
-    def __init__(self, augment_objects):
+    def __init__(self, augment_objects=None):
         self.augment_objects = augment_objects
 
     def __call__(self, features):
-        features = self.augment_oneside(features)
-        if "image_R" in features:
-            features = self.augment_oneside(features, "_R")
-        return features
-
-    def augment_oneside(self, features, suffix=""):
-        features = self.preprocess(features, suffix)
+        feat_aug = self.preprocess(features)
         for augmenter in self.augment_objects:
-            features = augmenter(features, suffix)
-        features = self.postprocess(features, suffix)
-        return features
-
-    def preprocess(self, features, suffix=""):
-        """
-        !!NOTE!!
-        when changing input dict key or value, you MUST copy a dict like
-            feat_aug = {key: val for key, val in features.items()}
-        :return: append features below
-            image_aug: [batch*snippet, height, width, 3]
-            depth_gt_aug: [batch, height, width, 1]
-            intrinsic_aug: [batch, 3, 3]
-            pose_gt_aug: [batch, numsrc, 4, 4]
-        """
-        image5d = features["image5d" + suffix]
-        batch, snippet, height, width, channels = image5d.get_shape()
-        numsrc = snippet - 1
-
-        feat_aug = {key: val for key, val in features.items()}
-        # to use tf.image functions, reshape to [batch*snippet, height, width, 3]
-        image_aug = tf.reshape(image5d, (batch*snippet, height, width, channels))
-        feat_aug["image_aug" + suffix] = image_aug
-        # copy intrinsic
-        feat_aug["intrinsic_aug" + suffix] = tf.reshape(feat_aug["intrinsic" + suffix], (batch, 3, 3))
-        # copy pose_gt
-        if "pose_gt" + suffix in features:
-            feat_aug["pose_gt_aug" + suffix] = tf.reshape(feat_aug["pose_gt" + suffix], (batch, numsrc, 4, 4))
-        # copy depth_gt
-        if "depth_gt" + suffix in features:
-            feat_aug["depth_gt_aug" + suffix] = tf.reshape(feat_aug["depth_gt" + suffix], (batch, height, width, 1))
+            feat_aug = augmenter(feat_aug)
+        feat_aug = self.postprocess(features, feat_aug)
         return feat_aug
 
-    def postprocess(self, features, suffix=""):
+    def preprocess(self, features):
         """
-        :return: append features below
-            image_aug: [batch, snippet, height, width, 3] <- only change!
-            depth_gt_aug: [batch, height, width, 1]
-            intrinsic_aug: [batch, 3, 3]
-            pose_gt_aug: [batch, numsrc, 4, 4]
+        !!NOTE!!
+        when changing input dict's key or value, you MUST copy a dict like
+            feat_aug = {key: val for key, val in features.items()}
         """
-        image5d = features["image5d" + suffix]
-        batch, snippet, height, width, channels = image5d.get_shape()
-        imkey = "image_aug" + suffix
-        features[imkey] = tf.reshape(features[imkey], (batch, snippet, height, width, channels))
-        return features
+        # create a new feature dict
+        feat_aug = {key: val for key, val in features.items() if "image5d" not in key}
+        # to use tf.image functions, reshape to [batch*snippet, height, width, 3]
+        batch, snippet, height, width, channels = features["image5d"].get_shape()
+        imshape = (batch * snippet, height, width, channels)
+        feat_aug["image5d"] = tf.reshape(features["image5d"], imshape)
+        if "image5d_R" in features:
+            feat_aug["image5d_R"] = tf.reshape(features["image5d_R"], imshape)
+        return feat_aug
+
+    def postprocess(self, features, feat_aug):
+        image5d = features["image5d"]
+        feat_aug["image5d"] = tf.reshape(feat_aug["image5d"], image5d.get_shape())
+        if "image5d_R" in feat_aug:
+            feat_aug["image5d_R"] = tf.reshape(feat_aug["image5d_R"], image5d.get_shape())
+        return feat_aug
 
 
 class AugmentBase:
@@ -85,40 +59,36 @@ class AugmentBase:
         self.aug_prob = aug_prob
         self.param = 0
 
-    def __call__(self, features, suffix):
+    def __call__(self, features):
         raise NotImplementedError()
 
 
 class CropAndResize(AugmentBase):
     """
-    randomly crop "image_aug" and resize it to original size
-    create "intrinsic_aug" as camera matrix for "image_aug"
+    randomly crop "image5d" and resize it to original size
+    create "intrinsic_aug" as camera matrix for "image5d"
     """
     def __init__(self, aug_prob=0.3):
         super().__init__(aug_prob)
         self.half_crop_ratio = 0.1
 
-    def __call__(self, features, suffix=""):
-        batch, snippet, height, width, channels = features["image5d"].get_shape()
-        image = features["image_aug" + suffix]
+    def __call__(self, features):
+        nimage, height, width, _ = features["image5d"].get_shape()
         crop_size = tf.constant([height, width])
-        num_box = batch*snippet
-        box_indices = tf.range(0, num_box)
-        boxes = self.random_crop_boxes(num_box)
+        box_indices = tf.range(0, nimage)
+        boxes = self.random_crop_boxes(nimage)
         self.param = boxes[0]
 
-        image_aug = tf.image.crop_and_resize(image, boxes, box_indices, crop_size)
-        features["image_aug" + suffix] = image_aug
-        intrin_aug = self.adjust_intrinsic(features["intrinsic_aug" + suffix], boxes, crop_size)
-        features["intrinsic_aug" + suffix] = intrin_aug
+        features["image5d"] = tf.image.crop_and_resize(features["image5d"], boxes, box_indices, crop_size)
+        features["intrinsic"] = self.adjust_intrinsic(features["intrinsic"], boxes, crop_size)
+        if "image5d_R" in features:
+            features["image5d_R"] = tf.image.crop_and_resize(features["image5d_R"], boxes, box_indices, crop_size)
+            features["intrinsic_R"] = self.adjust_intrinsic(features["intrinsic_R"], boxes, crop_size)
 
-        depth_key = "depth_gt_aug" + suffix
-        if depth_key in features:
-            batch_size = features[depth_key].get_shape()[0]
-            depth_aug = tf.image.crop_and_resize(features[depth_key], boxes[:batch_size], box_indices[:batch_size],
-                                                 crop_size, method="nearest")
-            features[depth_key] = depth_aug
-
+        if "depth_gt" in features:
+            batch = features["depth_gt"].get_shape()[0]
+            features["depth_gt"] = tf.image.crop_and_resize(features["depth_gt"], boxes[:batch], box_indices[:batch],
+                                                            crop_size, method="nearest")
         return features
 
     def random_crop_boxes(self, num_box):
@@ -149,8 +119,7 @@ class CropAndResize(AugmentBase):
         # size: [1, 3, 3], contents: [[0, 0, x1_ratio*width], [0, 0, y1_ratio*height], [0, 0, 0]]
         center_change = tf.stack([tf.stack([0., 0., boxes[0, 1]*imsize[1]], axis=0),
                                   tf.stack([0., 0., boxes[0, 0]*imsize[0]], axis=0),
-                                  tf.stack([0., 0., 0.], axis=0)],
-                                 axis=0)
+                                  tf.stack([0., 0., 0.], axis=0)], axis=0)
         # cx'=cx-x1, cy'=cy-y1
         intrin_crop = intrinsic - center_change
         # cx,fx *= W/(x2-x1),  cy,fy *= H/(y2-y1)
@@ -162,47 +131,39 @@ class CropAndResize(AugmentBase):
 
 class HorizontalFlip(AugmentBase):
     """
-    randomly horizontally flip "image_aug" by aug_prob
+    randomly horizontally flip "image5d" by aug_prob
     """
     def __init__(self, aug_prob=0.2):
         super().__init__(aug_prob)
 
-    def __call__(self, features, suffix=""):
-        image = features["image_aug" + suffix]
-        intrinsic = features["intrinsic_aug" + suffix]
-        pose = features["pose_gt_aug" + suffix]
+    def __call__(self, features):
         rndval = tf.random.uniform(())
-
-        image_flip, intrin_flip, pose_flip = \
-            tf.cond(rndval < self.aug_prob,
-                    lambda: self.flip_features(image, intrinsic, pose),
-                    lambda: (image, intrinsic, pose)
-                    )
-
-        features["image_aug" + suffix] = image_flip
-        features["intrinsic_aug" + suffix] = intrin_flip
-        features["pose_gt_aug" + suffix] = pose_flip
-
-        depth_key = "depth_gt_aug" + suffix
-        if depth_key in features:
-            depth_aug = tf.cond(rndval < self.aug_prob,
-                                lambda: tf.image.flip_left_right(features[depth_key]),
-                                lambda: features[depth_key])
-            features[depth_key] = depth_aug
-
+        features = tf.cond(rndval < self.aug_prob,
+                           lambda: self.flip_features(features),
+                           lambda: features
+                           )
         return features
 
-    def flip_features(self, image, intrinsic, pose):
-        """
-        :param image: [batch, height, width,
-        :param intrinsic:
-        :param pose:
-        :return:
-        """
-        image_flip = tf.image.flip_left_right(image)
-        intrin_flip = self.flip_intrinsic(intrinsic, image.get_shape())
-        pose_flip = self.flip_pose(pose)
-        return image_flip, intrin_flip, pose_flip
+    def flip_features(self, features):
+        feat_aug = dict()
+        feat_aug["image5d"] = tf.image.flip_left_right(features["image5d"])
+        if "image5d_R" in features:
+            feat_aug["image5d_R"] = tf.image.flip_left_right(features["image5d_R"])
+
+        feat_aug["intrinsic"] = self.flip_intrinsic(features["intrinsic"], features["image5d"].get_shape())
+        if "intrinsic_R" in features:
+            feat_aug["intrinsic_R"] = self.flip_intrinsic(features["intrinsic_R"], features["image5d"].get_shape())
+
+        feat_aug["pose_gt"] = self.flip_gt_pose(features["pose_gt"])
+        if "pose_gt_R" in features:
+            feat_aug["pose_gt_R"] = self.flip_gt_pose(features["pose_gt_R"])
+
+        if "stereo_T_LR" in features:
+            feat_aug["stereo_T_LR"] = self.flip_stereo_pose(features["stereo_T_LR"])
+
+        feat_rest = {key: val for key, val in features.items() if key not in feat_aug}
+        feat_aug.update(feat_rest)
+        return feat_aug
 
     def flip_intrinsic(self, intrinsic, imshape):
         batch, height, width, _ = imshape
@@ -210,39 +171,50 @@ class HorizontalFlip(AugmentBase):
         intrin_flip = tf.abs(intrin_wh - intrinsic)
         return intrin_flip
 
-    def flip_pose(self, pose):
+    def flip_gt_pose(self, pose):
         T_flip = tf.constant([[[[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]]], dtype=tf.float32)
         # [batch, numsrc, 4, 4] = [1, 1, 4, 4] @ [batch, numsrc, 4, 4] @ [1, 1, 4, 4]
         pose_flip = T_flip @ pose @ tf.linalg.inv(T_flip)
         return pose_flip
+
+    def flip_stereo_pose(self, pose):
+        T_flip = tf.constant([[[-1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]]], dtype=tf.float32)
+        # [batch, 4, 4] = [1, 4, 4] @ [batch, 4, 4] @ [1, 4, 4]
+        pose_flip = T_flip @ pose @ tf.linalg.inv(T_flip)
+        return pose_flip
+
 
 
 class ColorJitter(AugmentBase):
     def __init__(self, aug_prob=0.2):
         super().__init__(aug_prob)
 
-    def __call__(self, features, suffix=""):
-        image = features["image_aug" + suffix]
+    def __call__(self, features):
         rndval = tf.random.uniform(())
-        # srcimg = image[0, 0:100:20, 0:300:60, 1].numpy()
-
-        image_jit, param = tf.cond(rndval < self.aug_prob,
-                                   lambda: self.jitter_color(image),
-                                   lambda: (image, tf.constant([0, 0], dtype=tf.float32)))
-        self.param = param
-        features["image_aug" + suffix] = image_jit
-        # dstimg = image_jit[0, 0:100:20, 0:300:60, 1].numpy()
-        # print("image jit diff:", dstimg - srcimg)
-        return features
-
-    def jitter_color(self, image):
-        image = (image + 1.) / 2.
         gamma = tf.random.uniform((), minval=0.5, maxval=1.5)
         saturation = tf.random.uniform((), minval=0.5, maxval=1.5)
-        param = tf.stack([gamma, saturation], axis=0)
+
+        features["image5d"], self.param = \
+            tf.cond(rndval < self.aug_prob,
+                    lambda: self.jitter_color(features["image5d"], gamma, saturation),
+                    lambda: (features["image5d"], tf.constant([0, 0], dtype=tf.float32))
+                    )
+        if "image5d_R" in features:
+            features["image5d_R"], self.param = \
+                tf.cond(rndval < self.aug_prob,
+                        lambda: self.jitter_color(features["image5d_R"], gamma, saturation),
+                        lambda: (features["image5d_R"], tf.constant([0, 0], dtype=tf.float32))
+                        )
+        return features
+
+    def jitter_color(self, image, gamma, saturation):
+        # convert image -1 ~ 1 to 0 ~ 1
+        image = (image + 1.) / 2.
         image = tf.image.adjust_saturation(image, saturation)
         image = tf.image.adjust_gamma(image, gamma=gamma, gain=1.)
+        # convert image 0 ~ 1 to -1 ~ 1
         image = image * 2. - 1.
+        param = tf.stack([gamma, saturation], axis=0)
         return image, param
 
 
@@ -315,7 +287,7 @@ def test_flip_pose_tf():
     pose_vec = tf.random.uniform((batch, numsrc, 6), -2, 2)
     pose_mat = cp.pose_rvec2matr_batch(pose_vec)
     flipper = HorizontalFlip()
-    pose_mat_flip = flipper.flip_pose(pose_mat)
+    pose_mat_flip = flipper.flip_gt_pose(pose_mat)
     pose_vec_flip = cp.pose_matr2rvec_batch(pose_mat_flip)
     print("pose vec:\n", pose_vec[1])
     print("pose mat:\n", pose_mat[1, 1])
@@ -370,21 +342,24 @@ def test_augmentations():
     print("===== test test_augmentations")
     tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
     dataset = tfrgen.get_generator()
-    data_aug = {"Preprocess": Preprocess(),
-                "CropAndResize": CropAndResize(aug_prob=0.5),
+    total_aug = TotalAugment()
+    data_aug = {"CropAndResize": CropAndResize(aug_prob=0.5),
                 "HorizontalFlip": HorizontalFlip(aug_prob=0.5),
-                "ColorJitter": ColorJitter(aug_prob=0.5),
-                "Postprocess": Postprocess()}
+                "ColorJitter": ColorJitter(aug_prob=0.5)}
 
     for bi, features in enumerate(dataset):
         print(f"\n!!~~~~~~~~~~ {bi}: new features ~~~~~~~~~~!!")
         images = []
+        feat_aug = total_aug.preprocess(features)
+        img = show_result(feat_aug, "preprocess")
+        images.append(img)
         for name, augment in data_aug.items():
-            features = augment(features)
-            img = show_result(features, name, augment.param)
+            feat_aug = augment(feat_aug)
+            img = show_result(feat_aug, name, augment.param)
             images.append(img)
 
-        source_image, synth_target = synthesize_target(features, "_aug")
+        feat_aug = total_aug.postprocess(features, feat_aug)
+        source_image, synth_target = synthesize_target(feat_aug)
         images.append(synth_target)
         images.append(source_image)
         images = np.concatenate(images, axis=0)
@@ -406,25 +381,21 @@ def test_augmentations():
     cv2.destroyAllWindows()
 
 
-def show_result(features, name, param):
-    batch, snippet, height, width, chann = features["image5d"].get_shape()
-    numsrc = snippet - 1
-
+def show_result(features, name, param=""):
     print(f"----- augmentation: {name}")
     print("parameter:", param)
-    print("image shape", features["image_aug"].get_shape())
-    image = tf.reshape(features["image_aug"], (batch*snippet, height, width, chann))
-    image_u8 = to_uint8_image(image)
-    target = image_u8[numsrc].numpy()
-    intrin = features["intrinsic_aug"]
+    image_u8 = to_uint8_image(features["image5d"])
+    target_index = opts.SNIPPET_LEN - 1
+    target = image_u8[target_index].numpy()
+    intrin = features["intrinsic"]
     print("intrinsic:\n", intrin[0].numpy())
-    pose = features["pose_gt_aug"]
+    pose = features["pose_gt"]
     print("pose:\n", pose[0, 0].numpy())
     return target
 
 
-def synthesize_target(features, suffix=""):
-    sources, target, intrinsic, depth_gt_ms, pose_gt = prep_synthesize(features, suffix)
+def synthesize_target(features):
+    sources, target, intrinsic, depth_gt_ms, pose_gt = prep_synthesize(features)
     synth_target_ms = SynthesizeMultiScale()(sources, intrinsic, depth_gt_ms, pose_gt)
     synth_u8 = to_uint8_image(synth_target_ms[0])
     synth_u8 = synth_u8[0, 0].numpy()
@@ -433,21 +404,14 @@ def synthesize_target(features, suffix=""):
     return source_u8, synth_u8
 
 
-def prep_synthesize(features, suffix):
-    batch, snippet, height, width, chann = features["image5d"].get_shape()
-    numsrc = snippet - 1
-    if suffix is "_aug":
-        image = features["image" + suffix]
-    else:
-        image = features["image5d"]
-
-    image_5d = tf.reshape(image, (batch, snippet, height, width, chann))
-    sources = tf.reshape(image_5d[:, :numsrc], (batch, numsrc, height, width, chann))
-    target = image_5d[:, numsrc]
-    intrinsic = features["intrinsic" + suffix]
-    pose_gt = features["pose_gt" + suffix]
+def prep_synthesize(features):
+    image5d = features["image5d"]
+    sources = image5d[:, :-1]
+    target = image5d[:, -1]
+    intrinsic = features["intrinsic"]
+    pose_gt = features["pose_gt"]
     pose_gt = pose_matr2rvec_batch(pose_gt)
-    depth_gt = features["depth_gt" + suffix]
+    depth_gt = features["depth_gt"]
     depth_gt_ms = multi_scale_depths(depth_gt, [1, 2, 4, 8])
     return sources, target, intrinsic, depth_gt_ms, pose_gt
 
@@ -460,23 +424,24 @@ def test_augmentation_factory():
 
     for bi, features in enumerate(dataset):
         print(f"\n!!~~~~~~~~~~ {bi}: new features ~~~~~~~~~~!!")
+        print(features.keys())
         print("before augment features:")
-        fkeys = list(features.keys())
-        for i in range(len(features.keys()) // 5):
-            print(fkeys[i*5:(i+1)*5])
-
-        features = augmenter(features)
-
-        print("after augment features:")
         fkeys = list(features.keys())
         for i in range(np.ceil(len(features.keys())/5.).astype(int)):
             print(fkeys[i*5:(i+1)*5])
 
-        image = to_uint8_image(features["image5d_R"])
-        image_aug = to_uint8_image(features["image_aug_R"])
-        batch, snippet, height, width, chann = image.get_shape()
-        image = image.numpy()[1].reshape(-1, width, chann)
-        image_aug = image_aug.numpy()[1].reshape(-1, width, chann)
+        feat_aug = augmenter(features)
+
+        print("after augment features:")
+        fkeys = list(feat_aug.keys())
+        for i in range(np.ceil(len(feat_aug.keys())/5.).astype(int)):
+            print(fkeys[i*5:(i+1)*5])
+
+        image = to_uint8_image(features["image5d_R"][1])
+        image_aug = to_uint8_image(feat_aug["image5d_R"][1])
+        snippet, height, width, chann = image.get_shape()
+        image = image.numpy().reshape(-1, width, chann)
+        image_aug = image_aug.numpy().reshape(-1, width, chann)
         image = np.concatenate([image, image_aug], axis=1)
         cv2.imshow("image vs augmented", image)
         cv2.waitKey(1000)
