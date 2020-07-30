@@ -174,7 +174,7 @@ def test_model_predictions():
             break
 
     print("\n----- model wrapper predict() output")
-    predictions = vode_model.predict(dataset, total_steps)
+    predictions = vode_model.predict_dataset(dataset, total_steps)
     print_dict_tensor_shape(predictions, "predict")
 
     print("!!! test_model_predictions passed")

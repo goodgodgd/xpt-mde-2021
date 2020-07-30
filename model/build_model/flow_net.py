@@ -21,9 +21,12 @@ class PWCNet:
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="flownet_input")
         # target: [batch, height, width, channel]
         # source: [batch*numsrc, height, width, channel]
-        target, sources = self.split_target_and_sources(input_tensor)
+        target, sources = layers.Lambda(lambda x: self.split_target_and_sources,
+                                        name="input_split")(input_tensor)
 
         # encode left (target) and right (source) image
+        # c1l, c2l, c3l, c4l, c5l, c6l = PWCEncoder(self.conv2d_f, "left_encode")(target)
+        # c1r, c2r, c3r, c4r, c5r, c6r = PWCEncoder(self.conv2d_f, "right_encode")(sources)
         c1l, c2l, c3l, c4l, c5l, c6l = self.pwc_encode(target, "_l")
         c1r, c2r, c3r, c4r, c5r, c6r = self.pwc_encode(sources, "_r")
 
@@ -170,6 +173,34 @@ class PWCNet:
                                           )([cl, cr])
         print(f"[CorrelationCost] max_displacement={md}, stride_2={stride_2}, corr shape={corr.shape}")
         return corr
+
+
+class PWCEncoder(layers.Layer):
+    def __init__(self, conv2d, name):
+        super().__init__(name=name)
+        self.conv2d_f = conv2d
+
+    def call(self, x, **kwargs):
+        c1 = self.conv2d_f(x, 16, 3, 2)
+        c1 = self.conv2d_f(c1, 16, 3, 1)
+        c1 = self.conv2d_f(c1, 16, 3, 1)
+        c2 = self.conv2d_f(c1, 32, 3, 2)
+        c2 = self.conv2d_f(c2, 32, 3, 1)
+        c2 = self.conv2d_f(c2, 32, 3, 1)
+        c3 = self.conv2d_f(c2, 64, 3, 2)
+        c3 = self.conv2d_f(c3, 64, 3, 1)
+        c3 = self.conv2d_f(c3, 64, 3, 1)
+        c4 = self.conv2d_f(c3, 96, 3, 2)
+        c4 = self.conv2d_f(c4, 96, 3, 1)
+        c4 = self.conv2d_f(c4, 96, 3, 1)
+        c5 = self.conv2d_f(c4, 128, 3, 2)
+        c5 = self.conv2d_f(c5, 128, 3, 1)
+        c5 = self.conv2d_f(c5, 128, 3, 1)
+        c6 = self.conv2d_f(c5, 196, 3, 2)
+        c6 = self.conv2d_f(c6, 196, 3, 1)
+        c6 = self.conv2d_f(c6, 196, 3, 1)
+        return c1, c2, c3, c4, c5, c6
+
 
 
 # ===== TEST FUNCTIONS
