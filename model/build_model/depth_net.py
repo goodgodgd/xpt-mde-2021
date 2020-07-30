@@ -203,6 +203,17 @@ class TempActivation:
         return y
 
 
+def test_build_layer():
+    print("\n===== start test_build_layer")
+    bef_layer = tf.random.uniform((4, 100, 100, 10), -1, 1)
+    skip_layer = [tf.random.uniform((4, 200, 200, 10), -1, 1)]
+    print("UpconvWithSkip input shape:", bef_layer.get_shape(), skip_layer[0].get_shape())
+    upconv_with_skip = UpconvWithSkip(CustomConv2D(), 100, "nearest", "upconv_test")
+    upconv = upconv_with_skip([bef_layer, skip_layer])
+    print("UpconvWithSkip output shape:", upconv.get_shape())
+    print("# weights", len(upconv_with_skip.weights))
+
+
 def test_build_model():
     total_shape = (opts.BATCH_SIZE, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
     # depthnet = DepthNetBasic(total_shape, CustomConv2D(), TempActivation(), "nearest")()
@@ -220,5 +231,6 @@ def test_build_model():
 
 
 if __name__ == "__main__":
+    test_build_layer()
     test_build_model()
 

@@ -21,32 +21,37 @@ class PWCNet:
         input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="flownet_input")
         # target: [batch, height, width, channel]
         # source: [batch*numsrc, height, width, channel]
-        target, sources = layers.Lambda(lambda x: self.split_target_and_sources,
+        target, sources = layers.Lambda(lambda x: self.split_target_and_sources(x),
                                         name="input_split")(input_tensor)
 
         # encode left (target) and right (source) image
-        # c1l, c2l, c3l, c4l, c5l, c6l = PWCEncoder(self.conv2d_f, "left_encode")(target)
-        # c1r, c2r, c3r, c4r, c5r, c6r = PWCEncoder(self.conv2d_f, "right_encode")(sources)
-        c1l, c2l, c3l, c4l, c5l, c6l = self.pwc_encode(target, "_l")
-        c1r, c2r, c3r, c4r, c5r, c6r = self.pwc_encode(sources, "_r")
+        c1l, c2l, c3l, c4l, c5l, c6l = PWCEncoder(self.conv2d_f, "left_encode")(target)
+        c1r, c2r, c3r, c4r, c5r, c6r = PWCEncoder(self.conv2d_f, "right_encode")(sources)
 
         # repeate target numsrc times -> [batch*numsrc, height/scale, width/scale, channel]
-        c1l, c2l, c3l, c4l, c5l, c6l = self.repeat_features((c1l, c2l, c3l, c4l, c5l, c6l), numsrc)
+        c1l, c2l, c3l, c4l, c5l, c6l = RepeatFeatures(numsrc, "repeat")((c1l, c2l, c3l, c4l, c5l, c6l))
 
-        corr6 = self.correlation(c6l, c6r, 6, "pwc_flow6_corr")
-        flow6, up_flow6, up_feat6 = self.predict_flow(corr6, "flow6")
+        corr6 = correlation(c6l, c6r, self.max_displacement, 6, "flow6_corr")
+        feat6, flow6 = FlowPredictor("flow_predict6")(corr6)
+        up_flow6, up_feat6 = self.conv_transpose(feat6, flow6, "pwc_upconv6")
 
-        flow5, up_flow5, up_feat5 = self.upconv_flow(5, c5l, c5r, 0.625, up_flow6, up_feat6)
-        flow4, up_flow4, up_feat4 = self.upconv_flow(4, c4l, c4r, 1.25,  up_flow5, up_feat5)
-        flow3, up_flow3, up_feat3 = self.upconv_flow(3, c3l, c3r, 2.5,   up_flow4, up_feat4)
-        flow2, flow_feat2         = self.upconv_flow(2, c2l, c2r, 5.0,   up_flow3, up_feat3, up=False)
+        feat5, flow5 = self.decode_flow(5, c5l, c5r, 0.625, up_flow6, up_feat6)
+        up_flow5, up_feat5 = self.conv_transpose(feat5, flow5, "pwc_upconv5")
 
-        flow2 = self.context_network(flow_feat2, flow2)
+        feat4, flow4 = self.decode_flow(4, c4l, c4r, 1.25,  up_flow5, up_feat5)
+        up_flow4, up_feat4 = self.conv_transpose(feat4, flow4, "pwc_upconv4")
+
+        feat3, flow3 = self.decode_flow(3, c3l, c3r, 2.5,   up_flow4, up_feat4)
+        up_flow3, up_feat3 = self.conv_transpose(feat3, flow3, "pwc_upconv3")
+
+        feat2, flow2 = self.decode_flow(2, c2l, c2r, 5.0,   up_flow3, up_feat3)
+        flow2 = ContextNetwork("pwc_context")([feat2, flow2])
+
         flow_ms = [flow2, flow3, flow4, flow5]
 
         # reshape back to normal bactch size
         # -> list of [batch, numsrc, height/scale, width/scale, 2]
-        flow_ms = self.reshape_batch_back(flow_ms)
+        flow_ms = layers.Lambda(lambda inputs: self.reshape_batch_back(inputs))(flow_ms)
         pwcnet = tf.keras.Model(inputs=input_tensor, outputs={"flow_ms": flow_ms}, name="PWCNet")
         return pwcnet
 
@@ -63,40 +68,6 @@ class PWCNet:
         sources = tf.reshape(sources, (batch*numsrc, height, width, channel))
         return target, sources
 
-    def pwc_encode(self, x, suffix):
-        c1 = self.conv2d_f(x, 16, 3, 2, name="pwc_conv1a" + suffix)
-        c1 = self.conv2d_f(c1, 16, 3, 1, name="pwc_conv1b" + suffix)
-        c1 = self.conv2d_f(c1, 16, 3, 1, name="pwc_conv1c" + suffix)
-        c2 = self.conv2d_f(c1, 32, 3, 2, name="pwc_conv2a" + suffix)
-        c2 = self.conv2d_f(c2, 32, 3, 1, name="pwc_conv2b" + suffix)
-        c2 = self.conv2d_f(c2, 32, 3, 1, name="pwc_conv2c" + suffix)
-        c3 = self.conv2d_f(c2, 64, 3, 2, name="pwc_conv3a" + suffix)
-        c3 = self.conv2d_f(c3, 64, 3, 1, name="pwc_conv3b" + suffix)
-        c3 = self.conv2d_f(c3, 64, 3, 1, name="pwc_conv3c" + suffix)
-        c4 = self.conv2d_f(c3, 96, 3, 2, name="pwc_conv4a" + suffix)
-        c4 = self.conv2d_f(c4, 96, 3, 1, name="pwc_conv4b" + suffix)
-        c4 = self.conv2d_f(c4, 96, 3, 1, name="pwc_conv4c" + suffix)
-        c5 = self.conv2d_f(c4, 128, 3, 2, name="pwc_conv5a" + suffix)
-        c5 = self.conv2d_f(c5, 128, 3, 1, name="pwc_conv5b" + suffix)
-        c5 = self.conv2d_f(c5, 128, 3, 1, name="pwc_conv5c" + suffix)
-        c6 = self.conv2d_f(c5, 196, 3, 2, name="pwc_conv6a" + suffix)
-        c6 = self.conv2d_f(c6, 196, 3, 1, name="pwc_conv6b" + suffix)
-        c6 = self.conv2d_f(c6, 196, 3, 1, name="pwc_conv6c" + suffix)
-        return c1, c2, c3, c4, c5, c6
-
-    def repeat_features(self, features, numsrc):
-        rep_feats = []
-        for feat in features:
-            batch, height, width, channel = feat.get_shape()
-            # feat -> [batch, 1, height, width, channel]
-            feat = tf.expand_dims(feat, 1)
-            # feat -> [batch, numsrc, height, width, channel]
-            feat = tf.tile(feat, (1, numsrc, 1, 1, 1))
-            # feat -> [batch*numsrc, height, width, channel]
-            feat = tf.reshape(feat, (batch*numsrc, height, width, channel))
-            rep_feats.append(feat)
-        return tuple(rep_feats)
-
     def reshape_batch_back(self, flows_ms):
         batch, snippet = self.total_shape[:2]
         numsrc = snippet - 1
@@ -107,7 +78,7 @@ class PWCNet:
             rsp_flows_ms.append(rsp_flow)
         return rsp_flows_ms
 
-    def upconv_flow(self, p, cp_l, cp_r, flow_scale, up_flowq, up_featq, up=True):
+    def decode_flow(self, p, cp_l, cp_r, flow_scale, up_flowq, up_featq):
         """
         :param p: current layer level, q = p+1, feature resolution is (H/2^p, W/2^p)
         :param cp_l: p-th encoded feature from left image [batch*numsrc, height/2^p, width/2^p, channel_p]
@@ -115,64 +86,18 @@ class PWCNet:
         :param flow_scale: flow scale factor for flow scale to be 1/20
         :param up_flowq: upsampled flow from q-th level [batch*numsrc, height/2^p, width/2^p, 2]
         :param up_featq: upsampled flow from q-th level [batch*numsrc, height/2^p, width/2^p, channel_q]
-        :param up: whether to return upsample flow and feature
         :return:
         """
-        prefix = f"pwc_flow{p}_"
-        cp_r_warp = layers.Lambda(lambda inputs: tfa.image.dense_image_warp(inputs[0], inputs[1]*flow_scale),
-                                  name=prefix + "warp")([cp_r, up_flowq])
-        # cp_r_warp = tfa.image.dense_image_warp(cp_r, up_flowq*flow_scale)
-        corrp = self.correlation(cp_l, cp_r_warp, p, name=prefix + "corr")
-        return self.predict_flow([corrp, cp_l, up_flowq, up_featq], prefix, up)
+        corrp = FlowFeature(self.max_displacement, p, flow_scale, f"pwc_decode{p}")([cp_l, cp_r, up_flowq])
+        feat, flow = FlowPredictor(f"flow_predict{p}")([corrp, cp_l, up_flowq, up_featq])
+        return feat, flow
 
-    def predict_flow(self, inputs, prefix, up=True):
-        x = tf.concat(inputs, axis=-1)
-        c = self.conv2d_f(x, 128, name=prefix + "c1")
-        x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 128, name=prefix + "c2")
-        x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 96, name=prefix + "c3")
-        x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 64, name=prefix + "c4")
-        x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 32)
-        flow = self.conv2d_f(c, 2, activation="linear", name=prefix + "out")
-
-        if up:
-            up_flow = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
-                                             name=prefix + "ct1")(flow)
-            up_feat = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
-                                             name=prefix + "ct2")(c)
-            return flow, up_flow, up_feat
-        else:
-            return flow, c
-
-    def context_network(self, x, flow):
-        c = self.conv2d_f(x, 128, 3, dilation_rate=1, name="pwc_context_1")
-        c = self.conv2d_f(c, 128, 3, dilation_rate=2, name="pwc_context_2")
-        c = self.conv2d_f(c, 128, 3, dilation_rate=4, name="pwc_context_3")
-        c = self.conv2d_f(c,  96, 3, dilation_rate=8, name="pwc_context_4")
-        c = self.conv2d_f(c,  64, 3, dilation_rate=16, name="pwc_context_5")
-        c = self.conv2d_f(c,  32, 3, dilation_rate=1, name="pwc_context_6")
-        refined_flow = self.conv2d_f(c, 2, activation="linear", name=f"pwc_context_7") + flow
-        return refined_flow
-
-    def correlation(self, cl, cr, p, name=""):
-        """
-        :param cl: left convolutional features [batch, height/2^p, width/2^p, channels]
-        :param cr: right convolutional features [batch, height/2^p, width/2^p, channels]
-        :param p: resolution level
-        :param name:
-        :return: correlation volumn [batch, height/2^p, width/2^p, (2*md+1)^2]
-        """
-        md = self.max_displacement // 2**p
-        stride_2 = max(md//4, 1)
-        corr = tfa.layers.CorrelationCost(kernel_size=1, max_displacement=md,
-                                          stride_1=1, stride_2=stride_2,
-                                          pad=md, data_format="channels_last", name=name
-                                          )([cl, cr])
-        print(f"[CorrelationCost] max_displacement={md}, stride_2={stride_2}, corr shape={corr.shape}")
-        return corr
+    def conv_transpose(self, feat, flow, prefix):
+        up_feat = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
+                                         name=prefix + "ct2")(feat)
+        up_flow = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
+                                         name=prefix + "ct1")(flow)
+        return up_feat, up_flow
 
 
 class PWCEncoder(layers.Layer):
@@ -201,6 +126,98 @@ class PWCEncoder(layers.Layer):
         c6 = self.conv2d_f(c6, 196, 3, 1)
         return c1, c2, c3, c4, c5, c6
 
+
+class RepeatFeatures(layers.Layer):
+    def __init__(self, numsrc, name):
+        super().__init__(name=name)
+        self.numsrc = numsrc
+
+    def call(self, features, **kwargs):
+        rep_feats = []
+        for feat in features:
+            batch, height, width, channel = feat.get_shape()
+            # feat -> [batch, 1, height, width, channel]
+            feat = tf.expand_dims(feat, 1)
+            # feat -> [batch, numsrc, height, width, channel]
+            feat = tf.tile(feat, (1, self.numsrc, 1, 1, 1))
+            # feat -> [batch*numsrc, height, width, channel]
+            feat = tf.reshape(feat, (batch*self.numsrc, height, width, channel))
+            rep_feats.append(feat)
+        return tuple(rep_feats)
+
+
+class FlowFeature(layers.Layer):
+    def __init__(self, md, p, flow_scale, name):
+        """
+        :param md: max displacement of flow
+        :param p: current layer level, q = p+1, feature resolution is (H/2^p, W/2^p)
+        :param flow_scale: flow scale factor for flow scale to be 1/20
+        """
+        super().__init__(name=name)
+        self.max_displacement = md
+        self.scale_index = p
+        self.flow_scale = flow_scale
+
+    def call(self, inputs, **kwargs):
+        cp_l, cp_r, up_flowq = inputs
+        cp_r_warp = layers.Lambda(lambda inps: tfa.image.dense_image_warp(inps[0], inps[1]*self.flow_scale),
+                                  )([cp_r, up_flowq])
+        corrp = correlation(cp_l, cp_r_warp, self.md, self.scale_index)
+        return corrp
+
+
+class FlowPredictor(layers.Layer):
+    def __init__(self, name):
+        super().__init__(name)
+
+    def call(self, input_tensors, **kwargs):
+        x = tf.concat(input_tensors, axis=-1)
+        c = self.conv2d_f(x, 128)
+        x = tf.concat([x, c], axis=-1)
+        c = self.conv2d_f(x, 128)
+        x = tf.concat([x, c], axis=-1)
+        c = self.conv2d_f(x, 96)
+        x = tf.concat([x, c], axis=-1)
+        c = self.conv2d_f(x, 64)
+        x = tf.concat([x, c], axis=-1)
+        c = self.conv2d_f(x, 32)
+        flow = self.conv2d_f(c, 2, activation="linear")
+        return c, flow
+
+
+class ContextNetwork(layers.Layer):
+    def __init__(self, name):
+        super().__init__(name=name)
+
+    def call(self, inputs, **kwargs):
+        x, flow = inputs
+        c = self.conv2d_f(x, 128, 3, dilation_rate=1)
+        c = self.conv2d_f(c, 128, 3, dilation_rate=2)
+        c = self.conv2d_f(c, 128, 3, dilation_rate=4)
+        c = self.conv2d_f(c,  96, 3, dilation_rate=8)
+        c = self.conv2d_f(c,  64, 3, dilation_rate=16)
+        c = self.conv2d_f(c,  32, 3, dilation_rate=1)
+        refined_flow = self.conv2d_f(c, 2, activation="linear") + flow
+        return refined_flow
+
+
+def correlation(cl, cr, max_displacement, p, name=""):
+    """
+    :param cl: left convolutional features [batch, height/2^p, width/2^p, channels]
+    :param cr: right convolutional features [batch, height/2^p, width/2^p, channels]
+    :param max_displacement: max displacement
+    :param p: resolution level
+    :param name:
+    :return: correlation volumn [batch, height/2^p, width/2^p, (2*md+1)^2]
+    """
+    md = max_displacement // 2**p
+    stride_2 = max(md//4, 1)
+    corr = tfa.layers.CorrelationCost(kernel_size=1, max_displacement=md,
+                                      stride_1=1, stride_2=stride_2,
+                                      pad=md, data_format="channels_last", name=name
+                                      )([cl, cr])
+    print(f"[CorrelationCost] max_displacement={md}, stride_2={stride_2}, corr shape={corr.shape}")
+    return corr
 
 
 # ===== TEST FUNCTIONS
