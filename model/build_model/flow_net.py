@@ -4,6 +4,7 @@ from tensorflow.keras import layers
 from model.synthesize.bilinear_interp import FlowBilinearInterpolation
 
 import settings
+# referred PWCNet from https://github.com/NVlabs/PWC-Net/blob/master/PyTorch/models/PWCNet.py
 
 
 class PWCNet:
@@ -32,7 +33,7 @@ class PWCNet:
         c1l, c2l, c3l, c4l, c5l, c6l = RepeatFeatures(numsrc, "repeat")((c1l, c2l, c3l, c4l, c5l, c6l))
 
         corr6 = correlation(c6l, c6r, self.max_displacement, 6, "flow6_corr")
-        feat6, flow6 = FlowPredictor("flow_predict6")(corr6)
+        feat6, flow6 = FlowPredictor(self.conv2d_f, "flow_predict6")(corr6)
         up_flow6, up_feat6 = self.conv_transpose(feat6, flow6, "pwc_upconv6")
 
         feat5, flow5 = self.decode_flow(5, c5l, c5r, 0.625, up_flow6, up_feat6)
@@ -45,7 +46,7 @@ class PWCNet:
         up_flow3, up_feat3 = self.conv_transpose(feat3, flow3, "pwc_upconv3")
 
         feat2, flow2 = self.decode_flow(2, c2l, c2r, 5.0,   up_flow3, up_feat3)
-        flow2 = ContextNetwork("pwc_context")([feat2, flow2])
+        flow2 = ContextNetwork(self.conv2d_f, "pwc_context")([feat2, flow2])
 
         flow_ms = [flow2, flow3, flow4, flow5]
 
@@ -89,42 +90,36 @@ class PWCNet:
         :return:
         """
         corrp = FlowFeature(self.max_displacement, p, flow_scale, f"pwc_decode{p}")([cp_l, cp_r, up_flowq])
-        feat, flow = FlowPredictor(f"flow_predict{p}")([corrp, cp_l, up_flowq, up_featq])
+        feat, flow = FlowPredictor(self.conv2d_f, f"flow_predict{p}")([corrp, cp_l, up_flowq, up_featq])
         return feat, flow
 
     def conv_transpose(self, feat, flow, prefix):
         up_feat = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
-                                         name=prefix + "ct2")(feat)
+                                         name=prefix + "_ct2")(feat)
         up_flow = layers.Conv2DTranspose(2, kernel_size=4, strides=2, padding="same",
-                                         name=prefix + "ct1")(flow)
+                                         name=prefix + "_ct1")(flow)
         return up_feat, up_flow
 
 
 class PWCEncoder(layers.Layer):
-    def __init__(self, conv2d, name):
+    def __init__(self, conv2d_f, name):
         super().__init__(name=name)
-        self.conv2d_f = conv2d
+        self.conv_layers = []
+        filters = [16, 32, 64, 96, 128, 196]
+        for out_chann in filters:
+            layers_block = [conv2d_f.get_layer(out_chann, 3, 2),
+                            conv2d_f.get_layer(out_chann, 3, 1),
+                            conv2d_f.get_layer(out_chann, 3, 1)]
+            self.conv_layers.append(layers_block)
 
     def call(self, x, **kwargs):
-        c1 = self.conv2d_f(x, 16, 3, 2)
-        c1 = self.conv2d_f(c1, 16, 3, 1)
-        c1 = self.conv2d_f(c1, 16, 3, 1)
-        c2 = self.conv2d_f(c1, 32, 3, 2)
-        c2 = self.conv2d_f(c2, 32, 3, 1)
-        c2 = self.conv2d_f(c2, 32, 3, 1)
-        c3 = self.conv2d_f(c2, 64, 3, 2)
-        c3 = self.conv2d_f(c3, 64, 3, 1)
-        c3 = self.conv2d_f(c3, 64, 3, 1)
-        c4 = self.conv2d_f(c3, 96, 3, 2)
-        c4 = self.conv2d_f(c4, 96, 3, 1)
-        c4 = self.conv2d_f(c4, 96, 3, 1)
-        c5 = self.conv2d_f(c4, 128, 3, 2)
-        c5 = self.conv2d_f(c5, 128, 3, 1)
-        c5 = self.conv2d_f(c5, 128, 3, 1)
-        c6 = self.conv2d_f(c5, 196, 3, 2)
-        c6 = self.conv2d_f(c6, 196, 3, 1)
-        c6 = self.conv2d_f(c6, 196, 3, 1)
-        return c1, c2, c3, c4, c5, c6
+        outputs = []
+        c = x
+        for layers_block in self.conv_layers:
+            for conv_layer in layers_block:
+                c = conv_layer(c)
+            outputs.append(c)
+        return outputs
 
 
 class RepeatFeatures(layers.Layer):
@@ -160,44 +155,55 @@ class FlowFeature(layers.Layer):
 
     def call(self, inputs, **kwargs):
         cp_l, cp_r, up_flowq = inputs
+        print("trace dense_image_warp:", cp_r.shape, up_flowq.shape)
         cp_r_warp = layers.Lambda(lambda inps: tfa.image.dense_image_warp(inps[0], inps[1]*self.flow_scale),
                                   )([cp_r, up_flowq])
-        corrp = correlation(cp_l, cp_r_warp, self.md, self.scale_index)
+        corrp = correlation(cp_l, cp_r_warp, self.max_displacement, self.scale_index)
         return corrp
 
 
 class FlowPredictor(layers.Layer):
-    def __init__(self, name):
+    def __init__(self, conv2d_f, name):
         super().__init__(name)
+        self.conv_layers = [conv2d_f.get_layer(128),
+                            conv2d_f.get_layer(128),
+                            conv2d_f.get_layer(96),
+                            conv2d_f.get_layer(64),
+                            conv2d_f.get_layer(32),
+                            conv2d_f.get_layer(2, activation="linear")]
 
     def call(self, input_tensors, **kwargs):
         x = tf.concat(input_tensors, axis=-1)
-        c = self.conv2d_f(x, 128)
+        c = self.conv_layers[0](x)
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 128)
+        c = self.conv_layers[1](x)
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 96)
+        c = self.conv_layers[2](x)
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 64)
+        c = self.conv_layers[3](x)
         x = tf.concat([x, c], axis=-1)
-        c = self.conv2d_f(x, 32)
-        flow = self.conv2d_f(c, 2, activation="linear")
+        c = self.conv_layers[4](x)
+        flow = self.conv_layers[5](c)
         return c, flow
 
 
 class ContextNetwork(layers.Layer):
-    def __init__(self, name):
+    def __init__(self, conv2d_f, name):
         super().__init__(name=name)
+        self.conv_layers = [conv2d_f.get_layer(128, dilation_rate=1),
+                            conv2d_f.get_layer(128, dilation_rate=2),
+                            conv2d_f.get_layer(128, dilation_rate=4),
+                            conv2d_f.get_layer(96,  dilation_rate=8),
+                            conv2d_f.get_layer(64,  dilation_rate=16),
+                            conv2d_f.get_layer(32,  dilation_rate=1),
+                            conv2d_f.get_layer(2,   activation="linear")]
 
     def call(self, inputs, **kwargs):
         x, flow = inputs
-        c = self.conv2d_f(x, 128, 3, dilation_rate=1)
-        c = self.conv2d_f(c, 128, 3, dilation_rate=2)
-        c = self.conv2d_f(c, 128, 3, dilation_rate=4)
-        c = self.conv2d_f(c,  96, 3, dilation_rate=8)
-        c = self.conv2d_f(c,  64, 3, dilation_rate=16)
-        c = self.conv2d_f(c,  32, 3, dilation_rate=1)
-        refined_flow = self.conv2d_f(c, 2, activation="linear") + flow
+        c = x
+        for conv_layer in self.conv_layers:
+            c = conv_layer(c)
+        refined_flow = c + flow
         return refined_flow
 
 
@@ -216,6 +222,7 @@ def correlation(cl, cr, max_displacement, p, name=""):
                                       stride_1=1, stride_2=stride_2,
                                       pad=md, data_format="channels_last", name=name
                                       )([cl, cr])
+    corr = layers.LeakyReLU(0.1)(corr)
     print(f"[CorrelationCost] max_displacement={md}, stride_2={stride_2}, corr shape={corr.shape}")
     return corr
 
@@ -224,6 +231,21 @@ def correlation(cl, cr, max_displacement, p, name=""):
 
 import numpy as np
 np.set_printoptions(precision=4, suppress=True, linewidth=100)
+
+
+def gpu_config():
+    # set gpu configs
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
 
 
 def test_correlation():
@@ -377,7 +399,7 @@ def convnet(conv_op, x):
 
 def test_pwcnet():
     print("\n===== start test_pwcnet")
-    total_shape = batch, snippet, height, width, channel = (8, 4, 128, 256, 10)
+    total_shape = batch, snippet, height, width, channel = (4, 5, 128, 256, 3)
     input_tensor = tf.random.uniform(total_shape, -2, 2)
     conv_layer = lo.CustomConv2D(activation=tf.keras.layers.LeakyReLU(0.1),
                                  kernel_initializer=tf.keras.initializers.TruncatedNormal(stddev=0.025),
@@ -386,29 +408,32 @@ def test_pwcnet():
 
     # EXECUTE
     pwc_net = PWCNet(total_shape, conv_layer)()
-    # pwc_net.summary()
+    pwc_net.summary()
 
-    flow_ms = run_net(pwc_net, input_tensor)
-    flow_ms = flow_ms["flow_ms"]
-    for flow in flow_ms:
-        print("PWCNet flow shape:", flow.get_shape())
+    for i in range(5):
+        flow_ms = run_net(pwc_net, input_tensor)
+        flow_ms = flow_ms["flow_ms"]
+        for flow in flow_ms:
+            print(i, "PWCNet flow shape:", flow.get_shape())
+
     assert flow_ms[0].get_shape() == (batch, snippet - 1, height // 4, width // 4, 2)
     assert flow_ms[1].get_shape() == (batch, snippet - 1, height // 8, width // 8, 2)
     print("!!! test_pwcnet passed")
 
 
-# @tf.function
+@tf.function
 def run_net(net, input_tensor):
     return net(input_tensor)
 
 
 if __name__ == "__main__":
-    test_correlation()
-    test_warp_simple()
-    test_warp_multiple()
-    test_conv2d_5dtensor()
-    test_layer_input()
-    test_reshape_tensor()
-    test_lambda_layer()
+    gpu_config()
+    # test_correlation()
+    # test_warp_simple()
+    # test_warp_multiple()
+    # test_conv2d_5dtensor()
+    # test_layer_input()
+    # test_reshape_tensor()
+    # test_lambda_layer()
     test_pwcnet()
 

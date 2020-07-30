@@ -41,20 +41,20 @@ class DepthNetBasic:
         return depthnet
 
     def encode(self, image):
-        conv0 = self.conv2d_d(32, 7, strides=1, name="dp_conv0b")(image)
-        conv1 = self.conv2d_d(32, 7, strides=2, name="dp_conv1a")(conv0)
-        conv1 = self.conv2d_d(64, 5, strides=1, name="dp_conv1b")(conv1)
-        conv2 = self.conv2d_d(64, 5, strides=2, name="dp_conv2a")(conv1)
-        conv2 = self.conv2d_d(128, 3, strides=1, name="dp_conv2b")(conv2)
-        conv3 = self.conv2d_d(128, 3, strides=2, name="dp_conv3a")(conv2)
-        conv3 = self.conv2d_d(256, 3, strides=1, name="dp_conv3b")(conv3)
-        conv4 = self.conv2d_d(256, 3, strides=2, name="dp_conv4a")(conv3)
-        conv4 = self.conv2d_d(512, 3, strides=1, name="dp_conv4b")(conv4)
-        conv5 = self.conv2d_d(512, 3, strides=2, name="dp_conv5a")(conv4)
-        conv5 = self.conv2d_d(512, 3, strides=1, name="dp_conv5b")(conv5)
-        conv6 = self.conv2d_d(512, 3, strides=2, name="dp_conv6a")(conv5)
-        conv6 = self.conv2d_d(512, 3, strides=1, name="dp_conv6b")(conv6)
-        conv7 = self.conv2d_d(512, 3, strides=2, name="dp_conv7a")(conv6)
+        conv0 = self.conv2d_d(image, 32, 7, strides=1, name="dp_conv0b")
+        conv1 = self.conv2d_d(conv0, 32, 7, strides=2, name="dp_conv1a")
+        conv1 = self.conv2d_d(conv1, 64, 5, strides=1, name="dp_conv1b")
+        conv2 = self.conv2d_d(conv1, 64, 5, strides=2, name="dp_conv2a")
+        conv2 = self.conv2d_d(conv2, 128, 3, strides=1, name="dp_conv2b")
+        conv3 = self.conv2d_d(conv2, 128, 3, strides=2, name="dp_conv3a")
+        conv3 = self.conv2d_d(conv3, 256, 3, strides=1, name="dp_conv3b")
+        conv4 = self.conv2d_d(conv3, 256, 3, strides=2, name="dp_conv4a")
+        conv4 = self.conv2d_d(conv4, 512, 3, strides=1, name="dp_conv4b")
+        conv5 = self.conv2d_d(conv4, 512, 3, strides=2, name="dp_conv5a")
+        conv5 = self.conv2d_d(conv5, 512, 3, strides=1, name="dp_conv5b")
+        conv6 = self.conv2d_d(conv5, 512, 3, strides=2, name="dp_conv6a")
+        conv6 = self.conv2d_d(conv6, 512, 3, strides=1, name="dp_conv6b")
+        conv7 = self.conv2d_d(conv6, 512, 3, strides=2, name="dp_conv7a")
         return [conv0, conv1, conv2, conv3, conv4, conv5, conv6, conv7]
 
     def decode(self, convs):
@@ -86,8 +86,7 @@ class DepthNetBasic:
         return UpconvWithSkip(self.conv2d_d, out_channels, self.upsample_method, name)([bef_layer, skip_layer])
 
     def predict_depth(self, src, scope):
-        print("predict depth", scope, src.get_shape(), src.dtype)
-        conv = self.conv2d_d(1, 3, activation="linear", name=scope + "_conv")(src)
+        conv = self.conv2d_d(src, 1, 3, activation="linear", name=scope + "_conv")
         depth = layers.Lambda(lambda x: self.depth_activation(x), name=scope + "_acti")(conv)
         return conv, depth
 
@@ -155,14 +154,11 @@ class DepthNetFromPretrained(DepthNetNoResize):
 class UpconvWithSkip(layers.Layer):
     def __init__(self, conv2d_d, out_channels, upsample_method, name):
         super().__init__(name=name)
-        self.conv_layers = [conv2d_d(out_channels), conv2d_d(out_channels)]
+        self.conv_layers = [conv2d_d.get_layer(out_channels), conv2d_d.get_layer(out_channels)]
         self.upsample_2x = layers.UpSampling2D(size=(2, 2), interpolation=upsample_method)
 
     def call(self, inputs, **kwargs):
         bef_layer, skip_layer = inputs
-        return self.upconv_with_skip_connection(bef_layer, skip_layer)
-
-    def upconv_with_skip_connection(self, bef_layer, skip_layer: list):
         upconv = self.upsample_2x(bef_layer)
         upconv = self.conv_layers[0](upconv)
         upconv = resize_like(upconv, skip_layer[0])
@@ -175,9 +171,9 @@ class UpconvNoResize(UpconvWithSkip):
     def __init__(self, conv2d_d, out_channels, upsample_method, name):
         super().__init__(conv2d_d, out_channels, upsample_method, name)
 
-    def upconv_with_skip_connection(self, bef_layer, skip_layer: list):
+    def call(self, inputs, **kwargs):
+        bef_layer, skip_layer = inputs
         upconv = self.upsample_2x(bef_layer)
-        print("upsample shape:", bef_layer.get_shape(), upconv.get_shape(), skip_layer[0].get_shape())
         upconv = self.conv_layers[0](upconv)
         upconv = layers.Concatenate(axis=3)([upconv] + skip_layer)
         upconv = self.conv_layers[1](upconv)
@@ -203,8 +199,24 @@ class TempActivation:
         return y
 
 
+def gpu_config():
+    # set gpu configs
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
+
 def test_build_layer():
     print("\n===== start test_build_layer")
+    gpu_config()
     bef_layer = tf.random.uniform((4, 100, 100, 10), -1, 1)
     skip_layer = [tf.random.uniform((4, 200, 200, 10), -1, 1)]
     print("UpconvWithSkip input shape:", bef_layer.get_shape(), skip_layer[0].get_shape())
@@ -232,6 +244,6 @@ def test_build_model():
 
 
 if __name__ == "__main__":
-    # test_build_layer()
+    test_build_layer()
     test_build_model()
 

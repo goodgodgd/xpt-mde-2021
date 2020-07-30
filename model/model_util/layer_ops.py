@@ -16,7 +16,7 @@ class CustomConv2D:
         self.kernel_regularizer = kernel_regularizer
         self.scope = scope
 
-    def __call__(self, filters, kernel_size=None, strides=None, padding=None, dilation_rate=None,
+    def __call__(self, x, filters, kernel_size=None, strides=None, padding=None, dilation_rate=None,
                  activation=None, kernel_initializer=None, kernel_regularizer=None, name=""):
         # change arguments if there are valid inputs
         kernel_size = self.kernel_size if kernel_size is None else kernel_size
@@ -32,8 +32,28 @@ class CustomConv2D:
                              dilation_rate=dilation_rate, activation=activation,
                              kernel_initializer=kernel_initializer,
                              kernel_regularizer=kernel_regularizer,
-                             name=name)
+                             name=name)(x)
         return conv
+
+    def get_layer(self, filters, kernel_size=None, strides=None, padding=None, dilation_rate=None,
+                  activation=None, kernel_initializer=None, kernel_regularizer=None, name=""):
+        # change arguments if there are valid inputs
+        kernel_size = self.kernel_size if kernel_size is None else kernel_size
+        strides = self.strides if strides is None else strides
+        padding = self.padding if padding is None else padding
+        dilation_rate = self.dilation_rate if dilation_rate is None else dilation_rate
+        activation = self.activation if activation is None else activation
+        kernel_initializer = self.kernel_initializer if kernel_initializer is None else kernel_initializer
+        kernel_regularizer = self.kernel_regularizer if kernel_regularizer is None else kernel_regularizer
+        name = f"{self.scope}_{name}" if self.scope else name
+
+        layer = layers.Conv2D(filters, kernel_size, strides, padding,
+                              dilation_rate=dilation_rate, activation=activation,
+                              kernel_initializer=kernel_initializer,
+                              kernel_regularizer=kernel_regularizer,
+                              name=name)
+        return layer
+
 
 
 def resize_like(src, ref, scope):
