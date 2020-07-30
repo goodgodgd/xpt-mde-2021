@@ -16,7 +16,7 @@ class CustomConv2D:
         self.kernel_regularizer = kernel_regularizer
         self.scope = scope
 
-    def __call__(self, x, filters, kernel_size=None, strides=None, padding=None, dilation_rate=None,
+    def __call__(self, filters, kernel_size=None, strides=None, padding=None, dilation_rate=None,
                  activation=None, kernel_initializer=None, kernel_regularizer=None, name=""):
         # change arguments if there are valid inputs
         kernel_size = self.kernel_size if kernel_size is None else kernel_size
@@ -32,7 +32,7 @@ class CustomConv2D:
                              dilation_rate=dilation_rate, activation=activation,
                              kernel_initializer=kernel_initializer,
                              kernel_regularizer=kernel_regularizer,
-                             name=name)(x)
+                             name=name)
         return conv
 
 
