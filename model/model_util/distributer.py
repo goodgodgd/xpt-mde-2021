@@ -92,6 +92,7 @@ class ReplicaOutputIntegrator:
 
     def integrate_scalar_loss(self, replica_results):
         # replica_results: list of loss_mean(scalar) for each replica
+        result = replica_results[0] + replica_results[1]
         return tf.reduce_sum(replica_results)
 
     def integrate_dict_scalars(self, replica_results):

@@ -66,7 +66,7 @@ def set_configs():
 @StrategyScope
 def create_training_parts(initial_epoch):
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
-    model = ModelFactory(pretrained_weight=pretrained_weight).get_model()
+    model = ModelFactory(global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
@@ -86,7 +86,8 @@ def try_load_weights(model, weights_suffix='latest'):
 
 
 @StrategyDataset
-def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
+def get_dataset(dataset_name, split, shuffle):
+    batch_size = opts.BATCH_SIZE
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
     assert op.isdir(tfr_train_path)
     dataset = TfrecordGenerator(tfr_train_path, shuffle=shuffle, batch_size=batch_size).get_generator()

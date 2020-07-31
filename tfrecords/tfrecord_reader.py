@@ -115,7 +115,7 @@ def test_read_dataset():
     """
     Test if TfrecordGenerator works fine and print keys and shapes of input tensors
     """
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"))
+    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_val"))
     dataset = tfrgen.get_generator()
     for i, x in enumerate(dataset):
         if i == 100:
@@ -130,7 +130,7 @@ def test_read_dataset():
         image5d = tf.image.convert_image_dtype((x["image5d"] + 1.) / 2., dtype=tf.uint8).numpy()
         cv2.imshow("image", image[0])
         cv2.imshow("target", image5d[0, -1])
-        cv2.waitKey(1000)
+        cv2.waitKey()
 
 
 import numpy as np
@@ -141,7 +141,7 @@ def test_reuse_dataset():
     Test if generator from TfrecordGenerator can be reused after a full iteration
     """
     np.set_printoptions(precision=3, suppress=True)
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), epochs=2, batch_size=64)
+    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_val"), epochs=2, batch_size=64)
     dataset = tfrgen.get_generator()
     for i in range(2):
         print("Iteration:", i)

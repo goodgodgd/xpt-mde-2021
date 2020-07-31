@@ -7,8 +7,9 @@ import settings
 
 
 class PWCNet:
-    def __init__(self, total_shape, conv2d):
+    def __init__(self, total_shape, global_batch, conv2d):
         self.total_shape = total_shape
+        self.global_batch = global_batch
         self.conv2d_f = conv2d
         # maximum pixel movement in optical flow
         self.max_displacement = 128
@@ -18,7 +19,7 @@ class PWCNet:
         batch, snippet, height, width, channel = self.total_shape
         numsrc = snippet - 1
         input_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="flownet_input")
+        input_tensor = layers.Input(shape=input_shape, batch_size=self.global_batch, name="flownet_input")
         # target: [batch, height, width, channel]
         # source: [batch*numsrc, height, width, channel]
         target, sources = self.split_target_and_sources(input_tensor)

@@ -5,16 +5,17 @@ from tensorflow.keras import layers
 
 
 class PoseNet:
-    def __init__(self, input_shape, conv2d):
+    def __init__(self, input_shape, global_batch, conv2d):
         self.input_shape = input_shape
+        self.global_batch = global_batch
         self.conv2d_p = conv2d
-        print("[PoseNet] convolution default options:", vars(conv2d))
+        print("[PoseNet] convolution default options:", input_shape, vars(conv2d))
 
     def __call__(self):
         batch, snippet, height, width, channel = self.input_shape
         numsrc = snippet - 1
         image_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=image_shape, batch_size=batch, name="posenet_input")
+        input_tensor = layers.Input(shape=image_shape, batch_size=self.global_batch, name="posenet_input")
         # posenet_input: [batch, height, width, snippet*channel]
         posenet_input = layers.Lambda(lambda image: self.restack_on_channels(image),
                                       name="channel_stack")(input_tensor)
@@ -38,5 +39,5 @@ class PoseNet:
         # transpose image: [batch, snippet, height, width, channel] -> [batch, height, width, snippet, channel]
         channel_stack_image = tf.transpose(image5d, (0, 2, 3, 1, 4))
         # stack snippet images on channels -> [batch, height, width, snippet*channel]
-        channel_stack_image = tf.reshape(channel_stack_image, shape=(batch, height, width, -1))
+        channel_stack_image = tf.reshape(channel_stack_image, shape=(batch, height, width, snippet*channel))
         return channel_stack_image

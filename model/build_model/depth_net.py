@@ -11,7 +11,7 @@ class DepthNetBasic:
     """
     Basic DepthNet model used in sfmlearner and geonet
     """
-    def __init__(self, total_shape, conv2d, pred_depth, upsample_iterp):
+    def __init__(self, total_shape, global_batch, conv2d, pred_depth, upsample_iterp):
         """
         :param total_shape: explicit shape (batch, snippet, height, width, channel)
         :param conv2d: 2d convolution operator
@@ -19,6 +19,7 @@ class DepthNetBasic:
         :param upsample_iterp: upsampling method
         """
         self.total_shape = total_shape
+        self.global_batch = global_batch
         self.predict_depth = pred_depth
         self.conv2d_d = conv2d
         self.upsample_interp_d = upsample_iterp
@@ -31,7 +32,7 @@ class DepthNetBasic:
         """
         batch, snippet, height, width, channel = self.total_shape
         input_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        input_tensor = layers.Input(shape=input_shape, batch_size=self.global_batch, name="depthnet_input")
         target_image = layers.Lambda(lambda image: image[:, -1], name="depthnet_target")(input_tensor)
 
         conv0 = self.conv2d_d(target_image, 32, 7, strides=1, name="dp_conv0b")
@@ -90,8 +91,8 @@ class DepthNetBasic:
 
 
 class DepthNetNoResize(DepthNetBasic):
-    def __init__(self, total_shape, conv2d, pred_depth, upsample_iterp):
-        super().__init__(total_shape, conv2d, pred_depth, upsample_iterp)
+    def __init__(self, total_shape, global_batch, conv2d, pred_depth, upsample_iterp):
+        super().__init__(total_shape, global_batch, conv2d, pred_depth, upsample_iterp)
     """
     Modified BasicModel to remove resizing features in decoding layers
     Width and height of input image must be integer multiple of 128
@@ -108,7 +109,7 @@ class DepthNetNoResize(DepthNetBasic):
 
 
 class DepthNetFromPretrained(DepthNetNoResize):
-    def __init__(self, total_shape, conv2d, pred_depth, upsample_iterp, net_name, use_pt_weight):
+    def __init__(self, total_shape, global_batch, conv2d, pred_depth, upsample_iterp, net_name, use_pt_weight):
         """
         :param total_shape: explicit shape (batch, snippet, height, width, channel)
         :param conv2d: 2d convolution operator
@@ -117,14 +118,14 @@ class DepthNetFromPretrained(DepthNetNoResize):
         :param net_name: pretrained model name
         :param use_pt_weight: whether use pretrained weights
         """
-        super().__init__(total_shape, conv2d, pred_depth, upsample_iterp)
+        super().__init__(total_shape, global_batch, conv2d, pred_depth, upsample_iterp)
         self.net_name = net_name
         self.pretrained_weight = use_pt_weight
 
     def __call__(self):
         batch, snippet, height, width, channel = self.total_shape
         input_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=input_shape, batch_size=batch, name="depthnet_input")
+        input_tensor = layers.Input(shape=input_shape, batch_size=self.global_batch, name="depthnet_input")
         target_image = layers.Lambda(lambda input_t: input_t[:, -1], name="depthnet_target")(input_tensor)
 
         features_ms = PretrainedModel(self.net_name, self.pretrained_weight).encode(target_image)
