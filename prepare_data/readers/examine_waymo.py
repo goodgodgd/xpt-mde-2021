@@ -13,10 +13,29 @@ from waymo_open_dataset.utils import transform_utils
 from waymo_open_dataset.utils import frame_utils
 from waymo_open_dataset import dataset_pb2 as open_dataset
 
+from model.synthesize.synthesize_base import SynthesizeSingleScale
+import utils.util_funcs as uf
+
+
+def set_configs():
+    np.set_printoptions(precision=3, suppress=True)
+    # set gpu configs
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            # Currently, memory growth needs to be the same across GPUs
+            for gpu in gpus:
+                tf.config.experimental.set_memory_growth(gpu, True)
+            logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
+        except RuntimeError as e:
+            # Memory growth must be set before GPUs have been initialized
+            print(e)
+
 
 def get_dataset():
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    file_pattern = f"/media/ian/IanBook/datasets/waymo/training_0007/*.tfrecord"
+    file_pattern = f"/media/ian/IanBook/datasets/waymo/training_0011/*.tfrecord"
     filenames = tf.io.gfile.glob(file_pattern)
     print("[tfrecord reader]", file_pattern, filenames)
     dataset = tf.data.TFRecordDataset(filenames, compression_type='')
@@ -39,20 +58,8 @@ def show_front_image_depth_pose():
 
         depth_map = get_depth_map(frame)
 
-        dst_shape = (front_image.shape[1] // 2, front_image.shape[0] // 2)
-        front_image = cv2.resize(front_image, dst_shape)
-        cv2.imshow("front", front_image)
-
-        depth_img = np.clip(depth_map, 0, 50) / 50. * 255.
-        depth_img = depth_img[..., np.newaxis].astype(np.uint8)
-        depth_rgb = cv2.cvtColor(depth_img, cv2.COLOR_GRAY2BGR)
-        depth_rgb[(0 < depth_map) & (depth_map < 20), :] = (255, 0, 0)
-        depth_rgb[(20 < depth_map) & (depth_map < 40), :] = (0, 255, 0)
-        depth_rgb[depth_map > 40, :] = (0, 0, 255)
-        depth_rgb = cv2.resize(depth_rgb, dst_shape)
-        cv2.imshow("depth", depth_rgb)
-
-        key = cv2.waitKey(500)
+        dstshape = (front_image.shape[0] // 2, front_image.shape[1] // 2)
+        key = show_and_hold(front_image, depth_map, dstshape)
         if key == ord("q"):
             break
 
@@ -69,6 +76,8 @@ def get_depth_map(frame):
         range_images,
         camera_projections,
         range_image_top_pose)
+
+    height, width = (frame.context.camera_calibrations[0].height, frame.context.camera_calibrations[0].width)
 
     # xyz points in vehicle frame
     points_veh = np.concatenate(points, axis=0)
@@ -112,12 +121,159 @@ def get_depth_map(frame):
     point_diff_large = point_diff[(point_diff[:, 0] > 10) | (point_diff[:, 1] > 10)]
     print("point_diff_large", point_diff_large.shape)
 
+    # undistort projected image points
+    imsize = (width, height)
+    distortion = np.array(intrin[4:])
+    print("distortion", distortion)
+    mapx, mapy = cv2.initUndistortRectifyMap(cam1_K, distortion, None, cam1_K, imsize, cv2.CV_32F)
+    print("map:", mapx.shape, mapy.shape)
+    print("mapx[100:-1:200, 100:-1:200]\n", mapx[100:-1:200, 100:-1:200])
+    print("mapy[100:-1:200, 100:-1:200]\n", mapy[100:-1:200, 100:-1:200])
+    image_y[(image_y < 0) | (image_y > imsize[1] - 1)] = 0
+    image_x[(image_x < 0) | (image_x > imsize[0] - 1)] = 0
+    image_y = (image_y + 0.5).astype(np.int32)
+    image_x = (image_x + 0.5).astype(np.int32)
+    undist_image_x = mapx[image_y, image_x]
+    undist_image_y = mapy[image_y, image_x]
+    undist_image_points = np.stack([undist_image_x, undist_image_y], axis=-1)
+    print("conccat shapes:", cp_points.shape, image_points.shape, undist_image_points.shape)
+    compare_points = np.concatenate([cp_points[:, 1:], image_points, undist_image_points], axis=1)
+    print("compare_points: cp_points, directly projected points, undistorted points\n",
+          compare_points[0:-1:1000])
+
     col_ind = cp_points[:, 1]
     row_ind = cp_points[:, 2]
-    imshape = (frame.context.camera_calibrations[0].height, frame.context.camera_calibrations[0].width)
+    imshape = (height, width)
     depth_map = sparse.coo_matrix((points_depth, (row_ind, col_ind)), imshape)
     depth_map = depth_map.toarray()
     return depth_map
+
+
+def test_synthesize_image():
+    set_configs()
+    dataset = get_dataset()
+    bef_image = None
+    bef_pose = tf.identity(4)
+    pose_cam2veh = tf.constant([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=tf.float32)
+
+    for data in dataset:
+        frame = open_dataset.Frame()
+        frame.ParseFromString(bytearray(data.numpy()))
+        image = tf.image.decode_jpeg(frame.images[IM_ID].image)
+        # rgb to bgr
+        image = tf.stack([image[:, :, 2], image[:, :, 1], image[:, :, 0]], axis=-1)
+        pose = tf.reshape(frame.images[IM_ID].pose.transform, (4, 4))
+
+        height, width, _ = image.get_shape()
+        srcshape = (height, width)
+        dstshape = (height // 5, width // 5)
+        depth_map = get_depth_map2(frame, srcshape, dstshape)
+
+        stop = False
+        if bef_image is not None:
+            intrin = frame.context.camera_calibrations[0].intrinsic
+            intrin = tf.constant([[intrin[0], 0, intrin[2]], [0, intrin[1], intrin[3]], [0, 0, 1]], dtype=tf.float32)
+            depth_tensor = tf.constant(depth_map, dtype=tf.float32)[..., tf.newaxis]
+            relpose = tf.linalg.inv(pose_cam2veh) @ tf.linalg.inv(bef_pose) @ pose @ pose_cam2veh
+            print("relative pose from current to before", relpose)
+            synthesized = synthesize_image(depth_tensor, bef_image, intrin, relpose)
+            synthesized_np = synthesized[0, 0].numpy()
+            print("synthesized_np", synthesized_np.shape, synthesized_np.dtype)
+            stop = show_and_hold(image.numpy(), depth_map, dstshape, 0, [bef_image.numpy(), synthesized_np])
+            # cv2.imshow("synthesized", synthesized_np)
+
+        bef_image = tf.reshape(image, image.get_shape())
+        bef_pose = tf.reshape(pose, pose.get_shape())
+        if stop:
+            break
+
+
+def get_depth_map2(frame, srcshape, dstshape):
+    (range_images, camera_projections, range_image_top_pose) = \
+        frame_utils.parse_range_image_and_camera_projection(frame)
+
+    points, cp_points = frame_utils.convert_range_image_to_point_cloud(
+        frame,
+        range_images,
+        camera_projections,
+        range_image_top_pose)
+
+    # xyz points in vehicle frame
+    points_veh = np.concatenate(points, axis=0)
+    # cp_points: (Nx6) [cam_id, ix, iy, cam_id, ix, iy]
+    cp_points = np.concatenate(cp_points, axis=0)[:, :3]
+    print("points all:", points_veh.shape, "cp_points", cp_points.shape)
+
+    # extract LiDAR points projected to camera[IM_ID]
+    mask = np.equal(cp_points[:, 0], frame.images[IM_ID].name)
+    points_veh = points_veh[mask]
+    cp_points = cp_points[mask]
+    print("cam1 points all:", points_veh.shape, "cam1 cp_points", cp_points.shape)
+
+    # transform points from vehicle to camera1
+    intrin = frame.context.camera_calibrations[0].intrinsic
+    cam1_K = np.array([ [intrin[0], 0, intrin[2]], [0, intrin[1], intrin[3]], [0, 0, 1] ])
+    cam1_T_C2V = tf.reshape(frame.context.camera_calibrations[0].extrinsic.transform, (4, 4)).numpy()
+    cam1_T_V2C = np.linalg.inv(cam1_T_C2V)
+    points_veh_homo = np.concatenate((points_veh, np.ones((points_veh.shape[0], 1))), axis=1)
+    points_veh_homo = points_veh_homo.T
+    points_cam_homo = cam1_T_V2C @ points_veh_homo
+    points_depth = points_cam_homo[0]
+
+    # project points into image
+    # normalize depth to 1
+    points_cam = points_cam_homo[:3]
+    points_cam_norm = points_cam / points_cam[0:1]
+    # 3D Y axis = left = -image x,  ix = -Y*fx + cx
+    image_x = -points_cam_norm[1] * cam1_K[0, 0] + cam1_K[0, 2]
+    image_x[(image_x < 0) | (image_x > srcshape[1] - 1)] = 0
+    # 3D Z axis = up = -image y,  iy = -Z*fy + cy
+    image_y = -points_cam_norm[2] * cam1_K[1, 1] + cam1_K[1, 2]
+    image_y[(image_y < 0) | (image_y > srcshape[0] - 1)] = 0
+
+    scales = (dstshape[0] / srcshape[0], dstshape[1] / srcshape[1])
+    row_ind = (image_y * scales[0]).astype(np.int32)
+    col_ind = (image_x * scales[1]).astype(np.int32)
+    print("scales:", scales, np.max(row_ind), np.max(col_ind))
+    depth_map = sparse.coo_matrix((points_depth, (row_ind, col_ind)), dstshape)
+    depth_map = depth_map.toarray()
+    return depth_map
+
+
+def show_and_hold(image, depth_map, dstshape, wait=0, cat_images=None):
+    dstimsize = (dstshape[1], dstshape[0])
+    image = cv2.resize(image, dstimsize)
+
+    depth_img = np.clip(depth_map, 0., 50.) / 50. * 255.
+    depth_img = depth_img[..., np.newaxis].astype(np.uint8)
+    depth_rgb = cv2.cvtColor(depth_img, cv2.COLOR_GRAY2BGR)
+    depth_rgb[(0 < depth_map) & (depth_map < 20), :] = (255, 0, 0)
+    depth_rgb[(20 < depth_map) & (depth_map < 40), :] = (0, 255, 0)
+    depth_rgb[depth_map > 40, :] = (0, 0, 255)
+    depth_rgb = cv2.resize(depth_rgb, dstimsize, cv2.INTER_NEAREST)
+
+    cat_images = [] if cat_images is None else cat_images
+    view = [image, depth_rgb]
+    for cimg in cat_images:
+        cimg = cv2.resize(cimg, dstimsize)
+        view.append(cimg)
+    view = np.concatenate(view, axis=0)
+    cv2.imshow("image_depth", view)
+    key = cv2.waitKey(wait)
+    return key == ord("q")
+
+
+def synthesize_image(depth, bimage, intrinsic, pose):
+    height, width, _ = bimage.get_shape()
+    depth = depth[tf.newaxis, ...]
+    bimage = bimage[tf.newaxis, tf.newaxis, ...]
+    intrinsic = intrinsic[tf.newaxis, ...]
+    pose = pose[tf.newaxis, tf.newaxis, ...]
+    bimage = uf.to_float_image(bimage)
+    synthesized = SynthesizeSingleScale((1, height, width), 1, 1.)(bimage, intrinsic, depth, pose)
+    print("image minmax", tf.reduce_max(bimage), tf.reduce_max(synthesized))
+    synthesized = uf.to_uint8_image(synthesized)
+    return synthesized
 
 
 def show_frame_structure():
@@ -425,7 +581,8 @@ def rgba(r):
 
 
 if __name__ == "__main__":
-    show_front_image_depth_pose()
+    # show_front_image_depth_pose()
+    test_synthesize_image()
     # show_frame_structure()
     # visualize_range_images()
     # visualize_camera_projection()
