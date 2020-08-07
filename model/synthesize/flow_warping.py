@@ -87,15 +87,14 @@ def test_reshape_source_images():
     print("src_img shape", bat_img.shape)
 
     # take only left image
-    left_img = bat_img[:, :, :opts.IM_WIDTH]
+    left_img = bat_img[:, :, :opts.get_shape("W")]
     print("left_img shape", left_img.shape)
     cv2.imshow("left_img", left_img[0].numpy().astype(np.uint8))
     cv2.waitKey(10)
 
     # reshape image
     batch = 3
-    numsrc = 5
-    height, width = opts.IM_HEIGHT, opts.IM_WIDTH
+    numsrc, height, width = opts.get_shape("SHC")
 
     # EXECUTE
     rsp_img = tf.reshape(left_img, (batch*numsrc, height, width, 3))

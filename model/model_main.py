@@ -119,9 +119,7 @@ def save_model_weights(model, weights_suffix):
 
 def predict(weight_name="latest.h5"):
     set_configs()
-    batch_size = 1
-    input_shape = (batch_size, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
-    model = ModelFactory(input_shape=input_shape).get_model()
+    model = ModelFactory(global_batch=1).get_model()
     model = try_load_weights(model, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 

@@ -367,7 +367,7 @@ def test_augmentations():
 
         ori_images = []
         raw_image_u8 = to_uint8_image(features["image"])
-        ori_images.append(raw_image_u8[0, -opts.IM_HEIGHT:])
+        ori_images.append(raw_image_u8[0, -opts.get_shape("H"):])
         source_image, synth_target = synthesize_target(features)
         ori_images.append(synth_target)
         ori_images.append(source_image)

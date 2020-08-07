@@ -4,7 +4,7 @@ from glob import glob
 import numpy as np
 
 import settings
-from config import opts, get_raw_data_path
+from config import opts
 from utils.util_class import PathManager
 from tfrecords.tfrecord_writer import TfrecordMaker
 
@@ -20,12 +20,18 @@ def convert_to_tfrecords():
         else:
             with PathManager([tfrpath]) as pm:
                 os.makedirs(tfrpath, exist_ok=True)
-                tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO,
-                                         (opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3),
+                tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO, opts.get_shape("SHWC"),
                                          opts.LIMIT_FRAMES, opts.SHUFFLE_TFRECORD_INPUT)
                 tfrmaker.make()
                 # if set_ok() was NOT excuted, the generated path is removed
                 pm.set_ok()
+
+
+def convert_to_tfrecords_directly():
+    datasets = opts.DATASETS_TO_PREPARE
+    for dataset, splits in datasets.items():
+        for split in splits:
+            dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
 
 
 if __name__ == "__main__":

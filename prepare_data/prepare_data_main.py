@@ -6,7 +6,7 @@ import shutil
 import glob
 
 import settings
-from config import opts, get_raw_data_path
+from config import opts
 from utils.util_funcs import print_progress_status
 from utils.util_class import PathManager
 import prepare_data.data_factories as df
@@ -20,8 +20,8 @@ def prepare_datasets():
                 create_validation_set(dataset, "test")
             else:
                 dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
-                drive_lister = df.drive_lister_factory(dataset, split, get_raw_data_path(dataset), dstpath)
-                snippet_maker = df.example_maker_factory(get_raw_data_path(dataset),
+                drive_lister = df.drive_lister_factory(dataset, split, opts.get_raw_data_path(dataset), dstpath)
+                snippet_maker = df.example_maker_factory(opts.get_raw_data_path(dataset),
                                                          drive_lister.pose_avail, drive_lister.depth_avail)
                 prepare_and_save_snippets(snippet_maker, drive_lister, dataset, split)
 
@@ -36,7 +36,7 @@ def prepare_and_save_snippets(snippet_maker, drive_lister, dataset, split):
 
     num_drives = len(drive_paths)
     for i, drive_path in enumerate(drive_paths):
-        data_reader = df.dataset_reader_factory(get_raw_data_path(dataset), drive_path, dataset, split)
+        data_reader = df.dataset_reader_factory(opts.get_raw_data_path(dataset), drive_path, dataset, split)
         data_reader.init_drive()
         num_frames = data_reader.num_frames()
         if num_frames == 0:
@@ -70,7 +70,7 @@ def save_example(example, filename, data_paths):
     frames = example["image"]
     filepath = op.join(image_path, f"{filename}.png")
     cv2.imwrite(filepath, frames)
-    center_y, center_x = (opts.IM_HEIGHT // 2, opts.IM_WIDTH // 2)
+    center_y, center_x = opts.get_shape("HW", 2)
 
     filepath = op.join(image_path, "intrinsic.txt")
     if not op.isfile(filepath):

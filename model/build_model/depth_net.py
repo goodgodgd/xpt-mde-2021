@@ -170,7 +170,7 @@ class TempActivation:
 
 
 def test_build_model():
-    total_shape = (opts.BATCH_SIZE, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
+    total_shape = opts.get_shape("BSHWC")
     depthnet = DepthNetFromPretrained(total_shape, TempActivation(), "NASNetMobile", True)()
     depthnet.summary()
     depth_ms = depthnet.output["depth_ms"]

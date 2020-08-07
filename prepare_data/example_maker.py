@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 
 import settings
-from config import opts, get_raw_data_path
+from config import opts
 import prepare_data.readers.kitti_reader as kr
 import prepare_data.readers.city_reader as cr
 import utils.convert_pose as cp
@@ -52,7 +52,7 @@ class ExampleMaker:
         for idnum in snippet_ids:
             frame = self.data_reader.get_image(idnum)
             raw_img_shape = frame.shape[:2]
-            frame = cv2.resize(frame, dsize=(opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
+            frame = cv2.resize(frame, dsize=opts.get_shape("WH"), interpolation=cv2.INTER_LINEAR)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             frames.append(frame)
 
@@ -82,14 +82,14 @@ class ExampleMaker:
         return tgt_to_src_poses
 
     def load_frame_depth(self, frame_idx, raw_img_shape):
-        dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
+        dst_shape = opts.get_shape("HW")
         depth_map = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         return depth_map
 
     def load_intrinsic(self, raw_img_shape):
         intrinsic = self.data_reader.get_intrinsic()
-        sx = opts.IM_WIDTH / raw_img_shape[1]
-        sy = opts.IM_HEIGHT / raw_img_shape[0]
+        sx = opts.get_shape("W") / raw_img_shape[1]
+        sy = opts.get_shape("H") / raw_img_shape[0]
         out = intrinsic.copy()
         out[0, 0] *= sx
         out[0, 2] *= sx
@@ -113,9 +113,9 @@ class ExampleMakerStereo(ExampleMaker):
         for idnum in snippet_ids:
             img_lef, img_rig = self.data_reader.get_image(idnum)
             raw_img_shape = img_lef.shape[:2]
-            img_lef = cv2.resize(img_lef, (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
+            img_lef = cv2.resize(img_lef, opts.get_shape("WH"), interpolation=cv2.INTER_LINEAR)
             img_lef = cv2.cvtColor(img_lef, cv2.COLOR_RGB2BGR)
-            img_rig = cv2.resize(img_rig, (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
+            img_rig = cv2.resize(img_rig, opts.get_shape("WH"), interpolation=cv2.INTER_LINEAR)
             img_rig = cv2.cvtColor(img_rig, cv2.COLOR_RGB2BGR)
             frame = np.concatenate([img_lef, img_rig], axis=1)
             frames.append(frame)
@@ -126,8 +126,8 @@ class ExampleMakerStereo(ExampleMaker):
     def load_intrinsic(self, raw_img_shape):
         intrin_lef, intrin_rig = self.data_reader.get_intrinsic()
         intrinsic = np.concatenate([intrin_lef, intrin_rig], axis=1)
-        sx = opts.IM_WIDTH / raw_img_shape[1]
-        sy = opts.IM_HEIGHT / raw_img_shape[0]
+        sx = opts.get_shape("W") / raw_img_shape[1]
+        sy = opts.get_shape("H") / raw_img_shape[0]
         intrinsic[0, :] = intrinsic[0, :] * sx
         intrinsic[1, :] = intrinsic[1, :] * sy
         return intrinsic
@@ -148,7 +148,7 @@ class ExampleMakerStereo(ExampleMaker):
         return poses
 
     def load_frame_depth(self, frame_idx, raw_img_shape):
-        dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
+        dst_shape = opts.get_shape("HW")
         depth_lef, depth_rig = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         depth = np.concatenate([depth_lef, depth_rig], axis=1)
         return depth
@@ -159,7 +159,7 @@ def test_kitti_loader():
     dataset = "kitti_raw"
     maker, reader = dataset_loader_factory(get_raw_data_path(dataset), dataset, "train")
     delay = 0
-    height, width = opts.IM_HEIGHT, opts.IM_WIDTH
+    height, width = opts.get_shape("HW")
     drive_paths = reader.list_drive_paths()
 
     for drive_path in drive_paths:
