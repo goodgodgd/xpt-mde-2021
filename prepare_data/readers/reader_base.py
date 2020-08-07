@@ -1,45 +1,33 @@
 
 class DataReaderBase:
-    def __init__(self, base_path, stereo=False):
+    def __init__(self, base_path, drive_path, stereo=False):
         """
         when 'stereo' is True, 'get_xxx' function returns two data in tuple
         """
-        self.base_path = base_path
         self.stereo = stereo
         self.split = ""
-        self.pose_avail = True
-        self.depth_avail = True
         self.frame_count = [0, 0]
         self.frame_names = []
         self.frame_indices = []
         self.total_num_frames = 0
         self.intrinsic = None
         self.T_left_right = None
+        self.static_frames = []
+        self.init_drive(base_path, drive_path)
 
     """
     Public methods used outside this class
     """
-    def list_drive_paths(self):
-        """
-        :return: directory paths to sequences of images
-        """
-        raise NotImplementedError()
-
-    def init_drive(self, drive_path):
+    def init_drive(self, base_path, drive_path):
         """
         reset variables for a new sequence like intrinsic, extrinsic, and last index
+        :param base_path: root path of dataset
         :param drive_path: sequence drectory path
         :return: number of frames
         """
         raise NotImplementedError()
 
-    def make_saving_paths(self, dstpath, drive_path):
-        """
-        :param dstpath: path to save reorganized files
-        :param drive_path: path to source sequence data
-        :return: [image_path, pose_path, depth_path]
-                 specific paths under "dstpath" to save image, pose, and depth
-        """
+    def num_frames(self):
         raise NotImplementedError()
 
     def get_image(self, index):

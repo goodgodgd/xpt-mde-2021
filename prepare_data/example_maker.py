@@ -8,46 +8,17 @@ import prepare_data.readers.city_reader as cr
 import utils.convert_pose as cp
 from utils.util_class import WrongInputException
 
-"""
-ExampleMaker: generates training example, main function is snippet_generator()
-KittiReader: reads data from files
-"""
-
-
-def dataset_reader_factory(raw_data_path, dataset, split, stereo=opts.STEREO):
-    if dataset == "kitti_raw" and split == "train":
-        data_reader = kr.KittiRawTrainReader(raw_data_path, stereo)
-    elif dataset == "kitti_raw" and split == "test":
-        data_reader = kr.KittiRawTestReader(raw_data_path, stereo)
-    elif dataset == "kitti_odom" and split == "train":
-        data_reader = kr.KittiOdomTrainReader(raw_data_path, stereo)
-    elif dataset == "kitti_odom" and split == "test":
-        data_reader = kr.KittiOdomTestReader(raw_data_path, stereo)
-    elif dataset == "cityscapes":
-        data_reader = cr.CityScapesReader(raw_data_path, stereo, split)
-    elif dataset == "cityscapes_seq":
-        data_reader = cr.CityScapesReader(raw_data_path, stereo, split, "_sequence")
-    else:
-        raise WrongInputException(f"Wrong dataset and split: {dataset}, {split}")
-
-    return data_reader
-
-
-def example_maker_factory(raw_data_path, stereo=opts.STEREO, snippet_len=opts.SNIPPET_LEN):
-    if stereo:
-        snippet_maker = ExampleMakerStereo(raw_data_path, snippet_len)
-    else:
-        snippet_maker = ExampleMaker(raw_data_path, snippet_len)
-    return snippet_maker
-
 
 class ExampleMaker:
-    def __init__(self, base_path, snippet_len):
+    def __init__(self, base_path, snippet_len, pose_avail, depth_avail, stereo=False):
         self.base_path = base_path
+        self.pose_avail = pose_avail
+        self.depth_avail = depth_avail
         self.snippet_len = snippet_len
-        self.data_reader = kr.KittiRawTrainReader("", True)
+        self.data_reader = kr.KittiRawTrainReader("", "", True)
         self.drive_path = ""
         self.num_frames = 0
+        self.stereo = stereo
 
     def set_reader(self, reader):
         assert reader.stereo is False
@@ -62,11 +33,11 @@ class ExampleMaker:
         example["index"] = example_index
         example["image"], raw_img_shape = self.load_snippet_frames(snippet_frame_inds)
         example["intrinsic"] = self.load_intrinsic(raw_img_shape)
-        if self.data_reader.pose_avail:
+        if self.pose_avail:
             example["pose_gt"] = self.load_snippet_poses(snippet_frame_inds)
-        if self.data_reader.depth_avail:
+        if self.depth_avail:
             example["depth_gt"] = self.load_frame_depth(example_index, raw_img_shape)
-        if self.data_reader.stereo:
+        if self.stereo:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
         return example
 
@@ -130,8 +101,8 @@ class ExampleMaker:
 
 
 class ExampleMakerStereo(ExampleMaker):
-    def __init__(self, base_path, snippet_len):
-        super().__init__(base_path, snippet_len)
+    def __init__(self, base_path, snippet_len, pose_avail, depth_avail):
+        super().__init__(base_path, snippet_len, pose_avail, depth_avail, True)
 
     def set_reader(self, reader):
         assert reader.stereo

@@ -7,9 +7,9 @@ import glob
 
 import settings
 from config import opts, get_raw_data_path
-from prepare_data.example_maker import dataset_reader_factory, example_maker_factory
 from utils.util_funcs import print_progress_status
 from utils.util_class import PathManager
+import prepare_data.data_factories as df
 
 
 def prepare_datasets():
@@ -19,31 +19,36 @@ def prepare_datasets():
             if split == "val":
                 create_validation_set(dataset, "test")
             else:
-                data_reader = dataset_reader_factory(get_raw_data_path(dataset), dataset, split)
-                snippet_maker = example_maker_factory(get_raw_data_path(dataset))
-                prepare_and_save_snippets(snippet_maker, data_reader, dataset, split)
+                dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
+                drive_lister = df.drive_lister_factory(dataset, split, get_raw_data_path(dataset), dstpath)
+                snippet_maker = df.example_maker_factory(get_raw_data_path(dataset),
+                                                         drive_lister.pose_avail, drive_lister.depth_avail)
+                prepare_and_save_snippets(snippet_maker, drive_lister, dataset, split)
 
 
-def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
+def prepare_and_save_snippets(snippet_maker, drive_lister, dataset, split):
     dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
     os.makedirs(dstpath, exist_ok=True)
-    drive_paths = data_reader.list_drive_paths()
+    drive_paths = drive_lister.list_drive_paths()
     if not drive_paths:
-        print("[Failure] There is no drive data in", dstpath)
+        print("[Failure] There is no drives in", drive_lister.srcpath)
         return
 
     num_drives = len(drive_paths)
-
     for i, drive_path in enumerate(drive_paths):
-        num_frames = data_reader.init_drive(drive_path)
-        assert num_frames > 0
-        data_paths = data_reader.make_saving_paths(dstpath, drive_path)
+        data_reader = df.dataset_reader_factory(get_raw_data_path(dataset), drive_path, dataset, split)
+        num_frames = data_reader.num_frames()
+        if num_frames == 0:
+            print("this drive is EMPTY:", drive_path)
+            continue
+
+        data_paths = drive_lister.make_saving_paths(drive_path)
         image_path = data_paths[0]
         if op.isdir(image_path):
             print(f"this drive is already prepared, check this path completed: {image_path.replace(opts.DATAPATH_SRC, '')}")
             continue
 
-        print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {image_path}")
+        print(f"\n{'=' * 50}\n[load drive] [{i+1}/{num_drives}] drive path: {image_path}, # frames={num_frames}")
         snippet_maker.set_reader(data_reader)
 
         with PathManager(data_paths) as pm:
@@ -53,9 +58,6 @@ def prepare_and_save_snippets(snippet_maker, data_reader, dataset, split):
                 mean_depth = save_example(example, filename, data_paths)
                 print_progress_status(f"Progress: mean depth={mean_depth:0.3f}, "
                                       f"file={filename} {example_index}/{num_frames}")
-
-                # if index > 10:
-                #     break
             # if set_ok() was NOT excuted, the generated path is removed
             pm.set_ok()
         print("")
@@ -69,6 +71,12 @@ def save_example(example, filename, data_paths):
     cv2.imwrite(filepath, frames)
     center_y, center_x = (opts.IM_HEIGHT // 2, opts.IM_WIDTH // 2)
 
+    filepath = op.join(image_path, "intrinsic.txt")
+    if not op.isfile(filepath):
+        intrinsic = example["intrinsic"]
+        print("intrinsic parameters\n", intrinsic)
+        np.savetxt(filepath, intrinsic, fmt="%3.5f")
+
     if "pose_gt" in example:
         poses = example["pose_gt"]
         filepath = op.join(pose_path, f"{filename}.txt")
@@ -80,12 +88,6 @@ def save_example(example, filename, data_paths):
         filepath = op.join(depth_path, f"{filename}.txt")
         np.savetxt(filepath, depth, fmt="%3.5f")
         mean_depth = depth[center_y - 10:center_y + 10, center_x - 10:center_x + 10].mean()
-
-    filepath = op.join(image_path, "intrinsic.txt")
-    if not op.isfile(filepath):
-        intrinsic = example["intrinsic"]
-        print("intrinsic parameters\n", intrinsic)
-        np.savetxt(filepath, intrinsic, fmt="%3.5f")
 
     if "stereo_T_LR" in example:
         filepath = op.join(image_path, "stereo_T_LR.txt")

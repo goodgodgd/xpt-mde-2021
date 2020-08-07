@@ -140,7 +140,7 @@ class TfrecordMaker:
             if self.shuffle:
                 indices = np.random.permutation(len(file_list))
             else:
-                indices = np.arnage(len(file_list))
+                indices = np.arange(len(file_list))
             if self.max_frames:
                 indices = indices[:self.max_frames]
             new_list = [file_list[i] for i in indices]
