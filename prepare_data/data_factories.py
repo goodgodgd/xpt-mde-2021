@@ -14,9 +14,9 @@ DatasetReader: reads data from files
 
 def example_maker_factory(raw_data_path, pose_avail, depth_avail, stereo=opts.STEREO, snippet_len=opts.SNIPPET_LEN):
     if stereo:
-        snippet_maker = em.ExampleMakerStereo(raw_data_path, pose_avail, depth_avail, snippet_len)
+        snippet_maker = em.ExampleMakerStereo(raw_data_path, snippet_len, pose_avail, depth_avail)
     else:
-        snippet_maker = em.ExampleMaker(raw_data_path, pose_avail, depth_avail, snippet_len)
+        snippet_maker = em.ExampleMaker(raw_data_path, snippet_len, pose_avail, depth_avail)
     return snippet_maker
 
 

@@ -26,9 +26,7 @@ class ExampleMaker:
         self.num_frames = len(reader.frame_names)
 
     def get_example(self, example_index):
-        frame_index = self.data_reader.get_frame_index(example_index)
-        snippet_frame_inds = self.make_snippet_indices(frame_index)
-
+        snippet_frame_inds = self.make_snippet_indices(example_index)
         example = dict()
         example["index"] = example_index
         example["image"], raw_img_shape = self.load_snippet_frames(snippet_frame_inds)
@@ -43,7 +41,7 @@ class ExampleMaker:
 
     def make_snippet_indices(self, frame_idx):
         halflen = self.snippet_len // 2
-        max_frame_index = self.data_reader.total_num_frames - 1
+        max_frame_index = self.data_reader.num_frames() - 1
         indices = np.arange(frame_idx-halflen, frame_idx+halflen+1)
         indices = np.clip(indices, 0, max_frame_index).tolist()
         return indices

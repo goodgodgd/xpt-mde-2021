@@ -2,32 +2,41 @@
 class DataReaderBase:
     def __init__(self, base_path, drive_path, stereo=False):
         """
+        :param base_path: root path of dataset
+        :param drive_path: sequence drectory path
         when 'stereo' is True, 'get_xxx' function returns two data in tuple
         """
+        self.base_path = base_path
+        self.drive_path = drive_path
         self.stereo = stereo
         self.split = ""
         self.frame_count = [0, 0]
         self.frame_names = []
         self.frame_indices = []
-        self.total_num_frames = 0
         self.intrinsic = None
         self.T_left_right = None
         self.static_frames = []
-        self.init_drive(base_path, drive_path)
 
     """
     Public methods used outside this class
     """
-    def init_drive(self, base_path, drive_path):
+    def init_drive(self):
         """
         reset variables for a new sequence like intrinsic, extrinsic, and last index
-        :param base_path: root path of dataset
-        :param drive_path: sequence drectory path
-        :return: number of frames
+        """
+        raise NotImplementedError()
+
+    def list_frames(self, drive_path):
+        """
+        :param drive_path: path to data of a drive
+        :return: list of frame names and indices
         """
         raise NotImplementedError()
 
     def num_frames(self):
+        """
+        :return: number of frames of the drive
+        """
         raise NotImplementedError()
 
     def get_image(self, index):

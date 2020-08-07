@@ -12,9 +12,6 @@ from prepare_data.readers.reader_base import DataReaderBase
 class CityScapesReader(DataReaderBase):
     def __init__(self, base_path, drive_path, stereo=False, split="", dir_suffix=""):
         super().__init__(base_path, drive_path, stereo)
-        self.base_path = base_path
-        self.pose_avail = False
-        self.depth_avail = True
         self.left_img_dir = "leftImg8bit"
         self.split = split
         self.dir_suffix = dir_suffix
@@ -25,15 +22,12 @@ class CityScapesReader(DataReaderBase):
     """
     Public methods used outside this class
     """
-    def init_drive(self, base_path, drive_path):
+    def init_drive(self):
         """
         reset variables for a new sequence like intrinsic, extrinsic, and last index
-        :param drive_path: sequence path like "train/bochum/bochum_000000"
-        :return: number of frames
-
         self.frame_names: full path of frame files without extension
         """
-        self.frame_names, self.frame_indices = self._list_frames(drive_path)
+        self.frame_names, self.frame_indices = self.list_frames(self.drive_path)
         self.intrinsic = self._find_camera_matrix()
 
     def num_frames(self):
@@ -72,7 +66,7 @@ class CityScapesReader(DataReaderBase):
     """
     Private methods used inside this class
     """
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         """
         :param drive_path: sequence path like "train/bochum/bochum_000000"
         :return frame_files: list of frame paths like ["train/bochum/bochum_000000_000001"]

@@ -37,6 +37,7 @@ def prepare_and_save_snippets(snippet_maker, drive_lister, dataset, split):
     num_drives = len(drive_paths)
     for i, drive_path in enumerate(drive_paths):
         data_reader = df.dataset_reader_factory(get_raw_data_path(dataset), drive_path, dataset, split)
+        data_reader.init_drive()
         num_frames = data_reader.num_frames()
         if num_frames == 0:
             print("this drive is EMPTY:", drive_path)

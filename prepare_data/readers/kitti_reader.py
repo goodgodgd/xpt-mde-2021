@@ -19,15 +19,15 @@ class KittiReader(DataReaderBase):
     """
     Public methods used outside this class
     """
-    def init_drive(self, base_path, drive_path):
+    def init_drive(self):
         """
         self.frame_names: frame file names without extension
         """
-        if (not base_path) or (not drive_path):
+        if (not self.base_path) or (not self.drive_path):
             return
-        self.drive_loader = self._create_drive_loader(base_path, drive_path)
+        self.drive_loader = self._create_drive_loader()
         self.static_frames = self._read_static_frames()
-        self.frame_names, self.frame_indices = self._list_frames(drive_path)
+        self.frame_names, self.frame_indices = self.list_frames(self.drive_path)
         self.intrinsic = self._find_camera_matrix()
         self.T_left_right = self._find_stereo_extrinsic()
 
@@ -84,10 +84,10 @@ class KittiReader(DataReaderBase):
         else:
             return intrinsic
 
-    def _create_drive_loader(self, base_path, drive_path):
+    def _create_drive_loader(self):
         raise NotImplementedError()
 
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         raise NotImplementedError()
 
     def _list_frame_files(self, drive_path):
@@ -113,7 +113,7 @@ class KittiRawReader(KittiReader):
         drive_id = dirsplits[4]
         return date, drive_id
 
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         raise NotImplementedError()
 
     def _list_frame_files(self, drive_path):
@@ -150,10 +150,10 @@ class KittiRawReader(KittiReader):
         prepare_data_path = op.dirname(op.dirname(op.abspath(__file__)))
         return op.join(prepare_data_path, "resources", "kitti_raw_static_frames.txt")
 
-    def _create_drive_loader(self, base_path, drive_path):
-        print(f"[_create_drive_loader] drive: {op.basename(drive_path)}")
-        date, drive_id = self.parse_drive_path(drive_path)
-        return pykitti.raw(base_path, date, drive_id)
+    def _create_drive_loader(self):
+        print(f"[_create_drive_loader] drive: {op.basename(self.drive_path)}")
+        date, drive_id = self.parse_drive_path(self.drive_path)
+        return pykitti.raw(self.base_path, date, drive_id)
 
 
 class KittiRawTrainReader(KittiRawReader):
@@ -161,7 +161,7 @@ class KittiRawTrainReader(KittiRawReader):
         super().__init__(base_path, drive_path, stereo)
         self.split = "train"
 
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         # list frame files in drive_path
         frame_paths = self._list_frame_files(drive_path)
         frame_files_all = []
@@ -191,7 +191,7 @@ class KittiRawTestReader(KittiRawReader):
         super().__init__(base_path, drive_path, stereo)
         self.split = "test"
 
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         frame_paths = self._list_frame_files(drive_path)
         drive_splits = drive_path.split("/")
         # format drive_path like 'date drive'
@@ -227,10 +227,10 @@ class KittiOdomReader(KittiReader):
         prepare_data_path = op.dirname(op.dirname(op.abspath(__file__)))
         return op.join(prepare_data_path, "resources", "kitti_odom_static_frames.txt")
 
-    def _create_drive_loader(self, base_path, drive_path):
+    def _create_drive_loader(self):
         raise NotImplementedError()
 
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         raise NotImplementedError()
 
     def _list_frame_files(self, drive_path):
@@ -248,12 +248,12 @@ class KittiOdomTrainReader(KittiOdomReader):
         # no depth available for kitti_odom_train dataset
         return None
 
-    def _create_drive_loader(self, base_path, drive_path):
-        drive = op.basename(drive_path)
+    def _create_drive_loader(self):
+        drive = op.basename(self.drive_path)
         print(f"[_create_drive_loader] drive: {drive}")
-        return pykitti.odometry(base_path, drive)
+        return pykitti.odometry(self.base_path, drive)
 
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         # list frame files in drive_path
         frame_paths = self._list_frame_files(drive_path)
         frame_files_all = []
@@ -295,14 +295,14 @@ class KittiOdomTestReader(KittiOdomReader):
         else:
             return pose
 
-    def _create_drive_loader(self, base_path, drive_path):
-        drive = op.basename(drive_path)
-        pose_file = op.join(base_path, "poses", drive+".txt")
+    def _create_drive_loader(self):
+        drive = op.basename(self.drive_path)
+        pose_file = op.join(self.base_path, "poses", drive+".txt")
         self.poses = np.loadtxt(pose_file)
         print(f"[_create_drive_loader] drive: {drive}")
-        return pykitti.odometry(base_path, drive)
+        return pykitti.odometry(self.base_path, drive)
 
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         # list frame files in drive_path
         frame_paths = self._list_frame_files(drive_path)
         frame_files = []
