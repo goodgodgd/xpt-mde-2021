@@ -19,8 +19,14 @@ class PathManager:
 
     def __enter__(self):
         for path in self.paths:
-            if path is not None:
-                os.makedirs(path, exist_ok=True)
+            os.makedirs(path, exist_ok=True)
+        return self
+
+    def reopen(self, paths):
+        self.paths = paths
+        self.safe_exit = False
+        for path in self.paths:
+            os.makedirs(path, exist_ok=True)
         return self
 
     def set_ok(self):

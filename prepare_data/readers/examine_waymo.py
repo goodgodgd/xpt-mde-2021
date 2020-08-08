@@ -202,7 +202,7 @@ def get_depth_map2(frame, srcshape, dstshape):
     points_veh = np.concatenate(points, axis=0)
     # cp_points: (Nx6) [cam_id, ix, iy, cam_id, ix, iy]
     cp_points = np.concatenate(cp_points, axis=0)[:, :3]
-    print("points all:", points_veh.shape, "cp_points", cp_points.shape)
+    print("points all:", points_veh.shape, "cp_points", cp_points.shape, np.max(cp_points, axis=0))
 
     # extract LiDAR points projected to camera[IM_ID]
     mask = np.equal(cp_points[:, 0], frame.images[IM_ID].name)
@@ -224,18 +224,21 @@ def get_depth_map2(frame, srcshape, dstshape):
     # normalize depth to 1
     points_cam = points_cam_homo[:3]
     points_cam_norm = points_cam / points_cam[0:1]
+    # scale intrinsic parameters
+    scale_y, scale_x = (dstshape[0] / srcshape[0], dstshape[1] / srcshape[1])
     # 3D Y axis = left = -image x,  ix = -Y*fx + cx
-    image_x = -points_cam_norm[1] * cam1_K[0, 0] + cam1_K[0, 2]
-    image_x[(image_x < 0) | (image_x > srcshape[1] - 1)] = 0
+    image_x = -points_cam_norm[1] * cam1_K[0, 0] * scale_x + cam1_K[0, 2] * scale_x
     # 3D Z axis = up = -image y,  iy = -Z*fy + cy
-    image_y = -points_cam_norm[2] * cam1_K[1, 1] + cam1_K[1, 2]
-    image_y[(image_y < 0) | (image_y > srcshape[0] - 1)] = 0
+    image_y = -points_cam_norm[2] * cam1_K[1, 1] * scale_y + cam1_K[1, 2] * scale_y
 
-    scales = (dstshape[0] / srcshape[0], dstshape[1] / srcshape[1])
-    row_ind = (image_y * scales[0]).astype(np.int32)
-    col_ind = (image_x * scales[1]).astype(np.int32)
-    print("scales:", scales, np.max(row_ind), np.max(col_ind))
-    depth_map = sparse.coo_matrix((points_depth, (row_ind, col_ind)), dstshape)
+    # extract pixels in valid range
+    valid_mask = (image_x >= 0) & (image_x <= dstshape[1] - 1) & (image_y >= 0) & (image_y <= dstshape[0] - 1)
+    image_x = image_x[valid_mask].astype(np.int32)
+    image_y = image_y[valid_mask].astype(np.int32)
+    points_depth = points_depth[valid_mask]
+
+    # reconstruct depth map
+    depth_map = sparse.coo_matrix((points_depth, (image_y, image_x)), dstshape)
     depth_map = depth_map.toarray()
     return depth_map
 

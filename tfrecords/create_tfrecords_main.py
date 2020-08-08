@@ -5,8 +5,10 @@ import numpy as np
 
 import settings
 from config import opts
+from utils.util_class import WrongInputException
 from utils.util_class import PathManager
 from tfrecords.tfrecord_writer import TfrecordMaker
+import tfrecords.tfrecord_maker as tm
 
 
 def convert_to_tfrecords():
@@ -19,7 +21,6 @@ def convert_to_tfrecords():
             print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
         else:
             with PathManager([tfrpath]) as pm:
-                os.makedirs(tfrpath, exist_ok=True)
                 tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO, opts.get_shape("SHWC"),
                                          opts.LIMIT_FRAMES, opts.SHUFFLE_TFRECORD_INPUT)
                 tfrmaker.make()
@@ -31,9 +32,27 @@ def convert_to_tfrecords_directly():
     datasets = opts.DATASETS_TO_PREPARE
     for dataset, splits in datasets.items():
         for split in splits:
-            dstpath = op.join(opts.DATAPATH_SRC, f"{dataset}_{split}")
+            tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset}_{split}")
+            if op.isdir(tfrpath):
+                print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
+                continue
+
+            with PathManager([tfrpath]) as pm:
+                srcpath = opts.get_raw_data_path(dataset)
+                tfrmaker = tfrecord_maker_factory(dataset, split, srcpath, tfrpath)
+                tfrmaker.make(opts.LIMIT_FRAMES)
+                # if set_ok() was NOT excuted, the generated path is removed
+                pm.set_ok()
+
+
+def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
+    if dataset is "waymo":
+        return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, opts.get_shape("SHWC"))
+    else:
+        WrongInputException(f"Invalid dataset: {dataset}")
 
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    convert_to_tfrecords()
+    # convert_to_tfrecords()
+    convert_to_tfrecords_directly()

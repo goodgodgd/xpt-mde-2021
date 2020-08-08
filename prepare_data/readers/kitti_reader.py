@@ -27,7 +27,7 @@ class KittiReader(DataReaderBase):
             return
         self.drive_loader = self._create_drive_loader()
         self.static_frames = self._read_static_frames()
-        self.frame_names, self.frame_indices = self.list_frames(self.drive_path)
+        self.frame_names = self.list_frames(self.drive_path)
         self.intrinsic = self._find_camera_matrix()
         self.T_left_right = self._find_stereo_extrinsic()
 
@@ -55,9 +55,6 @@ class KittiReader(DataReaderBase):
 
     def get_filename(self, example_index):
         return self.frame_names[example_index]
-
-    def get_frame_index(self, example_index):
-        return self.frame_indices[example_index]
 
     """
     Private methods used inside this class

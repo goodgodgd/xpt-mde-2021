@@ -27,7 +27,7 @@ class CityScapesReader(DataReaderBase):
         reset variables for a new sequence like intrinsic, extrinsic, and last index
         self.frame_names: full path of frame files without extension
         """
-        self.frame_names, self.frame_indices = self.list_frames(self.drive_path)
+        self.frame_names = self.list_frames(self.drive_path)
         self.intrinsic = self._find_camera_matrix()
 
     def num_frames(self):
@@ -60,12 +60,6 @@ class CityScapesReader(DataReaderBase):
         filename = op.basename(self.frame_names[example_index])
         return filename.split("_")[-1]
 
-    def get_frame_index(self, example_index):
-        return self.frame_indices[example_index]
-
-    """
-    Private methods used inside this class
-    """
     def list_frames(self, drive_path):
         """
         :param drive_path: sequence path like "train/bochum/bochum_000000"
@@ -80,8 +74,11 @@ class CityScapesReader(DataReaderBase):
         frame_files = [op.join(split_city, file) for file in frame_files]
         frame_files.sort()
         frame_indices = [int(file.split("_")[-1]) for file in frame_files]
-        return frame_files, frame_indices
+        return frame_files
 
+    """
+    Private methods used inside this class
+    """
     def _find_camera_matrix(self):
         drive_path = "_".join(self.frame_names[0].split("_")[:-1])
         # e.g. file_pattern = /path/to/cityscapes/camera/train/bochum/bochum_000000_*_camera.png
@@ -100,8 +97,7 @@ class CityScapesReader(DataReaderBase):
 
     def _read_depth_map(self, filename, target_shape):
         image = cv2.imread(filename, cv2.IMREAD_ANYDEPTH)
-        assert image is not None, f"[_read_depth_map] There is no disparity image " \
-                                  + op.basename(filename) + " in split " + self.split
+        assert image is not None, f"[_read_depth_map] There is no disparity image " + op.basename(filename)
         disparity = (image.astype(np.float32) - 1.) / 256.
         depth = np.where(image > 0., disparity, 0)
         depth = cv2.resize(depth, (target_shape[1], target_shape[0]), cv2.INTER_NEAREST)

@@ -1,34 +1,21 @@
 
 class DataReaderBase:
-    def __init__(self, base_path, drive_path, stereo=False):
+    def __init__(self, split):
         """
-        :param base_path: root path of dataset
-        :param drive_path: sequence drectory path
         when 'stereo' is True, 'get_xxx' function returns two data in tuple
         """
-        self.base_path = base_path
-        self.drive_path = drive_path
-        self.stereo = stereo
-        self.split = ""
-        self.frame_count = [0, 0]
+        self.split = split
         self.frame_names = []
         self.intrinsic = None
         self.T_left_right = None
-        self.static_frames = []
 
     """
     Public methods used outside this class
     """
-    def init_drive(self):
-        """
-        reset variables for a new sequence like intrinsic, extrinsic, and last index
-        """
-        raise NotImplementedError()
-
-    def list_frames(self, drive_path):
+    def init_drive(self, drive_path):
         """
         :param drive_path: path to data of a drive
-        :return: list of frame names and indices
+        reset variables for a new sequence like intrinsic, extrinsic, and last index
         """
         raise NotImplementedError()
 
@@ -38,25 +25,25 @@ class DataReaderBase:
         """
         raise NotImplementedError()
 
-    def get_image(self, index):
+    def get_image(self, index, right=False):
         """
-        :return: indexed image in the current sequence
+        :return: 'undistorted' indexed image in the current sequence
         """
         raise NotImplementedError()
 
-    def get_quat_pose(self, index):
+    def get_pose(self, index, right=False):
+        """
+        :return: indexed pose in matrix format
+        """
+        raise NotImplementedError()
+
+    def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         """
         :return: indexed pose in a vector [position, quaternion] in the current sequence
         """
         raise NotImplementedError()
 
-    def get_depth_map(self, index, raw_img_shape=None, target_shape=None):
-        """
-        :return: indexed pose in a vector [position, quaternion] in the current sequence
-        """
-        raise NotImplementedError()
-
-    def get_intrinsic(self):
+    def get_intrinsic(self, index=0, right=False):
         """
         :return: camera projection matrix in the current sequence
         """
@@ -68,8 +55,17 @@ class DataReaderBase:
         """
         raise NotImplementedError()
 
-    def get_filename(self, example_index):
+    def get_filename(self, index):
         """
         :return: indexed frame file name
         """
         raise NotImplementedError()
+
+    def index_to_id(self, index):
+        """
+        :return: convert index of self.frame_names to frame id
+        """
+        # normally id is the same as index
+        return index
+
+
