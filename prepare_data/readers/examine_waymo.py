@@ -35,7 +35,7 @@ def set_configs():
 
 def get_dataset():
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    file_pattern = f"/media/ian/IanBook/datasets/waymo/training_0011/*.tfrecord"
+    file_pattern = f"/media/ian/IanBook/datasets/waymo/training_0005/*.tfrecord"
     filenames = tf.io.gfile.glob(file_pattern)
     print("[tfrecord reader]", file_pattern, filenames)
     dataset = tf.data.TFRecordDataset(filenames, compression_type='')
@@ -59,7 +59,9 @@ def show_front_image_depth_pose():
         depth_map = get_depth_map(frame)
 
         dstshape = (front_image.shape[0] // 2, front_image.shape[1] // 2)
-        key = show_and_hold(front_image, depth_map, dstshape)
+        view = make_view("image", front_image, depth_map, dstshape)
+        cv2.imshow("image", view)
+        key = cv2.waitKey()
         if key == ord("q"):
             break
 
@@ -155,6 +157,9 @@ def test_synthesize_image():
     bef_image = None
     bef_pose = tf.identity(4)
     pose_cam2veh = tf.constant([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=tf.float32)
+    key = 0
+    photo_loss1 = []
+    photo_loss2 = []
 
     for data in dataset:
         frame = open_dataset.Frame()
@@ -167,28 +172,46 @@ def test_synthesize_image():
         height, width, _ = image.get_shape()
         srcshape = (height, width)
         dstshape = (height // 5, width // 5)
-        depth_map = get_depth_map2(frame, srcshape, dstshape)
+        intrin = frame.context.camera_calibrations[0].intrinsic
+        intrin = tf.constant([[intrin[0], 0, intrin[2]], [0, intrin[1], intrin[3]], [0, 0, 1]], dtype=tf.float32)
+        depth_map1 = get_depth_map_manually_project(frame, srcshape, dstshape, intrin)
+        depth_map2 = get_depth_map_use_cp(frame, srcshape, dstshape, intrin)
 
-        stop = False
         if bef_image is not None:
-            intrin = frame.context.camera_calibrations[0].intrinsic
-            intrin = tf.constant([[intrin[0], 0, intrin[2]], [0, intrin[1], intrin[3]], [0, 0, 1]], dtype=tf.float32)
-            depth_tensor = tf.constant(depth_map, dtype=tf.float32)[..., tf.newaxis]
             relpose = tf.linalg.inv(pose_cam2veh) @ tf.linalg.inv(bef_pose) @ pose @ pose_cam2veh
             print("relative pose from current to before", relpose)
+            target_image = tf.image.resize(image, dstshape)
+
+            depth_tensor = tf.constant(depth_map1, dtype=tf.float32)[..., tf.newaxis]
             synthesized = synthesize_image(depth_tensor, bef_image, intrin, relpose)
-            synthesized_np = synthesized[0, 0].numpy()
-            print("synthesized_np", synthesized_np.shape, synthesized_np.dtype)
-            stop = show_and_hold(image.numpy(), depth_map, dstshape, 0, [bef_image.numpy(), synthesized_np])
-            # cv2.imshow("synthesized", synthesized_np)
+            synthesized = synthesized[0, 0].numpy()
+            photo_error = tf.abs(target_image - synthesized)[depth_tensor[:, :, 0] > 0]
+            photo_loss1.append(tf.reduce_mean(photo_error).numpy())
+            view = make_view(image.numpy(), depth_map1, dstshape, [bef_image.numpy(), synthesized])
+            cv2.imshow("synthesized1", view)
+
+            depth_tensor = tf.constant(depth_map2, dtype=tf.float32)[..., tf.newaxis]
+            synthesized = synthesize_image(depth_tensor, bef_image, intrin, relpose)
+            synthesized = synthesized[0, 0].numpy()
+            photo_error = tf.abs(target_image - synthesized)[depth_tensor[:, :, 0] > 0]
+            photo_loss2.append(tf.reduce_mean(photo_error).numpy())
+            view = make_view(image.numpy(), depth_map2, dstshape, [bef_image.numpy(), synthesized])
+            cv2.imshow("synthesized2", view)
+            key = cv2.waitKey(10)
+            print("compare loss:", photo_loss1[-1], photo_loss2[-1])
 
         bef_image = tf.reshape(image, image.get_shape())
         bef_pose = tf.reshape(pose, pose.get_shape())
-        if stop:
+        if key == ord('q'):
             break
 
+    photo_loss1 = np.array(photo_loss1)
+    photo_loss2 = np.array(photo_loss2)
+    print("photo_loss1", np.mean(photo_loss1), np.std(photo_loss1))
+    print("photo_loss2", np.mean(photo_loss2), np.std(photo_loss2))
 
-def get_depth_map2(frame, srcshape, dstshape):
+
+def get_depth_map_manually_project(frame, srcshape_hw, dstshape_hw, intrinsic):
     (range_images, camera_projections, range_image_top_pose) = \
         frame_utils.parse_range_image_and_camera_projection(frame)
 
@@ -202,17 +225,15 @@ def get_depth_map2(frame, srcshape, dstshape):
     points_veh = np.concatenate(points, axis=0)
     # cp_points: (Nx6) [cam_id, ix, iy, cam_id, ix, iy]
     cp_points = np.concatenate(cp_points, axis=0)[:, :3]
-    print("points all:", points_veh.shape, "cp_points", cp_points.shape, np.max(cp_points, axis=0))
+    print("points all:", points_veh.shape, "cp_points", cp_points.shape)
 
     # extract LiDAR points projected to camera[IM_ID]
-    mask = np.equal(cp_points[:, 0], frame.images[IM_ID].name)
-    points_veh = points_veh[mask]
-    cp_points = cp_points[mask]
+    camera_mask = np.equal(cp_points[:, 0], frame.images[IM_ID].name)
+    points_veh = points_veh[camera_mask]
+    cp_points = cp_points[camera_mask, 1:3]
     print("cam1 points all:", points_veh.shape, "cam1 cp_points", cp_points.shape)
 
     # transform points from vehicle to camera1
-    intrin = frame.context.camera_calibrations[0].intrinsic
-    cam1_K = np.array([ [intrin[0], 0, intrin[2]], [0, intrin[1], intrin[3]], [0, 0, 1] ])
     cam1_T_C2V = tf.reshape(frame.context.camera_calibrations[0].extrinsic.transform, (4, 4)).numpy()
     cam1_T_V2C = np.linalg.inv(cam1_T_C2V)
     points_veh_homo = np.concatenate((points_veh, np.ones((points_veh.shape[0], 1))), axis=1)
@@ -224,26 +245,74 @@ def get_depth_map2(frame, srcshape, dstshape):
     # normalize depth to 1
     points_cam = points_cam_homo[:3]
     points_cam_norm = points_cam / points_cam[0:1]
+    intrin_np = intrinsic.numpy()
     # scale intrinsic parameters
-    scale_y, scale_x = (dstshape[0] / srcshape[0], dstshape[1] / srcshape[1])
+    scale_y, scale_x = (dstshape_hw[0] / srcshape_hw[0], dstshape_hw[1] / srcshape_hw[1])
     # 3D Y axis = left = -image x,  ix = -Y*fx + cx
-    image_x = -points_cam_norm[1] * cam1_K[0, 0] * scale_x + cam1_K[0, 2] * scale_x
+    image_x = -points_cam_norm[1] * intrin_np[0, 0] * scale_x + intrin_np[0, 2] * scale_x
     # 3D Z axis = up = -image y,  iy = -Z*fy + cy
-    image_y = -points_cam_norm[2] * cam1_K[1, 1] * scale_y + cam1_K[1, 2] * scale_y
+    image_y = -points_cam_norm[2] * intrin_np[1, 1] * scale_y + intrin_np[1, 2] * scale_y
 
     # extract pixels in valid range
-    valid_mask = (image_x >= 0) & (image_x <= dstshape[1] - 1) & (image_y >= 0) & (image_y <= dstshape[0] - 1)
+    valid_mask = (image_x >= 0) & (image_x <= dstshape_hw[1] - 1) & (image_y >= 0) & (image_y <= dstshape_hw[0] - 1)
+    image_x = image_x[valid_mask].astype(np.int32)
+    image_y = image_y[valid_mask].astype(np.int32)
+    points_depth = points_depth[valid_mask]
+    print("points_depth:", points_depth.shape)
+
+    # reconstruct depth map
+    depth_map = sparse.coo_matrix((points_depth, (image_y, image_x)), dstshape_hw)
+    depth_map = depth_map.toarray()
+    return depth_map
+
+
+def get_depth_map_use_cp(frame, srcshape_hw, dstshape_hw, intrinsic):
+    (range_images, camera_projections, range_image_top_pose) = \
+        frame_utils.parse_range_image_and_camera_projection(frame)
+
+    points, cp_points = frame_utils.convert_range_image_to_point_cloud(
+        frame,
+        range_images,
+        camera_projections,
+        range_image_top_pose)
+
+    # xyz points in vehicle frame
+    points_veh = np.concatenate(points, axis=0)
+    # cp_points: (Nx6) [cam_id, ix, iy, cam_id, ix, iy]
+    cp_points = np.concatenate(cp_points, axis=0)[:, :3]
+    print("points all:", points_veh.shape, "cp_points", cp_points.shape)
+
+    # extract LiDAR points projected to camera[IM_ID]
+    camera_mask = np.equal(cp_points[:, 0], frame.images[IM_ID].name)
+    points_veh = points_veh[camera_mask]
+    cp_points = cp_points[camera_mask, 1:3]
+    print("cam1 points all:", points_veh.shape, "cam1 cp_points", cp_points.shape)
+
+    # transform points from vehicle to camera1
+    cam1_T_C2V = tf.reshape(frame.context.camera_calibrations[0].extrinsic.transform, (4, 4)).numpy()
+    cam1_T_V2C = np.linalg.inv(cam1_T_C2V)
+    points_veh_homo = np.concatenate((points_veh, np.ones((points_veh.shape[0], 1))), axis=1)
+    points_veh_homo = points_veh_homo.T
+    points_cam_homo = cam1_T_V2C @ points_veh_homo
+    points_depth = points_cam_homo[0]
+
+    # scale parameters
+    scale_y, scale_x = (dstshape_hw[0] / srcshape_hw[0], dstshape_hw[1] / srcshape_hw[1])
+    image_x = cp_points[:, 0] * scale_x
+    image_y = cp_points[:, 1] * scale_y
+    # extract pixels in valid range
+    valid_mask = (image_x >= 0) & (image_x <= dstshape_hw[1] - 1) & (image_y >= 0) & (image_y <= dstshape_hw[0] - 1)
     image_x = image_x[valid_mask].astype(np.int32)
     image_y = image_y[valid_mask].astype(np.int32)
     points_depth = points_depth[valid_mask]
 
     # reconstruct depth map
-    depth_map = sparse.coo_matrix((points_depth, (image_y, image_x)), dstshape)
+    depth_map = sparse.coo_matrix((points_depth, (image_y, image_x)), dstshape_hw)
     depth_map = depth_map.toarray()
     return depth_map
 
 
-def show_and_hold(image, depth_map, dstshape, wait=0, cat_images=None):
+def make_view(image, depth_map, dstshape, cat_images=None):
     dstimsize = (dstshape[1], dstshape[0])
     image = cv2.resize(image, dstimsize)
 
@@ -261,9 +330,7 @@ def show_and_hold(image, depth_map, dstshape, wait=0, cat_images=None):
         cimg = cv2.resize(cimg, dstimsize)
         view.append(cimg)
     view = np.concatenate(view, axis=0)
-    cv2.imshow("image_depth", view)
-    key = cv2.waitKey(wait)
-    return key == ord("q")
+    return view
 
 
 def synthesize_image(depth, bimage, intrinsic, pose):

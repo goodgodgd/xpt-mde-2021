@@ -13,18 +13,20 @@ class WrongInputException(Exception):
 
 
 class PathManager:
-    def __init__(self, paths):
+    def __init__(self, paths, closer_func=None):
         self.paths = paths
         self.safe_exit = False
+        self.closer = closer_func
 
     def __enter__(self):
         for path in self.paths:
             os.makedirs(path, exist_ok=True)
         return self
 
-    def reopen(self, paths):
+    def reopen(self, paths, closer_func=None):
         self.paths = paths
         self.safe_exit = False
+        self.closer = closer_func
         for path in self.paths:
             os.makedirs(path, exist_ok=True)
         return self
@@ -33,6 +35,7 @@ class PathManager:
         self.safe_exit = True
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        self.closer()
         if self.safe_exit is False:
             print("[PathManager] the process is NOT ended properly, remove the working paths")
             for path in self.paths:

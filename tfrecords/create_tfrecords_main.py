@@ -37,17 +37,15 @@ def convert_to_tfrecords_directly():
                 print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
                 continue
 
-            with PathManager([tfrpath]) as pm:
-                srcpath = opts.get_raw_data_path(dataset)
-                tfrmaker = tfrecord_maker_factory(dataset, split, srcpath, tfrpath)
-                tfrmaker.make(opts.LIMIT_FRAMES)
-                # if set_ok() was NOT excuted, the generated path is removed
-                pm.set_ok()
+            srcpath = opts.get_raw_data_path(dataset)
+            tfrmaker = tfrecord_maker_factory(dataset, split, srcpath, tfrpath)
+            tfrmaker.make(opts.LIMIT_FRAMES)
 
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
     if dataset is "waymo":
-        return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, opts.get_shape("SHWC"))
+        return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO,
+                                     opts.get_shape("SHWC", dataset))
     else:
         WrongInputException(f"Invalid dataset: {dataset}")
 

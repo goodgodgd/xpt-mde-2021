@@ -19,9 +19,15 @@ class DataReaderBase:
         """
         raise NotImplementedError()
 
-    def num_frames(self):
+    def num_frames_(self):
         """
         :return: number of frames of the drive
+        """
+        raise NotImplementedError()
+
+    def get_range_(self):
+        """
+        :return: range object for frame index
         """
         raise NotImplementedError()
 
