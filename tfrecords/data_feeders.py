@@ -184,7 +184,7 @@ class ImageReader(FileReader):
         return image
 
     def preprocess(self, image):
-        height, width = opts.IM_HEIGHT, opts.IM_WIDTH
+        height, width = opts.get_shape("HW")
         half_len = int(opts.SNIPPET_LEN // 2)
         # TODO IMPORTANT!
         #   image in 'srcdata': [src--, src-, target, src+, src++]
@@ -198,7 +198,7 @@ class ImageReader(FileReader):
 
 class ImageReaderStereo(ImageReader):
     def split_data(self, image):
-        width = opts.IM_WIDTH
+        width = opts.get_shape("W")
         left, right = image[:, :width], image[:, width:]
         return [left, right]
 
@@ -250,7 +250,7 @@ class DepthReader(FileReader):
 
 class DepthReaderStereo(DepthReader):
     def split_data(self, depth):
-        width = opts.IM_WIDTH
+        width = opts.get_shape("W")
         left, right = depth[:, :width], depth[:, width:]
         return [left, right]
 

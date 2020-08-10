@@ -2,52 +2,23 @@ import cv2
 import numpy as np
 
 import settings
-from config import opts, get_raw_data_path
+from config import opts
 import prepare_data.readers.kitti_reader as kr
 import prepare_data.readers.city_reader as cr
 import utils.convert_pose as cp
 from utils.util_class import WrongInputException
 
-"""
-ExampleMaker: generates training example, main function is snippet_generator()
-KittiReader: reads data from files
-"""
-
-
-def dataset_reader_factory(raw_data_path, dataset, split, stereo=opts.STEREO):
-    if dataset == "kitti_raw" and split == "train":
-        data_reader = kr.KittiRawTrainReader(raw_data_path, stereo)
-    elif dataset == "kitti_raw" and split == "test":
-        data_reader = kr.KittiRawTestReader(raw_data_path, stereo)
-    elif dataset == "kitti_odom" and split == "train":
-        data_reader = kr.KittiOdomTrainReader(raw_data_path, stereo)
-    elif dataset == "kitti_odom" and split == "test":
-        data_reader = kr.KittiOdomTestReader(raw_data_path, stereo)
-    elif dataset == "cityscapes":
-        data_reader = cr.CityScapesReader(raw_data_path, stereo, split)
-    elif dataset == "cityscapes_seq":
-        data_reader = cr.CityScapesReader(raw_data_path, stereo, split, "_sequence")
-    else:
-        raise WrongInputException(f"Wrong dataset and split: {dataset}, {split}")
-
-    return data_reader
-
-
-def example_maker_factory(raw_data_path, stereo=opts.STEREO, snippet_len=opts.SNIPPET_LEN):
-    if stereo:
-        snippet_maker = ExampleMakerStereo(raw_data_path, snippet_len)
-    else:
-        snippet_maker = ExampleMaker(raw_data_path, snippet_len)
-    return snippet_maker
-
 
 class ExampleMaker:
-    def __init__(self, base_path, snippet_len):
+    def __init__(self, base_path, snippet_len, pose_avail, depth_avail, stereo=False):
         self.base_path = base_path
+        self.pose_avail = pose_avail
+        self.depth_avail = depth_avail
         self.snippet_len = snippet_len
-        self.data_reader = kr.KittiRawTrainReader("", True)
+        self.data_reader = kr.KittiRawTrainReader("", "", True)
         self.drive_path = ""
         self.num_frames = 0
+        self.stereo = stereo
 
     def set_reader(self, reader):
         assert reader.stereo is False
@@ -55,24 +26,22 @@ class ExampleMaker:
         self.num_frames = len(reader.frame_names)
 
     def get_example(self, example_index):
-        frame_index = self.data_reader.get_frame_index(example_index)
-        snippet_frame_inds = self.make_snippet_indices(frame_index)
-
+        snippet_frame_inds = self.make_snippet_indices(example_index)
         example = dict()
         example["index"] = example_index
         example["image"], raw_img_shape = self.load_snippet_frames(snippet_frame_inds)
         example["intrinsic"] = self.load_intrinsic(raw_img_shape)
-        if self.data_reader.pose_avail:
+        if self.pose_avail:
             example["pose_gt"] = self.load_snippet_poses(snippet_frame_inds)
-        if self.data_reader.depth_avail:
+        if self.depth_avail:
             example["depth_gt"] = self.load_frame_depth(example_index, raw_img_shape)
-        if self.data_reader.stereo:
+        if self.stereo:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic()
         return example
 
     def make_snippet_indices(self, frame_idx):
         halflen = self.snippet_len // 2
-        max_frame_index = self.data_reader.total_num_frames - 1
+        max_frame_index = self.data_reader.num_frames() - 1
         indices = np.arange(frame_idx-halflen, frame_idx+halflen+1)
         indices = np.clip(indices, 0, max_frame_index).tolist()
         return indices
@@ -83,7 +52,7 @@ class ExampleMaker:
         for idnum in snippet_ids:
             frame = self.data_reader.get_image(idnum)
             raw_img_shape = frame.shape[:2]
-            frame = cv2.resize(frame, dsize=(opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
+            frame = cv2.resize(frame, dsize=opts.get_shape("WH"), interpolation=cv2.INTER_LINEAR)
             frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
             frames.append(frame)
 
@@ -113,14 +82,14 @@ class ExampleMaker:
         return tgt_to_src_poses
 
     def load_frame_depth(self, frame_idx, raw_img_shape):
-        dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
+        dst_shape = opts.get_shape("HW")
         depth_map = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         return depth_map
 
     def load_intrinsic(self, raw_img_shape):
         intrinsic = self.data_reader.get_intrinsic()
-        sx = opts.IM_WIDTH / raw_img_shape[1]
-        sy = opts.IM_HEIGHT / raw_img_shape[0]
+        sx = opts.get_shape("W") / raw_img_shape[1]
+        sy = opts.get_shape("H") / raw_img_shape[0]
         out = intrinsic.copy()
         out[0, 0] *= sx
         out[0, 2] *= sx
@@ -130,8 +99,8 @@ class ExampleMaker:
 
 
 class ExampleMakerStereo(ExampleMaker):
-    def __init__(self, base_path, snippet_len):
-        super().__init__(base_path, snippet_len)
+    def __init__(self, base_path, snippet_len, pose_avail, depth_avail):
+        super().__init__(base_path, snippet_len, pose_avail, depth_avail, True)
 
     def set_reader(self, reader):
         assert reader.stereo
@@ -144,9 +113,9 @@ class ExampleMakerStereo(ExampleMaker):
         for idnum in snippet_ids:
             img_lef, img_rig = self.data_reader.get_image(idnum)
             raw_img_shape = img_lef.shape[:2]
-            img_lef = cv2.resize(img_lef, (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
+            img_lef = cv2.resize(img_lef, opts.get_shape("WH"), interpolation=cv2.INTER_LINEAR)
             img_lef = cv2.cvtColor(img_lef, cv2.COLOR_RGB2BGR)
-            img_rig = cv2.resize(img_rig, (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_LINEAR)
+            img_rig = cv2.resize(img_rig, opts.get_shape("WH"), interpolation=cv2.INTER_LINEAR)
             img_rig = cv2.cvtColor(img_rig, cv2.COLOR_RGB2BGR)
             frame = np.concatenate([img_lef, img_rig], axis=1)
             frames.append(frame)
@@ -157,8 +126,8 @@ class ExampleMakerStereo(ExampleMaker):
     def load_intrinsic(self, raw_img_shape):
         intrin_lef, intrin_rig = self.data_reader.get_intrinsic()
         intrinsic = np.concatenate([intrin_lef, intrin_rig], axis=1)
-        sx = opts.IM_WIDTH / raw_img_shape[1]
-        sy = opts.IM_HEIGHT / raw_img_shape[0]
+        sx = opts.get_shape("W") / raw_img_shape[1]
+        sy = opts.get_shape("H") / raw_img_shape[0]
         intrinsic[0, :] = intrinsic[0, :] * sx
         intrinsic[1, :] = intrinsic[1, :] * sy
         return intrinsic
@@ -179,7 +148,7 @@ class ExampleMakerStereo(ExampleMaker):
         return poses
 
     def load_frame_depth(self, frame_idx, raw_img_shape):
-        dst_shape = (opts.IM_HEIGHT, opts.IM_WIDTH)
+        dst_shape = opts.get_shape("HW")
         depth_lef, depth_rig = self.data_reader.get_depth_map(frame_idx, raw_img_shape, dst_shape)
         depth = np.concatenate([depth_lef, depth_rig], axis=1)
         return depth
@@ -190,7 +159,7 @@ def test_kitti_loader():
     dataset = "kitti_raw"
     maker, reader = dataset_loader_factory(get_raw_data_path(dataset), dataset, "train")
     delay = 0
-    height, width = opts.IM_HEIGHT, opts.IM_WIDTH
+    height, width = opts.get_shape("HW")
     drive_paths = reader.list_drive_paths()
 
     for drive_path in drive_paths:

@@ -12,19 +12,19 @@ import model.model_util.layer_ops as lo
 
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
-DEFAULT_SHAPE = (opts.PER_REPLICA_BATCH, opts.SNIPPET_LEN, opts.IM_HEIGHT, opts.IM_WIDTH, 3)
 
 
 class ModelFactory:
-    def __init__(self, input_shape=DEFAULT_SHAPE,
+    def __init__(self, dataset=opts.DATASET_TO_USE,
                  global_batch=opts.BATCH_SIZE,
                  net_names=opts.NET_NAMES,
                  depth_activation=opts.DEPTH_ACTIVATION,
                  pretrained_weight=opts.PRETRAINED_WEIGHT,
                  stereo=opts.STEREO,
                  stereo_extrinsic=opts.STEREO_EXTRINSIC):
-        self.input_shape = input_shape
         self.global_batch = global_batch
+        S, H, W, C = opts.get_shape("SHWC", dataset)
+        self.input_shape = (global_batch, S, H, W, C)
         self.net_names = net_names
         self.activation = depth_activation
         self.pretrained_weight = pretrained_weight

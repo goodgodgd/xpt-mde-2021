@@ -8,10 +8,11 @@ from config import opts
 from model.synthesize.synthesize_base import SynthesizeSingleScale, SynthesizeMultiScale
 from model.synthesize.bilinear_interp import BilinearInterpolation
 from tfrecords.tfrecord_reader import TfrecordGenerator
+from model.model_util.augmentation import augmentation_factory
 import utils.convert_pose as cp
 import utils.util_funcs as uf
 
-WAIT_KEY = 200
+WAIT_KEY = 0
 
 
 def test_synthesize_batch_multi_scale():
@@ -20,17 +21,21 @@ def test_synthesize_batch_multi_scale():
     실제 target image와 복원된 "multi" scale target image를 눈으로 비교
     """
     print("===== start test_synthesize_batch_multi_scale")
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    dataname, split = "waymo", "train"
+    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, f"{dataname}_{split}")).get_generator()
+    augmenter = augmentation_factory(opts.AUGMENT_PROBS)
 
     for i, features in enumerate(dataset):
         print("----- test_synthesize_batch_multi_scale")
-        stacked_image = features['image']
+        features = augmenter(features)
+        image5d = features['image5d']
         intrinsic = features['intrinsic']
         depth_gt = features['depth_gt']
         pose_gt = features['pose_gt']
-        source_image, target_image = uf.split_into_source_and_target(stacked_image)
+        source_image, target_image = image5d[:, :4], image5d[:, 4]
         depth_gt_ms = uf.multi_scale_depths(depth_gt, [1, 2, 4, 8])
         pred_pose = cp.pose_matr2rvec_batch(pose_gt)
+        cv2.imshow("depth", depth_gt[0].numpy())
 
         # EXECUTE
         synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, depth_gt_ms, pred_pose)
@@ -38,10 +43,11 @@ def test_synthesize_batch_multi_scale():
         # compare target image and reconstructed images
         # recon_img0[0, 0]: reconstructed from the first image
         target_image = uf.to_uint8_image(target_image).numpy()[0]
-        source_image = uf.to_uint8_image(source_image).numpy()[0, 0:opts.IM_HEIGHT]
+        source_image = uf.to_uint8_image(source_image).numpy()[0, 0]
         recon_img0 = uf.to_uint8_image(synth_target_ms[0]).numpy()[0, 0]
         recon_img1 = uf.to_uint8_image(synth_target_ms[2]).numpy()[0, 0]
-        recon_img1 = cv2.resize(recon_img1, (opts.IM_WIDTH, opts.IM_HEIGHT), cv2.INTER_NEAREST)
+        print("recon image size:", recon_img0.shape, recon_img1.shape, opts.get_shape("WH", dataname))
+        recon_img1 = cv2.resize(recon_img1, opts.get_shape("WH", dataname), cv2.INTER_NEAREST)
         view = np.concatenate([source_image, target_image, recon_img0, recon_img1], axis=0)
         print("Check if all the images are the same")
         cv2.imshow("source, target, and reconstructed", view)
@@ -126,7 +132,7 @@ def test_reshape_source_images():
     print("reorganized source image shape", reshaped_image.get_shape().as_list())
     reshaped_image = uf.to_uint8_image(reshaped_image).numpy()
     imgidx = 2
-    scsize = (int(opts.IM_HEIGHT/2), int(opts.IM_WIDTH/2))
+    scsize = opts.get_shape("HW", scale_div=2)
     scaled_image = tf.image.resize(source_image, size=(scsize[0]*4, scsize[1]), method="bilinear")
     scaled_image = uf.to_uint8_image(scaled_image).numpy()
     scaled_image = scaled_image[0, scsize[0]*imgidx:scsize[0]*(imgidx+1)]
@@ -298,13 +304,13 @@ def test_reconstruct_bilinear_interp():
 def test_all():
     np.set_printoptions(precision=4, suppress=True, linewidth=100)
     test_synthesize_batch_multi_scale()
-    test_synthesize_batch_view()
-    test_reshape_source_images()
-    test_scale_intrinsic()
-    test_pixel2cam()
-    test_transform_to_source()
-    test_pixel_weighting()
-    test_reconstruct_bilinear_interp()
+    # test_synthesize_batch_view()
+    # test_reshape_source_images()
+    # test_scale_intrinsic()
+    # test_pixel2cam()
+    # test_transform_to_source()
+    # test_pixel_weighting()
+    # test_reconstruct_bilinear_interp()
 
 
 if __name__ == "__main__":

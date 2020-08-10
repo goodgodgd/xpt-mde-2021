@@ -137,7 +137,7 @@ def test_photo_loss(source_image, intrinsic, depth_gt_ms, pose_gt, target_ms):
         losses.append(loss)
         if scale == 1:
             recon_target = uf.to_uint8_image(synt_target).numpy()
-            recon_image = cv2.resize(recon_target[0, 0], (opts.IM_WIDTH, opts.IM_HEIGHT), interpolation=cv2.INTER_NEAREST)
+            recon_image = cv2.resize(recon_target[0, 0], opts.get_shape("WH"), interpolation=cv2.INTER_NEAREST)
 
     losses = tf.stack(losses, axis=2)   # [batch, numsrc, num_scales]
     batch_loss = tf.reduce_sum(losses, axis=[1, 2])
@@ -180,8 +180,9 @@ def test_smootheness_loss_quantity():
         stacked_image = features["image"]
         depth_gt = features["depth_gt"]
         # interpolate depth
-        depth_gt = tf.image.resize(depth_gt, size=(int(opts.IM_HEIGHT/2), int(opts.IM_WIDTH/2)), method="bilinear")
-        depth_gt = tf.image.resize(depth_gt, size=(opts.IM_HEIGHT, opts.IM_WIDTH), method="bilinear")
+        height, width = opts.get_shape("HW")
+        depth_gt = tf.image.resize(depth_gt, size=(height//2, width//2), method="bilinear")
+        depth_gt = tf.image.resize(depth_gt, size=(height, width), method="bilinear")
         # make multi-scale data
         source_image, target_image = uf.split_into_source_and_target(stacked_image)
 

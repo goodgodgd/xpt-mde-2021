@@ -2,13 +2,22 @@ import os.path as op
 
 # TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
 RAW_DATA_PATHS = {
-    "kitti_raw": "/media/ian/IanPrivatePP/Datasets/kitti_raw_data",
-    "kitti_odom": "/media/ian/IanPrivatePP/Datasets/kitti_odometry",
-    "cityscapes": "/media/ian/IanPrivatePP/Datasets/cityscapes",
-    "cityscapes_seq": "/media/ian/IanPrivatePP/Datasets/cityscapes",
+    "kitti_raw": "/media/ian/IanBook/datasets/kitti_raw_data",
+    "kitti_odom": "/media/ian/IanBook/datasets/kitti_odometry",
+    "cityscapes": "/media/ian/IanBook/datasets/cityscapes",
+    "cityscapes_seq": "/media/ian/IanBook/datasets/cityscapes",
+    "waymo": "/media/ian/IanBook/datasets/waymo",
 }
 # RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
-RESULT_DATAPATH = "/media/ian/IanPrivatePP/Datasets/vode_data/vode_stereo_0705"
+RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0801"
+
+IMAGE_SIZES = {
+    "kitti_raw": (128, 384),
+    "kitti_odom": (128, 384),
+    "cityscapes": (128, 384),       # ??
+    "cityscapes_seq": (128, 384),
+    "waymo": (256, 384),
+}
 
 
 class VodeOptions:
@@ -17,19 +26,18 @@ class VodeOptions:
     """
     STEREO = True
     SNIPPET_LEN = 5
-    IM_WIDTH = 384
-    IM_HEIGHT = 128
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
     VALIDATION_FRAMES = 500
-    DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test", "val"],
-                           # "kitti_odom": ["train", "test", "val"],
+    DATASETS_TO_PREPARE = {"waymo": ["train"],
+                           "kitti_raw": ["test", "val"],
+                           "kitti_odom": ["train", "test", "val"],
                            # "cityscapes": ["train_extra"],
                            # "cityscapes_seq": ["train"],
                            }
     # only when making small tfrecords to test training
-    LIMIT_FRAMES = 200
-    SHUFFLE_TFRECORD_INPUT = True
+    LIMIT_FRAMES = 0
+    SHUFFLE_TFRECORD_INPUT = None
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}
@@ -40,7 +48,7 @@ class VodeOptions:
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
-    DATAPATH_TFR = op.join(DATAPATH, "tfrecords_small")
+    DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
     DATAPATH_CKP = op.join(DATAPATH, "checkpts")
     DATAPATH_LOG = op.join(DATAPATH, "log")
     DATAPATH_PRD = op.join(DATAPATH, "prediction")
@@ -50,7 +58,7 @@ class VodeOptions:
     """
     training options
     """
-    CKPT_NAME = "vode6"
+    CKPT_NAME = "vode7"
     PER_REPLICA_BATCH = 4
     BATCH_SIZE = PER_REPLICA_BATCH
     EPOCHS = 51
@@ -88,17 +96,41 @@ class VodeOptions:
     FLOW_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
                       "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
 
+    @classmethod
+    def get_raw_data_path(cls, dataset_name):
+        if dataset_name in RAW_DATA_PATHS:
+            dataset_path = RAW_DATA_PATHS[dataset_name]
+            assert op.isdir(dataset_path)
+            return dataset_path
+        else:
+            assert 0, f"Invalid dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}"
+
+    @classmethod
+    def get_shape(cls, code="HW", dataset=DATASET_TO_USE, scale_div=1):
+        imsize = IMAGE_SIZES[dataset]
+        if code is "H":
+            return imsize[0] // scale_div
+        elif code is "W":
+            return imsize[1] // scale_div
+        elif code is "HW":
+            return imsize
+        elif code is "WH":
+            return imsize[1] // scale_div, imsize[0] // scale_div
+        elif code is "HWC":
+            return imsize[0] // scale_div, imsize[1] // scale_div, 3
+        elif code is "SHW":
+            return cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div
+        elif code is "SHWC":
+            return cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div, 3
+        elif code is "BSHWC":
+            return cls.BATCH_SIZE, cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div, 3
+        elif code is "RSHWC":
+            return cls.PER_REPLICA_BATCH, cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div, 3
+        else:
+            assert 0, f"Invalid code: {code}"
+
 
 opts = VodeOptions()
-
-
-def get_raw_data_path(dataset_name):
-    if dataset_name in RAW_DATA_PATHS:
-        dataset_path = RAW_DATA_PATHS[dataset_name]
-        assert op.isdir(dataset_path)
-        return dataset_path
-    else:
-        assert 0, f"Unavailable dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}"
 
 
 import numpy as np

@@ -10,10 +10,8 @@ from prepare_data.readers.reader_base import DataReaderBase
 
 
 class CityScapesReader(DataReaderBase):
-    def __init__(self, base_path, stereo=False, split="", dir_suffix=""):
-        super().__init__(base_path, stereo)
-        self.pose_avail = False
-        self.depth_avail = True
+    def __init__(self, base_path, drive_path, stereo=False, split="", dir_suffix=""):
+        super().__init__(base_path, drive_path, stereo)
         self.left_img_dir = "leftImg8bit"
         self.split = split
         self.dir_suffix = dir_suffix
@@ -24,53 +22,16 @@ class CityScapesReader(DataReaderBase):
     """
     Public methods used outside this class
     """
-    def list_drive_paths(self):
-        split_path = op.join(self.base_path, self.left_img_dir + self.dir_suffix, self.split)
-        if not op.isdir(split_path):
-            raise WrongInputException("[list_sequence_paths] path does NOT exist:" + split_path)
-
-        city_names = os.listdir(split_path)
-        city_names = [city for city in city_names if op.isdir(op.join(split_path, city))]
-        total_sequences = []
-        for city in city_names:
-            pattern = op.join(split_path, city, "*.png")
-            files = glob(pattern)
-            seq_numbers = [file.split("_")[-3] for file in files]
-            seq_numbers = list(set(seq_numbers))
-            seq_numbers.sort()
-            seq_paths = [op.join(self.split, city, f"{city}_{seq}") for seq in seq_numbers]
-            total_sequences.extend(seq_paths)
-
-        # total_sequences: list of ["city/city_seqind"]
-        print("[list_drive_paths]", total_sequences)
-        return total_sequences
-
-    def init_drive(self, drive_path):
+    def init_drive(self):
         """
         reset variables for a new sequence like intrinsic, extrinsic, and last index
-        :param drive_path: sequence path like "train/bochum/bochum_000000"
-        :return: number of frames
-
         self.frame_names: full path of frame files without extension
         """
-        self.frame_names, self.frame_indices, self.total_num_frames = self._list_frames(drive_path)
+        self.frame_names = self.list_frames(self.drive_path)
         self.intrinsic = self._find_camera_matrix()
+
+    def num_frames(self):
         return len(self.frame_names)
-
-    # 여기까지 했고 이제 이 아래를 채우면 돼
-
-    def make_saving_paths(self, dstpath, drive_path):
-        """
-        :param dstpath: path like "opts.DATAPATH/srcdata/cityscapes_train"
-        :param drive_path: sequence path like "train/bochum/bochum_000000"
-        :return: [image_path, pose_path, depth_path]
-                 specific paths under "dstpath" to save image, pose, and depth
-        """
-        # e.g. image_path = "opts.DATAPATH/srcdata/cityscapes_train/bochum/bochum_000000"
-        image_path = op.join(dstpath, op.basename(drive_path))
-        pose_path = op.join(image_path, "pose") if self.pose_avail else None
-        depth_path = op.join(image_path, "depth") if self.depth_avail else None
-        return image_path, pose_path, depth_path
 
     def get_image(self, index):
         frame_name = self.frame_names[index]
@@ -99,13 +60,7 @@ class CityScapesReader(DataReaderBase):
         filename = op.basename(self.frame_names[example_index])
         return filename.split("_")[-1]
 
-    def get_frame_index(self, example_index):
-        return self.frame_indices[example_index]
-
-    """
-    Private methods used inside this class
-    """
-    def _list_frames(self, drive_path):
+    def list_frames(self, drive_path):
         """
         :param drive_path: sequence path like "train/bochum/bochum_000000"
         :return frame_files: list of frame paths like ["train/bochum/bochum_000000_000001"]
@@ -119,9 +74,11 @@ class CityScapesReader(DataReaderBase):
         frame_files = [op.join(split_city, file) for file in frame_files]
         frame_files.sort()
         frame_indices = [int(file.split("_")[-1]) for file in frame_files]
-        total_num_frames = len(frame_files)
-        return frame_files, frame_indices, total_num_frames
+        return frame_files
 
+    """
+    Private methods used inside this class
+    """
     def _find_camera_matrix(self):
         drive_path = "_".join(self.frame_names[0].split("_")[:-1])
         # e.g. file_pattern = /path/to/cityscapes/camera/train/bochum/bochum_000000_*_camera.png
@@ -140,8 +97,7 @@ class CityScapesReader(DataReaderBase):
 
     def _read_depth_map(self, filename, target_shape):
         image = cv2.imread(filename, cv2.IMREAD_ANYDEPTH)
-        assert image is not None, f"[_read_depth_map] There is no disparity image " \
-                                  + op.basename(filename) + " in split " + self.split
+        assert image is not None, f"[_read_depth_map] There is no disparity image " + op.basename(filename)
         disparity = (image.astype(np.float32) - 1.) / 256.
         depth = np.where(image > 0., disparity, 0)
         depth = cv2.resize(depth, (target_shape[1], target_shape[0]), cv2.INTER_NEAREST)
