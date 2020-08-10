@@ -56,6 +56,7 @@ class WaymoReader(DataReaderBase):
         assert right is False, "waymo dataset is monocular"
         frame = self._get_frame(index)
         depth = get_waymo_depth_map(frame, srcshape_hw, dstshape_hw, intrinsic)
+        depth = depth[..., np.newaxis]
         return depth.astype(np.float32)
 
     def get_intrinsic(self, index=0, right=False):
@@ -82,18 +83,25 @@ class WaymoReader(DataReaderBase):
 
     def _get_frame(self, index):
         if index in self.frame_buffer:
-            return self.frame_buffer[index]
+            frame = self.frame_buffer[index]
+            time_of_day = f"{frame.context.stats.time_of_day}"
+            if time_of_day != "Day":
+                raise ValueError(f"time_of_day is not Day: {time_of_day}")
+            return frame
 
-        if index == self.latest_index + 1:
+        if (index == self.latest_index + 1) or self.latest_index < 0:
             # add a new frame
             frame_data = self.tfr_dataset.__next__()
             frame = open_dataset.Frame()
             frame.ParseFromString(bytearray(frame_data.numpy()))
             self.frame_buffer[index] = frame
-            # remove an old frame
             if index - 20 in self.frame_buffer:
                 self.frame_buffer.pop(index - 20, None)
             self.latest_index = index
+            time_of_day = f"{frame.context.stats.time_of_day}"
+            if time_of_day != "Day":
+                raise ValueError(f"time_of_day is not Day: {time_of_day}")
+            # remove an old frame
             return frame
 
         assert 0, f"frame index is not consecutive: {self.latest_index} to {index}"
@@ -147,3 +155,45 @@ def get_waymo_depth_map(frame, srcshape_hw, dstshape_hw, intrinsic):
     depth_map = sparse.coo_matrix((points_depth, (image_y, image_x)), dstshape_hw)
     depth_map = depth_map.toarray()
     return depth_map
+
+
+import cv2
+import utils.util_funcs as uf
+from config import opts
+
+
+def test_waymo_reader():
+    for di in range(0, 28):
+        drive_path = f"/media/ian/IanBook/datasets/waymo/training_{di:04d}"
+        print("\n!!! New drive start !!!", drive_path)
+        reader = WaymoReader("train")
+        reader.init_drive(drive_path)
+        pose_bef = np.zeros((4, 4))
+        for fi in range(50000):
+            try:
+                frame = reader._get_frame(fi)
+                image = reader.get_image(fi)
+                pose = reader.get_pose(fi)
+                intrinsic = reader.get_intrinsic(fi)
+                depth = reader.get_depth(fi, image.shape[:2], opts.get_shape("HW", "waymo"), intrinsic)
+            except StopIteration as si:
+                print("StopIteration:", si)
+                break
+
+            dist = np.linalg.norm(pose[:3, 3] - pose_bef[:3, 3], axis=0)
+            msg = f"[test_waymo_reader] drive: {di}, frame: {fi}, dist: {dist:1.3f}"
+            msg += f", weather: {frame.context.stats.weather}, time: {frame.context.stats.time_of_day}"
+            uf.print_progress_status(msg)
+            view = image[0:-1:5, 0:-1:5, :]
+            cv2.imshow("image", view)
+            cv2.imshow("depth", depth)
+            if dist < 5:
+                cv2.waitKey(10)
+            else:
+                cv2.waitKey(2000)
+            pose_bef = pose
+
+
+if __name__ == "__main__":
+    test_waymo_reader()
+

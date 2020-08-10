@@ -3,10 +3,8 @@ import os.path as op
 from glob import glob
 import tensorflow as tf
 import shutil
-import numpy as np
 import json
 
-import settings
 import utils.util_funcs as uf
 import utils.util_class as uc
 from tfrecords.example_maker import ExampleMaker
@@ -65,8 +63,8 @@ class TfrecordMakerBase:
         with uc.PathManager([self.tfrpath__], closer_func=self.on_exit) as pm:
             self.pm = pm
             for di, drive_path in enumerate(self.drive_paths):
-                if di > 3:
-                    break
+                # if di > 3:
+                #     break
                 if self.init_tfrecord(di):
                     continue
 
@@ -77,14 +75,21 @@ class TfrecordMakerBase:
 
                 last_example = dict()
                 for index in loop_range:
-                    example = self.example_maker.get_example(index)
-                    if example is None:     # if example was empty, this drive ended
+                    try:
+                        example = self.example_maker.get_example(index)
+                    except StopIteration as si: # raised from xxx_reader._get_frame()
+                        print("[StopIteration] running drive ended")
                         break
-                    elif not example:       # when dict is empty, skip this index
+                    except ValueError as ve:    # raised from xxx_reader._get_frame()
+                        uf.print_progress_status(f"==[making TFR] ValueError frame: {index}/{num_frames}, {ve}")
+                        continue
+
+                    if not example:             # when dict is empty, skip this index
+                        uf.print_progress_status(f"==[making TFR] INVALID example, frame: {index}/{num_frames}")
                         continue
                     example_serial = self.serialize_example(example)
-                    if index > 50:
-                        break
+                    # if index > 50:
+                    #     break
 
                     last_example = example
                     self.write_tfrecord(example_serial, di)
@@ -127,17 +132,7 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
 
     def list_drive_paths(self, srcpath, split):
-        # drive_paths = glob(op.join(srcpath, "training_*"))
-        drive_paths = []
-        if self.split is "train":
-            BAD_DRIVES = [2, 4, 5, 10, 11, 12, 17, 25]
-        else:
-            BAD_DRIVES = [2, 4, 5, 10, 11, 12, 17, 25]
-        for di in range(28):
-            if di in BAD_DRIVES:
-                continue
-            drive = op.join(srcpath, f"training_{di:04d}")
-            drive_paths.append(drive)
+        drive_paths = glob(op.join(srcpath, "training_*"))
         drive_paths.sort()
         return drive_paths
 
@@ -157,7 +152,7 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
         return False
 
     def open_new_writer(self, drive_index):
-        outfile = f"{self.tfr_drive_path}/{drive_index:03d}_shard_{self.shard_count:03d}.tfrecord"
+        outfile = f"{self.tfr_drive_path}/drive_{drive_index:03d}_shard_{self.shard_count:03d}.tfrecord"
         self.writer = tf.io.TFRecordWriter(outfile)
 
     def write_tfrecord_config(self, example):
@@ -177,7 +172,6 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
         # merge config files of all drives and save only one in tfrpath
         files = glob(f"{self.tfrpath__}/*/tfr_config.txt")
         print("[wrap_up] config files:", files[:5])
-        print(f"{self.tfrpath__}/*/config.txt")
         total_length = 0
         config = dict()
         for file in files:
@@ -189,6 +183,4 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
             json.dump(config, fr)
 
         os.rename(self.tfrpath__, self.tfrpath)
-
-
 
