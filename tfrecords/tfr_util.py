@@ -1,4 +1,5 @@
 import numpy as np
+import cv2
 import tensorflow as tf
 
 
@@ -70,4 +71,42 @@ def read_data_config(value):
 
     return {"parse_type": parse_type, "decode_type": decode_type, "shape": shape}
 
+
+def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
+    # depth_view = apply_color_map(depth_map)
+    # depth_view = cv2.resize(depth_view, (dstshape_hw[1], dstshape_hw[0]))
+    # cv2.imshow("srcdepth", depth_view)
+    du, dv = np.meshgrid(np.arange(dstshape_hw[1]), np.arange(dstshape_hw[0]))
+    du, dv = (du.reshape(-1), dv.reshape(-1))
+    scale_y, scale_x = (srcshape_hw[0] / dstshape_hw[0], srcshape_hw[1] / dstshape_hw[1])
+    su, sv = (du * scale_x).astype(np.uint16), (dv * scale_y).astype(np.uint16)
+    radi_x, radi_y = (int(scale_x/2), int(scale_y/2))
+    # print("su", su[0:800:40])
+    # print("sv", sv[0:-1:10000])
+
+    dst_depth = np.zeros(du.shape).astype(np.float32)
+    weight = np.zeros(du.shape).astype(np.float32)
+    for dy in range(-radi_y, radi_y+1):
+        for dx in range(-radi_x, radi_x+1):
+            v_inds = np.clip(sv + dy, 0, srcshape_hw[0] - 1).astype(np.uint16)
+            u_inds = np.clip(su + dx, 0, srcshape_hw[1] - 1).astype(np.uint16)
+
+            # if (dx==1) and (dy==1):
+            #     print("u_inds", u_inds[0:400:20])
+            #     print("v_inds", v_inds[0:-1:10000])
+            tmp_depth = depth_map[v_inds, u_inds]
+            tmp_weight = (tmp_depth > 0).astype(np.uint8)
+            dst_depth += tmp_depth
+            weight += tmp_weight
+
+    dst_depth[weight > 0] /= weight[weight > 0]
+    dst_depth = dst_depth.reshape((dstshape_hw[0], dstshape_hw[1], 1))
+    return dst_depth
+
+
+def apply_color_map(depth):
+    depth = depth[:, :, 0]
+    depth_view = (np.clip(depth, 0, 50.) / 50. * 255).astype(np.uint8)
+    depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+    return depth_view
 
