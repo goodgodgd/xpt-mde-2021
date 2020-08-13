@@ -8,7 +8,7 @@ from tfrecords.readers.reader_base import DataReaderBase
 from tfrecords.tfr_util import resize_depth_map, apply_color_map
 
 
-class DrivingReader(DataReaderBase):
+class DrivingStereoReader(DataReaderBase):
     def __init__(self, split=""):
         super().__init__(split)
         self.zip_files = dict()
@@ -113,7 +113,7 @@ def test_driving_stereo_reader():
 
     for drive_path in drive_paths:
         print("\n!!! New drive start !!!", drive_path)
-        reader = DrivingReader("train")
+        reader = DrivingStereoReader("train")
         reader.init_drive(drive_path)
         frame_indices = reader.get_range_()
         for fi in frame_indices:

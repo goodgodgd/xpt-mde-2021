@@ -8,7 +8,7 @@ from tfrecords.readers.reader_base import DataReaderBase
 from tfrecords.tfr_util import resize_depth_map, apply_color_map
 
 
-class CityReader(DataReaderBase):
+class CityscapesReader(DataReaderBase):
     def __init__(self, split="", reader_arg=None):
         super().__init__(split)
         self.zip_files = reader_arg
@@ -88,7 +88,6 @@ class CityReader(DataReaderBase):
         cx = params["intrinsic"]["u0"]
         cy = params["intrinsic"]["v0"]
         intrinsic = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
-        print("CityReader get_intrinsic:", intrinsic[0])
         return intrinsic.astype(np.float32)
 
     def get_stereo_extrinsic(self, index=0):
@@ -139,7 +138,7 @@ def test_city_reader():
 
     for drive_path in drive_paths:
         print("\n!!! New drive start !!!", drive_path)
-        reader = CityReader("train", zip_files)
+        reader = CityscapesReader("train", zip_files)
         reader.init_drive(drive_path)
         frame_indices = reader.get_range_()
         for fi in frame_indices:
