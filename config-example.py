@@ -4,9 +4,10 @@ import os.path as op
 RAW_DATA_PATHS = {
     "kitti_raw": "/media/ian/IanBook/datasets/kitti_raw_data",
     "kitti_odom": "/media/ian/IanBook/datasets/kitti_odometry",
-    "cityscapes": "/media/ian/IanBook/datasets/cityscapes",
-    "cityscapes_seq": "/media/ian/IanBook/datasets/cityscapes",
+    "cityscapes__extra": "/media/ian/IanBook/datasets/raw_zips/cityscapes",
+    "cityscapes__sequence": "/media/ian/IanBook/datasets/raw_zips/cityscapes",
     "waymo": "/media/ian/IanBook/datasets/waymo",
+    "driving_stereo": "/media/ian/IanBook/datasets/raw_zips/driving_stereo",
 }
 # RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
 RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0801"
@@ -14,9 +15,9 @@ RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0801"
 IMAGE_SIZES = {
     "kitti_raw": (128, 384),
     "kitti_odom": (128, 384),
-    "cityscapes": (128, 384),       # ??
-    "cityscapes_seq": (128, 384),
+    "cityscapes": (196, 384),
     "waymo": (256, 384),
+    "driving_stereo": (196, 384),
 }
 
 
@@ -29,11 +30,12 @@ class VodeOptions:
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
     VALIDATION_FRAMES = 500
-    DATASETS_TO_PREPARE = {"waymo": ["train"],
-                           "kitti_raw": ["test", "val"],
+    DATASETS_TO_PREPARE = {"kitti_raw": ["test", "val"],
                            "kitti_odom": ["train", "test", "val"],
-                           # "cityscapes": ["train_extra"],
-                           # "cityscapes_seq": ["train"],
+                           "cityscapes__extra": ["train"],
+                           "cityscapes__sequence": ["train"],
+                           "waymo": ["train"],
+                           "driving_stereo": ["train", "test"],
                            }
     # only when making small tfrecords to test training
     LIMIT_FRAMES = 0
@@ -100,7 +102,7 @@ class VodeOptions:
     def get_raw_data_path(cls, dataset_name):
         if dataset_name in RAW_DATA_PATHS:
             dataset_path = RAW_DATA_PATHS[dataset_name]
-            assert op.isdir(dataset_path)
+            assert op.exists(dataset_path), f"{dataset_path}"
             return dataset_path
         else:
             assert 0, f"Invalid dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}"
