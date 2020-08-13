@@ -117,11 +117,18 @@ class ExampleMaker:
     def show_example(self, example, wait=0):
         image = example["image"]
         image_view = cv2.resize(image, (int(image.shape[1] * 1000. / image.shape[0]), 1000))
+        cv2.imshow("image", image_view)
+
+        if "image_R" in example:
+            image = example["image_R"]
+            image_view = cv2.resize(image, (int(image.shape[1] * 1000. / image.shape[0]), 1000))
+            cv2.imshow("image_R", image_view)
+
         depth = example["depth_gt"]
         depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
         depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
-        cv2.imshow("image", image_view)
         cv2.imshow("depth", depth_view)
+
         cv2.waitKey(wait)
         # print("\nintrinsic:\n", example["intrinsic"])
         # if "pose_gt" in example:

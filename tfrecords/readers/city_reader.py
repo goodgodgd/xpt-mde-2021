@@ -23,7 +23,7 @@ class CityReader(DataReaderBase):
         """
         prepare variables to read a new sequence data
         """
-        self.frame_names = self.zip_files["leftimg"].namelist()
+        self.frame_names = self.zip_files["leftImg"].namelist()
         self.camera_names = self.zip_files["camera"].namelist()
         self.frame_names = [frame for frame in self.frame_names if frame.startswith(drive_path)]
         self.frame_names.sort()
@@ -49,8 +49,12 @@ class CityReader(DataReaderBase):
         return self.target_indices
 
     def get_image(self, index, right=False):
-        assert right is False, "city dataset is monocular"
-        image_bytes = self.zip_files["leftimg"].open(self.frame_names[index])
+        # assert right is False, "city dataset is monocular"
+        if right:
+            filename = self.frame_names[index].replace("leftImg8bit", "rightImg8bit")
+            image_bytes = self.zip_files["rightImg"].open(filename)
+        else:
+            image_bytes = self.zip_files["leftImg"].open(self.frame_names[index])
         image = Image.open(image_bytes)
         image = np.array(image, np.uint8)
         return image
@@ -59,7 +63,7 @@ class CityReader(DataReaderBase):
         return None
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
-        assert right is False, "city dataset is monocular"
+        # assert right is False, "city dataset is monocular"
         params = self._get_camera_param(index)
         baseline = params["extrinsic"]["baseline"]
         fx = params["intrinsic"]["fx"]
@@ -76,7 +80,7 @@ class CityReader(DataReaderBase):
         return depth.astype(np.float32)
 
     def get_intrinsic(self, index=0, right=False):
-        assert right is False, "city dataset is monocular"
+        # assert right is False, "city dataset is monocular"
         params = self._get_camera_param(index)
         fx = params["intrinsic"]["fx"]
         fy = params["intrinsic"]["fy"]
@@ -89,7 +93,7 @@ class CityReader(DataReaderBase):
         params = self._get_camera_param(index)
         baseline = params["extrinsic"]["baseline"]
         # pose to transform points in right frame to left frame
-        stereo_T_LR = np.array([[1, 0, 0, 0], [0, 1, 0, baseline], [0, 0, 1, 0], [0, 0, 0, 1]])
+        stereo_T_LR = np.array([[1, 0, 0, baseline], [0, 1, 0, 0], [0, 0, 1, 0], [0, 0, 0, 1]])
         return stereo_T_LR.astype(np.float32)
 
     """
@@ -155,13 +159,13 @@ import zipfile
 def test_city_reader():
     srcpath = "/media/ian/IanBook/datasets/raw_zips/cityscapes/leftImg8bit_sequence_trainvaltest.zip"
     zip_files = dict()
-    zip_files["leftimg"] = zipfile.ZipFile(srcpath, "r")
+    zip_files["leftImg"] = zipfile.ZipFile(srcpath, "r")
     if srcpath.endswith("sequence_trainvaltest.zip"):
         zip_files["camera"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_sequence_", "/camera_"), "r")
     else:
         zip_files["camera"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/camera_"), "r")
     zip_files["disparity"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/disparity_"), "r")
-    drive_paths = list_drive_paths(zip_files["leftimg"].namelist())
+    drive_paths = list_drive_paths(zip_files["leftImg"].namelist())
 
     for drive_path in drive_paths:
         print("\n!!! New drive start !!!", drive_path)
@@ -198,6 +202,45 @@ def apply_color_map(depth):
     return depth_view
 
 
+from tfrecords.tfrecord_reader import TfrecordGenerator
+from model.synthesize.synthesize_base import SynthesizeMultiScale
+import utils.util_funcs as uf
+import utils.convert_pose as cp
+import tensorflow as tf
+
+
+def test_city_stereo_synthesis():
+    tfrpath = op.join(opts.DATAPATH_TFR, "cityscapes_train")
+    dataset = TfrecordGenerator(tfrpath).get_generator()
+    batid, srcid = 0, 0
+
+    for i, features in enumerate(dataset):
+        if i == 0:
+            print("==== check shapes")
+            for key, val in features.items():
+                print("    ", i, key, val.shape, val.dtype)
+
+        left_target = features["image5d"][:, 4]
+        right_source = features["image5d_R"][:, 4:5]    # numsrc = 1
+        intrinsic = features["intrinsic"]
+        depth_ms = uf.multi_scale_depths(features["depth_gt"], [1, 2, 4, 8])
+        pose_r2l = tf.linalg.inv(features["stereo_T_LR"])
+        pose_r2l = tf.expand_dims(pose_r2l, axis=1)
+        # pose_r2l = tf.tile(pose_r2l, [1, 1, 1, 1])    # numsrc = 1
+        pose_r2l = cp.pose_matr2rvec_batch(pose_r2l)
+        synth_ms = SynthesizeMultiScale()(right_source, intrinsic, depth_ms, pose_r2l)
+        print("stereo pose:\n", pose_r2l[0, 0].numpy())
+
+        src_image = right_source[batid, srcid]
+        tgt_image = left_target[batid]
+        syn_image = synth_ms[0][batid, srcid]
+        view = tf.concat([src_image, tgt_image, syn_image], axis=0)
+        view = uf.to_uint8_image(view).numpy()
+        cv2.imshow("stereo synthesize", view)
+        cv2.waitKey()
+
+
 if __name__ == "__main__":
-    test_city_reader()
+    # test_city_reader()
+    test_city_stereo_synthesis()
 

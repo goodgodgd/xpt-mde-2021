@@ -48,7 +48,7 @@ class TfrecordMakerBase:
                 else:
                     keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
         elif dataset == "cityscapes":
-            keys = ["image", "intrinsic", "depth_gt", "stereo_T_LR"]
+            keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR"]
         elif dataset == "waymo":
             keys = ["image", "intrinsic", "depth_gt", "pose_gt"]
         else:
@@ -192,13 +192,15 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
     def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
         self.zip_suffix = "extra" if srcpath.endswith("trainextra.zip") else "sequence"
         self.zip_suffix = "sequence" if srcpath.endswith("sequence_trainvaltest.zip") else self.zip_suffix
-        print("self.zip_suffix", self.zip_suffix)
         self.zip_files = self.open_zip_files(srcpath)
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
+        self.city = ""
+        print(f"[CityscapesTfrecordMaker] zip_suffix={self.zip_suffix}")
 
     def open_zip_files(self, srcpath):
         zip_files = dict()
-        zip_files["leftimg"] = zipfile.ZipFile(srcpath, "r")
+        zip_files["leftImg"] = zipfile.ZipFile(srcpath, "r")
+        zip_files["rightImg"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/rightImg8bit_"), "r")
         if srcpath.endswith("sequence_trainvaltest.zip"):
             zip_files["camera"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_sequence_", "/camera_"), "r")
         else:
@@ -210,7 +212,7 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         return ExampleMaker(dataset, split, shwc_shape, data_keys, self.zip_files)
 
     def list_drive_paths(self, srcpath, split):
-        filelist = self.zip_files["leftimg"].namelist()
+        filelist = self.zip_files["leftImg"].namelist()
         filelist = [file for file in filelist if file.endswith(".png")]
         filelist.sort()
         # drive path example: /leftImg8bit_sequence/train/aachen/aachen
@@ -231,6 +233,7 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         # change path to check date integrity
         self.pm.reopen([outpath], closer_func=self.on_exit)
         self.tfr_drive_path = outpath
+        self.city = city
         self.shard_count = 0
         self.example_count_in_shard = 0
         self.example_count_in_drive = 0
@@ -238,7 +241,7 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         return False
 
     def open_new_writer(self, drive_index):
-        outfile = f"{self.tfr_drive_path}/{self.zip_suffix}_shard_{self.shard_count:03d}.tfrecord"
+        outfile = f"{self.tfr_drive_path}/{self.zip_suffix}_{self.city}_shard_{self.shard_count:03d}.tfrecord"
         self.writer = tf.io.TFRecordWriter(outfile)
 
     def write_tfrecord_config(self, example):
