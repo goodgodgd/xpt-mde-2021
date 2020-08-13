@@ -66,7 +66,7 @@ class WaymoReader(DataReaderBase):
         intrin = np.array([[intrin[0], 0, intrin[2]], [0, intrin[1], intrin[3]], [0, 0, 1]])
         return intrin.astype(np.float32)
 
-    def get_stereo_extrinsic(self):
+    def get_stereo_extrinsic(self, index=0):
         return None
 
     def get_filename(self, example_index):
