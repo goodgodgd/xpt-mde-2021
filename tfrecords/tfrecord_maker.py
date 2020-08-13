@@ -51,6 +51,8 @@ class TfrecordMakerBase:
             keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR"]
         elif dataset == "waymo":
             keys = ["image", "intrinsic", "depth_gt", "pose_gt"]
+        elif dataset == "driving_stereo":
+            keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR"]
         else:
             assert 0, f"[get_dataset_keys] Wrong dataset: {dataset}, {split}, {stereo}"
         return keys
@@ -63,8 +65,8 @@ class TfrecordMakerBase:
         with uc.PathManager([self.tfrpath__], closer_func=self.on_exit) as pm:
             self.pm = pm
             for di, drive_path in enumerate(self.drive_paths):
-                # if di > 3:
-                #     break
+                if di > 2:
+                    break
                 if self.init_tfrecord(di):
                     continue
 
@@ -88,12 +90,15 @@ class TfrecordMakerBase:
                         uf.print_progress_status(f"==[making TFR] INVALID example, frame: {index}/{num_frames}")
                         continue
                     example_serial = self.serialize_example(example)
-                    # if index > 50:
-                    #     break
+                    if index > 50:
+                        break
 
                     last_example = example
                     self.write_tfrecord(example_serial, di)
-                    uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives}, frame: {index}/{num_frames}")
+                    uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives}, "
+                                             f"frame: {index}/{num_frames}, "
+                                             f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
+                print("")
                 self.write_tfrecord_config(last_example)
 
             pm.set_ok()
@@ -116,7 +121,12 @@ class TfrecordMakerBase:
         raise NotImplementedError()
 
     def write_tfrecord_config(self, example):
-        raise NotImplementedError()
+        config = inspect_properties(example)
+        config["length"] = self.example_count_in_drive
+        config["imshape"] = self.shwc_shape
+        print("## save config", config)
+        with open(op.join(self.tfr_drive_path, "tfr_config.txt"), "w") as fr:
+            json.dump(config, fr)
 
     def on_exit(self):
         if self.writer:
@@ -138,6 +148,7 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
 
     def init_tfrecord(self, drive_index=0):
         outpath = f"{self.tfrpath__}/drive_{drive_index:03d}"
+        print("[init_tfrecord] outpath:", outpath)
         if op.isdir(outpath):
             print(f"[init_tfrecord] {op.basename(outpath)} exists. move onto the next")
             return True
@@ -154,14 +165,6 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
     def open_new_writer(self, drive_index):
         outfile = f"{self.tfr_drive_path}/drive_{drive_index:03d}_shard_{self.shard_count:03d}.tfrecord"
         self.writer = tf.io.TFRecordWriter(outfile)
-
-    def write_tfrecord_config(self, example):
-        config = inspect_properties(example)
-        config["length"] = self.example_count_in_drive
-        config["imshape"] = self.shwc_shape
-        print("## save config", config)
-        with open(op.join(self.tfr_drive_path, "tfr_config.txt"), "w") as fr:
-            json.dump(config, fr)
 
     def wrap_up(self):
         files = glob(f"{self.tfrpath__}/*/*.tfrecord")
@@ -190,22 +193,28 @@ import zipfile
 
 class CityscapesTfrecordMaker(TfrecordMakerBase):
     def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
-        self.zip_suffix = "extra" if srcpath.endswith("trainextra.zip") else "sequence"
-        self.zip_suffix = "sequence" if srcpath.endswith("sequence_trainvaltest.zip") else self.zip_suffix
-        self.zip_files = self.open_zip_files(srcpath)
+        self.zip_suffix = dataset.split("__")[1]
+        self.zip_files = self.open_zip_files(srcpath, self.zip_suffix)
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
         self.city = ""
         print(f"[CityscapesTfrecordMaker] zip_suffix={self.zip_suffix}")
 
-    def open_zip_files(self, srcpath):
+    def open_zip_files(self, srcpath, zip_suffix):
         zip_files = dict()
-        zip_files["leftImg"] = zipfile.ZipFile(srcpath, "r")
-        zip_files["rightImg"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/rightImg8bit_"), "r")
-        if srcpath.endswith("sequence_trainvaltest.zip"):
-            zip_files["camera"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_sequence_", "/camera_"), "r")
+        if zip_suffix == "extra":
+            basic_name = op.join(srcpath, "leftImg8bit_trainextra.zip")
+        elif zip_suffix == "sequence":
+            basic_name = op.join(srcpath, "leftImg8bit_sequence_trainvaltest.zip")
         else:
-            zip_files["camera"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/camera_"), "r")
-        zip_files["disparity"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/disparity_"), "r")
+            assert 0, f"Wrong zip suffix: {zip_suffix}"
+
+        zip_files["leftImg"] = zipfile.ZipFile(basic_name, "r")
+        zip_files["rightImg"] = zipfile.ZipFile(basic_name.replace("/leftImg8bit_", "/rightImg8bit_"), "r")
+        if zip_suffix == "extra":
+            zip_files["camera"] = zipfile.ZipFile(basic_name.replace("/leftImg8bit_", "/camera_"), "r")
+        elif zip_suffix == "sequence":
+            zip_files["camera"] = zipfile.ZipFile(basic_name.replace("/leftImg8bit_sequence_", "/camera_"), "r")
+        zip_files["disparity"] = zipfile.ZipFile(basic_name.replace("/leftImg8bit_", "/disparity_"), "r")
         return zip_files
 
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
@@ -225,7 +234,7 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         city = self.drive_paths[drive_index].split("/")[-1]
         # example: cityscapes__/sequence_aachen
         outpath = op.join(self.tfrpath__, f"{self.zip_suffix}_{city}")
-        print("outpath", outpath)
+        print("[init_tfrecord] outpath:", outpath)
         if op.isdir(outpath):
             print(f"[init_tfrecord] {op.basename(outpath)} exists. move onto the next")
             return True
@@ -244,15 +253,13 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         outfile = f"{self.tfr_drive_path}/{self.zip_suffix}_{self.city}_shard_{self.shard_count:03d}.tfrecord"
         self.writer = tf.io.TFRecordWriter(outfile)
 
-    def write_tfrecord_config(self, example):
-        config = inspect_properties(example)
-        config["length"] = self.example_count_in_drive
-        config["imshape"] = self.shwc_shape
-        print("## save config", config)
-        with open(op.join(self.tfr_drive_path, "tfr_config.txt"), "w") as fr:
-            json.dump(config, fr)
-
     def wrap_up(self):
+        # both extra and sequence datasets should be completed before wrap up
+        dirlist = os.listdir(self.tfrpath__)
+        dirlist = [op.join(self.tfrpath__, dirname) for dirname in dirlist if op.isdir(op.join(self.tfrpath__, dirname))]
+        if len(dirlist) <= len(self.drive_paths):
+            return
+
         files = glob(f"{self.tfrpath__}/*/*.tfrecord")
         print("[wrap_up] move tfrecords:", files[0:-1:5])
         for file in files:
@@ -271,5 +278,54 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         with open(op.join(self.tfrpath__, "tfr_config.txt"), "w") as fr:
             json.dump(config, fr)
 
+        os.rename(self.tfrpath__, self.tfrpath)
+
+
+class DrivingStereoTfrecordMaker(TfrecordMakerBase):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+        super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
+        self.total_example_count = 0
+
+    def list_drive_paths(self, srcpath, split):
+        # drive_path like : .../driving_stereo/train-left-image/2018-07-16-15-18-53.zip
+        split_ = "train" if split == "train" else "test"
+        drive_paths = glob(op.join(srcpath, f"{split_}-left-image", "*.zip"))
+        return drive_paths
+
+    def init_tfrecord(self, drive_index=0):
+        outpath = self.tfrpath__
+        print("[init_tfrecord] outpath:", outpath)
+
+        # change path to check date integrity
+        self.pm.reopen([outpath], closer_func=self.on_exit)
+        self.tfr_drive_path = outpath
+        self.shard_count = 0
+        self.example_count_in_shard = 0
+        self.open_new_writer(drive_index)
+        return False
+
+    def write_tfrecord(self, example_serial, drive_index):
+        self.writer.write(example_serial)
+        self.example_count_in_shard += 1
+        self.total_example_count += 1
+        # reset and create a new tfrecord file
+        if self.example_count_in_shard > self.shard_size:
+            self.shard_count += 1
+            self.example_count_in_shard = 0
+            self.open_new_writer(drive_index)
+
+    def open_new_writer(self, drive_index):
+        outfile = f"{self.tfr_drive_path}/shard_{self.shard_count:03d}.tfrecord"
+        self.writer = tf.io.TFRecordWriter(outfile)
+
+    def write_tfrecord_config(self, example):
+        config = inspect_properties(example)
+        config["length"] = self.total_example_count
+        config["imshape"] = self.shwc_shape
+        print("## save config", config)
+        with open(op.join(self.tfr_drive_path, "tfr_config.txt"), "w") as fr:
+            json.dump(config, fr)
+
+    def wrap_up(self):
         os.rename(self.tfrpath__, self.tfrpath)
 

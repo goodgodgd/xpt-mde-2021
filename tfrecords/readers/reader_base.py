@@ -65,7 +65,7 @@ class DataReaderBase:
         """
         :return: indexed frame file name
         """
-        raise NotImplementedError()
+        return None
 
     def index_to_id(self, index):
         """

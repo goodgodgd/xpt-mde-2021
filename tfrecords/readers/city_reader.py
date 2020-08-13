@@ -5,6 +5,7 @@ from PIL import Image
 import json
 
 from tfrecords.readers.reader_base import DataReaderBase
+from tfrecords.tfr_util import resize_depth_map, apply_color_map
 
 
 class CityReader(DataReaderBase):
@@ -76,7 +77,7 @@ class CityReader(DataReaderBase):
         disp[disp > 0] = (disp[disp > 0] - 1) / 256.
         depth = np.zeros(disp.shape, dtype=np.float32)
         depth[disp > 0] = (fx * baseline) / disp[disp > 0]     # depth = baseline * focal length / disparity
-        depth = city_resize_depth_map(depth, srcshape_hw, dstshape_hw, intrinsic)
+        depth = resize_depth_map(depth, srcshape_hw, dstshape_hw)
         return depth.astype(np.float32)
 
     def get_intrinsic(self, index=0, right=False):
@@ -87,6 +88,7 @@ class CityReader(DataReaderBase):
         cx = params["intrinsic"]["u0"]
         cy = params["intrinsic"]["v0"]
         intrinsic = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
+        print("CityReader get_intrinsic:", intrinsic[0])
         return intrinsic.astype(np.float32)
 
     def get_stereo_extrinsic(self, index=0):
@@ -119,38 +121,6 @@ class CityReader(DataReaderBase):
         return param
 
 
-def city_resize_depth_map(depth_map, srcshape_hw, dstshape_hw, intrinsic):
-    # depth_view = apply_color_map(depth_map)
-    # depth_view = cv2.resize(depth_view, (dstshape_hw[1], dstshape_hw[0]))
-    # cv2.imshow("srcdepth", depth_view)
-    du, dv = np.meshgrid(np.arange(dstshape_hw[1]), np.arange(dstshape_hw[0]))
-    du, dv = (du.reshape(-1), dv.reshape(-1))
-    scale_y, scale_x = (srcshape_hw[0] / dstshape_hw[0], srcshape_hw[1] / dstshape_hw[1])
-    su, sv = (du * scale_x).astype(np.uint16), (dv * scale_y).astype(np.uint16)
-    radi_x, radi_y = (int(scale_x/2), int(scale_y/2))
-    # print("su", su[0:800:40])
-    # print("sv", sv[0:-1:10000])
-
-    dst_depth = np.zeros(du.shape).astype(np.float32)
-    weight = np.zeros(du.shape).astype(np.float32)
-    for dy in range(-radi_y, radi_y+1):
-        for dx in range(-radi_x, radi_x+1):
-            v_inds = np.clip(sv + dy, 0, srcshape_hw[0] - 1).astype(np.uint16)
-            u_inds = np.clip(su + dx, 0, srcshape_hw[1] - 1).astype(np.uint16)
-
-            # if (dx==1) and (dy==1):
-            #     print("u_inds", u_inds[0:400:20])
-            #     print("v_inds", v_inds[0:-1:10000])
-            tmp_depth = depth_map[v_inds, u_inds]
-            tmp_weight = (tmp_depth > 0).astype(np.uint8)
-            dst_depth += tmp_depth
-            weight += tmp_weight
-
-    dst_depth[weight > 0] /= weight[weight > 0]
-    dst_depth = dst_depth.reshape((dstshape_hw[0], dstshape_hw[1], 1))
-    return dst_depth
-
-
 import cv2
 from config import opts
 import zipfile
@@ -175,6 +145,7 @@ def test_city_reader():
         for fi in frame_indices:
             image = reader.get_image(fi)
             intrinsic = reader.get_intrinsic(fi)
+            print("intrinsic\n", intrinsic)
             depth = reader.get_depth(fi, image.shape[:2], opts.get_shape("HW", "cityscapes"), intrinsic)
             print(f"== test_city_reader) drive: {op.basename(drive_path)}, frame: {fi}")
             view = image[0:-1:5, 0:-1:5, :]
@@ -210,7 +181,7 @@ import tensorflow as tf
 
 
 def test_city_stereo_synthesis():
-    tfrpath = op.join(opts.DATAPATH_TFR, "cityscapes_train")
+    tfrpath = op.join(opts.DATAPATH_TFR, "cityscapes_train__")
     dataset = TfrecordGenerator(tfrpath).get_generator()
     batid, srcid = 0, 0
 
@@ -225,19 +196,23 @@ def test_city_stereo_synthesis():
         intrinsic = features["intrinsic"]
         depth_ms = uf.multi_scale_depths(features["depth_gt"], [1, 2, 4, 8])
         pose_r2l = tf.linalg.inv(features["stereo_T_LR"])
+        print("intrinsic", intrinsic)
         pose_r2l = tf.expand_dims(pose_r2l, axis=1)
         # pose_r2l = tf.tile(pose_r2l, [1, 1, 1, 1])    # numsrc = 1
         pose_r2l = cp.pose_matr2rvec_batch(pose_r2l)
         synth_ms = SynthesizeMultiScale()(right_source, intrinsic, depth_ms, pose_r2l)
-        print("stereo pose:\n", pose_r2l[0, 0].numpy())
 
         src_image = right_source[batid, srcid]
         tgt_image = left_target[batid]
         syn_image = synth_ms[0][batid, srcid]
+        depth_view = apply_color_map(depth_ms[0][batid].numpy())
         view = tf.concat([src_image, tgt_image, syn_image], axis=0)
         view = uf.to_uint8_image(view).numpy()
+        view = np.concatenate([view, depth_view], axis=0)
         cv2.imshow("stereo synthesize", view)
-        cv2.waitKey()
+        key = cv2.waitKey()
+        if key == ord('q'):
+            break
 
 
 if __name__ == "__main__":

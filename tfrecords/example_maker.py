@@ -3,6 +3,7 @@ import cv2
 
 from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.city_reader import CityReader
+from tfrecords.readers.driving_reader import DrivingReader
 
 
 class ExampleMaker:
@@ -21,8 +22,10 @@ class ExampleMaker:
     def data_reader_factory(self):
         if self.dataset.startswith("cityscapes"):
             return CityReader(self.split, self.reader_args)     # split and ZipFile object
-        if self.dataset is "waymo":
+        elif self.dataset == "waymo":
             return WaymoReader(self.split)
+        elif self.dataset == "driving_stereo":
+            return DrivingReader(self.split)
         else:
             assert 0, f"[data_reader_factory] invalid dataset name {self.dataset}"
 
