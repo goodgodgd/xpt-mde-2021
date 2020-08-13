@@ -32,7 +32,7 @@ def convert_to_tfrecords_directly():
     datasets = opts.DATASETS_TO_PREPARE
     for dataset, splits in datasets.items():
         for split in splits:
-            tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset}_{split}")
+            tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset.split('__')[0]}_{split}")
             if op.isdir(tfrpath):
                 print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
                 continue
@@ -43,9 +43,11 @@ def convert_to_tfrecords_directly():
 
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
-    if dataset is "waymo":
-        return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO,
-                                     opts.get_shape("SHWC", dataset))
+    dstshape = opts.get_shape("SHWC", dataset.split('__')[0])
+    if dataset.startswith("cityscapes"):
+        return tm.CityscapesTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, False, dstshape)
+    elif dataset is "waymo":
+        return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     else:
         WrongInputException(f"Invalid dataset: {dataset}")
 

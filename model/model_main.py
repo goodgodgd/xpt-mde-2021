@@ -123,7 +123,7 @@ def predict(weight_name="latest.h5"):
     model = try_load_weights(model, weight_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
-    dataset, steps = get_dataset(opts.DATASET_TO_USE, "test", False, batch_size)
+    dataset, steps = get_dataset(opts.DATASET_TO_USE, "test", False)
     # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
     # TODO: predict and collect outputs in for loop
     predictions = model.predict(dataset, steps)

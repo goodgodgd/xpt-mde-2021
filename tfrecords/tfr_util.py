@@ -59,14 +59,14 @@ def read_data_config(value):
         elif value.dtype == np.float32:
             decode_type = "tf.float32"
         else:
-            assert 0, f"[FeederBase] Wrong numpy type: {value.dtype}"
+            assert 0, f"[read_data_config] Wrong numpy type: {value.dtype}"
         parse_type = "tf.string"
         shape = list(value.shape)
     elif isinstance(value, int):
         parse_type = "tf.int64"
         shape = None
     else:
-        assert 0, f"[FeederBase] Wrong type: {type(value)}"
+        assert 0, f"[read_data_config] Wrong type: {type(value)}"
 
     return {"parse_type": parse_type, "decode_type": decode_type, "shape": shape}
 

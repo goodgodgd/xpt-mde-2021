@@ -55,7 +55,7 @@ class DataReaderBase:
         """
         raise NotImplementedError()
 
-    def get_stereo_extrinsic(self):
+    def get_stereo_extrinsic(self, index=0):
         """
         :return: stereo extrinsic pose that transforms point in right frame into left frame
         """
