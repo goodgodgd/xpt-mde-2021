@@ -403,8 +403,8 @@ import utils.convert_pose as cp
 import tensorflow as tf
 
 
-def test_driving_stereo_synthesis():
-    tfrpath = op.join(opts.DATAPATH_TFR, "driving_stereo_train")
+def test_kitti_raw_synthesis():
+    tfrpath = op.join(opts.DATAPATH_TFR, "kitti_raw_train")
     dataset = TfrecordGenerator(tfrpath).get_generator()
     batid, srcid = 0, 0
 
@@ -439,6 +439,6 @@ def test_driving_stereo_synthesis():
 
 if __name__ == "__main__":
     # test_kitti_raw_reader()
-    test_kitti_odom_reader()
-    # test_driving_stereo_synthesis()
+    # test_kitti_odom_reader()
+    test_kitti_raw_synthesis()
 
