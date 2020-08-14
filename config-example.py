@@ -30,16 +30,16 @@ class VodeOptions:
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
     VALIDATION_FRAMES = 500
-    DATASETS_TO_PREPARE = {"kitti_raw": ["test", "val"],
-                           "kitti_odom": ["train", "test", "val"],
+    DATASETS_TO_PREPARE = {"kitti_raw": ["test", "test"],
+                           "kitti_odom": ["train", "test"],
                            "cityscapes__extra": ["train"],
                            "cityscapes__sequence": ["train"],
                            "waymo": ["train"],
                            "driving_stereo": ["train", "test"],
                            }
     # only when making small tfrecords to test training
-    LIMIT_FRAMES = 0
-    SHUFFLE_TFRECORD_INPUT = None
+    DRIVE_LIMIT = 0
+    FRAME_LIMIT = 0
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}

@@ -144,7 +144,9 @@ def test_city_reader():
         for fi in frame_indices:
             image = reader.get_image(fi)
             intrinsic = reader.get_intrinsic(fi)
+            extrinsic = reader.get_stereo_extrinsic(fi)
             print("intrinsic\n", intrinsic)
+            print("extrinsic\n", extrinsic)
             depth = reader.get_depth(fi, image.shape[:2], opts.get_shape("HW", "cityscapes"), intrinsic)
             print(f"== test_city_reader) drive: {op.basename(drive_path)}, frame: {fi}")
             view = image[0:-1:5, 0:-1:5, :]
@@ -164,12 +166,6 @@ def list_drive_paths(filelist):
     drive_paths = list(set(drive_paths))
     drive_paths.sort()
     return drive_paths
-
-
-def apply_color_map(depth):
-    depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
-    depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
-    return depth_view
 
 
 from tfrecords.tfrecord_reader import TfrecordGenerator
@@ -215,6 +211,6 @@ def test_city_stereo_synthesis():
 
 
 if __name__ == "__main__":
-    # test_city_reader()
-    test_city_stereo_synthesis()
+    test_city_reader()
+    # test_city_stereo_synthesis()
 

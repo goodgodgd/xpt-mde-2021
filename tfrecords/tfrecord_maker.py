@@ -40,19 +40,24 @@ class TfrecordMakerBase:
             keys = ["image", "intrinsic", "depth_gt", "pose_gt"]
             if stereo:
                 keys += ["image_R", "intrinsic_R", "depth_gt_R", "pose_gt_R", "stereo_T_LR"]
-        elif dataset == "kitti_odom":
-            keys = ["image", "intrinsic", "pose_gt"] if split is "test" else ["image", "intrinsic"]
+        elif (dataset == "kitti_odom") and (split == "train"):
+            keys = ["image", "intrinsic"]
             if stereo:
-                if split is "test":
-                    keys += ["image_R", "intrinsic_R", "pose_gt_R", "stereo_T_LR"]
-                else:
-                    keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
+                keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
+        elif (dataset == "kitti_odom") and (split == "test"):
+            keys = ["image", "intrinsic", "pose_gt"]
+            if stereo:
+                keys += ["image_R", "intrinsic_R", "pose_gt_R", "stereo_T_LR"]
         elif dataset == "cityscapes":
-            keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR"]
+            keys = ["image", "intrinsic", "depth_gt"]
+            if stereo:
+                keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
         elif dataset == "waymo":
             keys = ["image", "intrinsic", "depth_gt", "pose_gt"]
         elif dataset == "driving_stereo":
-            keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR"]
+            keys = ["image", "intrinsic", "depth_gt"]
+            if stereo:
+                keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
         else:
             assert 0, f"[get_dataset_keys] Wrong dataset: {dataset}, {split}, {stereo}"
         return keys
@@ -60,43 +65,44 @@ class TfrecordMakerBase:
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
         return ExampleMaker(dataset, split, shwc_shape, data_keys)
 
-    def make(self, max_frames=0):
+    def make(self, drive_limit=0, frame_limit=0):
         num_drives = len(self.drive_paths)
         with uc.PathManager([self.tfrpath__], closer_func=self.on_exit) as pm:
             self.pm = pm
             for di, drive_path in enumerate(self.drive_paths):
-                if di > 2:
+                if (drive_limit > 0) and (di > drive_limit):
                     break
                 if self.init_tfrecord(di):
                     continue
 
+                print("\n\n==== Start a new drive:", drive_path)
                 # create data reader in example maker
                 self.example_maker.init_reader(drive_path)
                 loop_range = self.example_maker.get_range()
                 num_frames = self.example_maker.num_frames()
 
                 last_example = dict()
-                for index in loop_range:
+                for ii, index in enumerate(loop_range):
                     try:
                         example = self.example_maker.get_example(index)
                     except StopIteration as si: # raised from xxx_reader._get_frame()
-                        print("[StopIteration] running drive ended")
+                        print("\n[StopIteration] running drive ended", si)
                         break
                     except ValueError as ve:    # raised from xxx_reader._get_frame()
-                        uf.print_progress_status(f"==[making TFR] ValueError frame: {index}/{num_frames}, {ve}")
+                        uf.print_progress_status(f"==[making TFR] ValueError frame: {ii}/{num_frames}, {ve}")
                         continue
 
                     if not example:             # when dict is empty, skip this index
-                        uf.print_progress_status(f"==[making TFR] INVALID example, frame: {index}/{num_frames}")
+                        uf.print_progress_status(f"==[making TFR] INVALID example, frame: {ii}/{num_frames}")
                         continue
                     example_serial = self.serialize_example(example)
-                    if index > 50:
+                    if (frame_limit > 0) and (self.example_count_in_drive > frame_limit):
                         break
 
                     last_example = example
                     self.write_tfrecord(example_serial, di)
                     uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives}, "
-                                             f"frame: {index}/{num_frames}, "
+                                             f"frame: {ii}/{num_frames}, "
                                              f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
                 print("")
                 self.write_tfrecord_config(last_example)
@@ -135,6 +141,62 @@ class TfrecordMakerBase:
 
     def wrap_up(self):
         raise NotImplementedError()
+
+
+# For ONLY kitti dataset, tfrecords are generated from extracted files
+class KittiRawTfrecordMaker(TfrecordMakerBase):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+        super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
+        self.total_example_count = 0
+
+    def get_example_maker(self, dataset, split, shwc_shape, data_keys):
+        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
+
+    def list_drive_paths(self, srcpath, split):
+        # create drive paths like : ("2011_09_26", "0001")
+        split_ = "train" if split == "train" else "test"
+        code_tfrecord_path = op.dirname(op.abspath(__file__))
+        filename = op.join(code_tfrecord_path, "resources", f"kitti_raw_{split_}_scenes.txt")
+        with open(filename, "r") as f:
+            drives = f.readlines()
+            drives.sort()
+            drives = [tuple(drive.strip("\n").split()) for drive in drives]
+            print("[list_drive_paths] drive list:", drives[:5])
+        return drives
+
+    def init_tfrecord(self, drive_index=0):
+        outpath = self.tfrpath__
+        print("[init_tfrecord] outpath:", outpath)
+        # change path to check date integrity
+        self.pm.reopen([outpath], closer_func=self.on_exit)
+        self.tfr_drive_path = outpath
+        self.open_new_writer(drive_index)
+        return False
+
+    def write_tfrecord(self, example_serial, drive_index):
+        self.writer.write(example_serial)
+        self.example_count_in_shard += 1
+        self.total_example_count += 1
+        # reset and create a new tfrecord file
+        if self.example_count_in_shard > self.shard_size:
+            self.shard_count += 1
+            self.example_count_in_shard = 0
+            self.open_new_writer(drive_index)
+
+    def open_new_writer(self, drive_index):
+        outfile = f"{self.tfr_drive_path}/shard_{self.shard_count:03d}.tfrecord"
+        self.writer = tf.io.TFRecordWriter(outfile)
+
+    def write_tfrecord_config(self, example):
+        config = inspect_properties(example)
+        config["length"] = self.total_example_count
+        config["imshape"] = self.shwc_shape
+        print("## save config", config)
+        with open(op.join(self.tfr_drive_path, "tfr_config.txt"), "w") as fr:
+            json.dump(config, fr)
+
+    def wrap_up(self):
+        os.rename(self.tfrpath__, self.tfrpath)
 
 
 class WaymoTfrecordMaker(TfrecordMakerBase):
@@ -290,6 +352,7 @@ class DrivingStereoTfrecordMaker(TfrecordMakerBase):
         # drive_path like : .../driving_stereo/train-left-image/2018-07-16-15-18-53.zip
         split_ = "train" if split == "train" else "test"
         drive_paths = glob(op.join(srcpath, f"{split_}-left-image", "*.zip"))
+        drive_paths.sort()
         return drive_paths
 
     def init_tfrecord(self, drive_index=0):
@@ -299,8 +362,6 @@ class DrivingStereoTfrecordMaker(TfrecordMakerBase):
         # change path to check date integrity
         self.pm.reopen([outpath], closer_func=self.on_exit)
         self.tfr_drive_path = outpath
-        self.shard_count = 0
-        self.example_count_in_shard = 0
         self.open_new_writer(drive_index)
         return False
 

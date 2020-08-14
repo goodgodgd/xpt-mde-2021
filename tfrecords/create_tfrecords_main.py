@@ -21,8 +21,7 @@ def convert_to_tfrecords():
             print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
         else:
             with PathManager([tfrpath]) as pm:
-                tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO, opts.get_shape("SHWC"),
-                                         opts.LIMIT_FRAMES, opts.SHUFFLE_TFRECORD_INPUT)
+                tfrmaker = TfrecordMaker(srcpath, tfrpath, opts.STEREO, opts.get_shape("SHWC"))
                 tfrmaker.make()
                 # if set_ok() was NOT excuted, the generated path is removed
                 pm.set_ok()
@@ -39,13 +38,15 @@ def convert_to_tfrecords_directly():
 
             srcpath = opts.get_raw_data_path(dataset)
             tfrmaker = tfrecord_maker_factory(dataset, split, srcpath, tfrpath)
-            tfrmaker.make(opts.LIMIT_FRAMES)
+            tfrmaker.make(opts.DRIVE_LIMIT, opts.FRAME_LIMIT)
 
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
     dstshape = opts.get_shape("SHWC", dataset.split('__')[0])
-    if dataset.startswith("cityscapes"):
-        return tm.CityscapesTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, False, dstshape)
+    if dataset == "kitti_raw":
+        return tm.KittiRawTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
+    elif dataset.startswith("cityscapes"):
+        return tm.CityscapesTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset is "waymo":
         return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset is "driving_stereo":

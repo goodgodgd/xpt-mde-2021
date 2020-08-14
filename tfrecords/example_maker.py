@@ -1,8 +1,9 @@
 import numpy as np
 import cv2
 
-from tfrecords.readers.waymo_reader import WaymoReader
+from tfrecords.readers.kitti_reader import KittiRawReader
 from tfrecords.readers.city_reader import CityscapesReader
+from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.driving_reader import DrivingStereoReader
 
 
@@ -20,7 +21,9 @@ class ExampleMaker:
         self.data_reader.init_drive(drive_path)
 
     def data_reader_factory(self):
-        if self.dataset.startswith("cityscapes"):
+        if self.dataset == "kitti_raw":
+            return KittiRawReader(self.split, self.reader_args)     # split and ZipFile object
+        elif self.dataset.startswith("cityscapes"):
             return CityscapesReader(self.split, self.reader_args)     # split and ZipFile object
         elif self.dataset == "waymo":
             return WaymoReader(self.split)
@@ -119,12 +122,13 @@ class ExampleMaker:
 
     def show_example(self, example, wait=0):
         image = example["image"]
-        image_view = cv2.resize(image, (int(image.shape[1] * 1000. / image.shape[0]), 1000))
+        dstshape = (int(image.shape[1] * 1000. / image.shape[0]), 1000)
+        image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
         cv2.imshow("image", image_view)
 
         if "image_R" in example:
             image = example["image_R"]
-            image_view = cv2.resize(image, (int(image.shape[1] * 1000. / image.shape[0]), 1000))
+            image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
             cv2.imshow("image_R", image_view)
 
         depth = example["depth_gt"]
