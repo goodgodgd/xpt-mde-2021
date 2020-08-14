@@ -24,6 +24,7 @@ class TfrecordMakerBase:
         self.shard_count = 0                # number of shards written in this drive
         self.example_count_in_shard = 0     # number of examples in this shard
         self.example_count_in_drive = 0     # number of examples in this drive
+        self.total_example_count = 0        # number of examples in this dataset generated in this session
         self.drive_paths = self.list_drive_paths(srcpath, split)
         self.data_keys = self.get_dataset_keys(dataset.split("__")[0], split, stereo)
         self.example_maker = self.get_example_maker(dataset, split, shwc_shape, self.data_keys)
@@ -66,16 +67,17 @@ class TfrecordMakerBase:
         return ExampleMaker(dataset, split, shwc_shape, data_keys)
 
     def make(self, drive_limit=0, frame_limit=0):
+        print("\n\n========== Start a new dataset:", op.basename(self.tfrpath))
         num_drives = len(self.drive_paths)
         with uc.PathManager([self.tfrpath__], closer_func=self.on_exit) as pm:
             self.pm = pm
             for di, drive_path in enumerate(self.drive_paths):
-                if (drive_limit > 0) and (di > drive_limit):
+                if (drive_limit > 0) and (di >= drive_limit):
                     break
-                if self.init_tfrecord(di):
+                if self.init_drive_tfrecord(di):
                     continue
 
-                print("\n\n==== Start a new drive:", drive_path)
+                print("\n==== Start a new drive:", drive_path)
                 # create data reader in example maker
                 self.example_maker.init_reader(drive_path)
                 loop_range = self.example_maker.get_range()
@@ -86,7 +88,7 @@ class TfrecordMakerBase:
                     try:
                         example = self.example_maker.get_example(index)
                     except StopIteration as si: # raised from xxx_reader._get_frame()
-                        print("\n[StopIteration] running drive ended", si)
+                        print("\n[StopIteration] stop this drive", si)
                         break
                     except ValueError as ve:    # raised from xxx_reader._get_frame()
                         uf.print_progress_status(f"==[making TFR] ValueError frame: {ii}/{num_frames}, {ve}")
@@ -96,13 +98,13 @@ class TfrecordMakerBase:
                         uf.print_progress_status(f"==[making TFR] INVALID example, frame: {ii}/{num_frames}")
                         continue
                     example_serial = self.serialize_example(example)
-                    if (frame_limit > 0) and (self.example_count_in_drive > frame_limit):
+                    if (frame_limit > 0) and (self.example_count_in_drive >= frame_limit):
                         break
 
                     last_example = example
                     self.write_tfrecord(example_serial, di)
                     uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives}, "
-                                             f"frame: {ii}/{num_frames}, "
+                                             f"frame: {ii}/{num_frames}, example: {self.example_count_in_drive}, "
                                              f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
                 print("")
                 self.write_tfrecord_config(last_example)
@@ -110,13 +112,14 @@ class TfrecordMakerBase:
             pm.set_ok()
         self.wrap_up()
 
-    def init_tfrecord(self, drive_index=0):
+    def init_drive_tfrecord(self, drive_index=0):
         raise NotImplementedError()
 
     def write_tfrecord(self, example_serial, drive_index):
         self.writer.write(example_serial)
         self.example_count_in_shard += 1
         self.example_count_in_drive += 1
+        self.total_example_count += 1
         # reset and create a new tfrecord file
         if self.example_count_in_shard > self.shard_size:
             self.shard_count += 1
@@ -142,46 +145,26 @@ class TfrecordMakerBase:
     def wrap_up(self):
         raise NotImplementedError()
 
+# TODO ======================================================================
+# TfrecordMakers which make tfrecords in tfrpath directly
 
-# For ONLY kitti dataset, tfrecords are generated from extracted files
-class KittiRawTfrecordMaker(TfrecordMakerBase):
+
+class TfrecordMakerSingleDir(TfrecordMakerBase):
     def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
-        self.total_example_count = 0
-
-    def get_example_maker(self, dataset, split, shwc_shape, data_keys):
-        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
 
     def list_drive_paths(self, srcpath, split):
-        # create drive paths like : ("2011_09_26", "0001")
-        split_ = "train" if split == "train" else "test"
-        code_tfrecord_path = op.dirname(op.abspath(__file__))
-        filename = op.join(code_tfrecord_path, "resources", f"kitti_raw_{split_}_scenes.txt")
-        with open(filename, "r") as f:
-            drives = f.readlines()
-            drives.sort()
-            drives = [tuple(drive.strip("\n").split()) for drive in drives]
-            print("[list_drive_paths] drive list:", drives[:5])
-        return drives
+        raise NotImplementedError()
 
-    def init_tfrecord(self, drive_index=0):
+    def init_drive_tfrecord(self, drive_index=0):
         outpath = self.tfrpath__
-        print("[init_tfrecord] outpath:", outpath)
+        print("[init_drive_tfrecord] outpath:", outpath)
         # change path to check date integrity
         self.pm.reopen([outpath], closer_func=self.on_exit)
         self.tfr_drive_path = outpath
+        self.example_count_in_drive = 0
         self.open_new_writer(drive_index)
         return False
-
-    def write_tfrecord(self, example_serial, drive_index):
-        self.writer.write(example_serial)
-        self.example_count_in_shard += 1
-        self.total_example_count += 1
-        # reset and create a new tfrecord file
-        if self.example_count_in_shard > self.shard_size:
-            self.shard_count += 1
-            self.example_count_in_shard = 0
-            self.open_new_writer(drive_index)
 
     def open_new_writer(self, drive_index):
         outfile = f"{self.tfr_drive_path}/shard_{self.shard_count:03d}.tfrecord"
@@ -199,6 +182,62 @@ class KittiRawTfrecordMaker(TfrecordMakerBase):
         os.rename(self.tfrpath__, self.tfrpath)
 
 
+# For ONLY kitti dataset, tfrecords are generated from extracted files
+class KittiRawTfrecordMaker(TfrecordMakerSingleDir):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+        super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
+
+    def get_example_maker(self, dataset, split, shwc_shape, data_keys):
+        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
+
+    def list_drive_paths(self, srcpath, split):
+        # create drive paths like : ("2011_09_26", "0001")
+        split_ = "train" if split == "train" else "test"
+        code_tfrecord_path = op.dirname(op.abspath(__file__))
+        filename = op.join(code_tfrecord_path, "resources", f"kitti_raw_{split_}_scenes.txt")
+        with open(filename, "r") as f:
+            drives = f.readlines()
+            drives.sort()
+            drives = [tuple(drive.strip("\n").split()) for drive in drives]
+            print("[list_drive_paths] drive list:", drives[:5])
+        return drives
+
+
+# For ONLY kitti dataset, tfrecords are generated from extracted files
+class KittiOdomTfrecordMaker(TfrecordMakerSingleDir):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+        super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
+        self.total_example_count = 0
+
+    def get_example_maker(self, dataset, split, shwc_shape, data_keys):
+        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
+
+    def list_drive_paths(self, srcpath, split):
+        # create drive paths like : "00"
+        if split is "train":
+            drives = [f"{i:02d}" for i in range(11, 22)]
+            # remove "12" sequence because color distribution is totally different between left and right
+            drives.pop(1)
+        else:
+            drives = [f"{i:02d}" for i in range(0, 11)]
+        return drives
+
+
+class DrivingStereoTfrecordMaker(TfrecordMakerSingleDir):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+        super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
+
+    def list_drive_paths(self, srcpath, split):
+        # drive_path like : .../driving_stereo/train-left-image/2018-07-16-15-18-53.zip
+        split_ = "train" if split == "train" else "test"
+        drive_paths = glob(op.join(srcpath, f"{split_}-left-image", "*.zip"))
+        drive_paths.sort()
+        return drive_paths
+
+# TODO ======================================================================
+# TfrecordMakers which make tfrecords in drive sub-dir under tfrpath and move them to tfrpath when finished
+
+
 class WaymoTfrecordMaker(TfrecordMakerBase):
     def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
@@ -208,11 +247,11 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
         drive_paths.sort()
         return drive_paths
 
-    def init_tfrecord(self, drive_index=0):
+    def init_drive_tfrecord(self, drive_index=0):
         outpath = f"{self.tfrpath__}/drive_{drive_index:03d}"
-        print("[init_tfrecord] outpath:", outpath)
+        print("[init_drive_tfrecord] outpath:", outpath)
         if op.isdir(outpath):
-            print(f"[init_tfrecord] {op.basename(outpath)} exists. move onto the next")
+            print(f"[init_drive_tfrecord] {op.basename(outpath)} exists. move onto the next")
             return True
 
         # change path to check date integrity
@@ -229,25 +268,7 @@ class WaymoTfrecordMaker(TfrecordMakerBase):
         self.writer = tf.io.TFRecordWriter(outfile)
 
     def wrap_up(self):
-        files = glob(f"{self.tfrpath__}/*/*.tfrecord")
-        print("[wrap_up] move tfrecords:", files[0:-1:5])
-        for file in files:
-            shutil.move(file, op.join(self.tfrpath__, op.basename(file)))
-
-        # merge config files of all drives and save only one in tfrpath
-        files = glob(f"{self.tfrpath__}/*/tfr_config.txt")
-        print("[wrap_up] config files:", files[:5])
-        total_length = 0
-        config = dict()
-        for file in files:
-            with open(file, 'r') as fp:
-                config = json.load(fp)
-                total_length += config["length"]
-        config["length"] = total_length
-        with open(op.join(self.tfrpath__, "tfr_config.txt"), "w") as fr:
-            json.dump(config, fr)
-
-        os.rename(self.tfrpath__, self.tfrpath)
+        move_tfrecord_and_merge_configs(self.tfrpath__, self.tfrpath)
 
 
 import zipfile
@@ -292,13 +313,13 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         drive_paths.sort()
         return drive_paths
 
-    def init_tfrecord(self, drive_index=0):
+    def init_drive_tfrecord(self, drive_index=0):
         city = self.drive_paths[drive_index].split("/")[-1]
         # example: cityscapes__/sequence_aachen
         outpath = op.join(self.tfrpath__, f"{self.zip_suffix}_{city}")
-        print("[init_tfrecord] outpath:", outpath)
+        print("[init_drive_tfrecord] outpath:", outpath)
         if op.isdir(outpath):
-            print(f"[init_tfrecord] {op.basename(outpath)} exists. move onto the next")
+            print(f"[init_drive_tfrecord] {op.basename(outpath)} exists. move onto the next")
             return True
 
         # change path to check date integrity
@@ -316,77 +337,29 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         self.writer = tf.io.TFRecordWriter(outfile)
 
     def wrap_up(self):
-        # both extra and sequence datasets should be completed before wrap up
-        dirlist = os.listdir(self.tfrpath__)
-        dirlist = [op.join(self.tfrpath__, dirname) for dirname in dirlist if op.isdir(op.join(self.tfrpath__, dirname))]
-        if len(dirlist) <= len(self.drive_paths):
-            return
-
-        files = glob(f"{self.tfrpath__}/*/*.tfrecord")
-        print("[wrap_up] move tfrecords:", files[0:-1:5])
-        for file in files:
-            shutil.move(file, op.join(self.tfrpath__, op.basename(file)))
-
-        # merge config files of all drives and save only one in tfrpath
-        files = glob(f"{self.tfrpath__}/*/tfr_config.txt")
-        print("[wrap_up] config files:", files[:5])
-        total_length = 0
-        config = dict()
-        for file in files:
-            with open(file, 'r') as fp:
-                config = json.load(fp)
-                total_length += config["length"]
-        config["length"] = total_length
-        with open(op.join(self.tfrpath__, "tfr_config.txt"), "w") as fr:
-            json.dump(config, fr)
-
-        os.rename(self.tfrpath__, self.tfrpath)
+        # TODO WARNING!! sequence MUST be created after extra!
+        if self.zip_suffix == "sequence":
+            move_tfrecord_and_merge_configs(self.tfrpath__, self.tfrpath)
 
 
-class DrivingStereoTfrecordMaker(TfrecordMakerBase):
-    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
-        super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
-        self.total_example_count = 0
+def move_tfrecord_and_merge_configs(tfrpath__, tfrpath):
+    files = glob(f"{tfrpath__}/*/*.tfrecord")
+    print("[wrap_up] move tfrecords:", files[0:-1:5])
+    for file in files:
+        shutil.move(file, op.join(tfrpath__, op.basename(file)))
 
-    def list_drive_paths(self, srcpath, split):
-        # drive_path like : .../driving_stereo/train-left-image/2018-07-16-15-18-53.zip
-        split_ = "train" if split == "train" else "test"
-        drive_paths = glob(op.join(srcpath, f"{split_}-left-image", "*.zip"))
-        drive_paths.sort()
-        return drive_paths
+    # merge config files of all drives and save only one in tfrpath
+    files = glob(f"{tfrpath__}/*/tfr_config.txt")
+    print("[wrap_up] config files:", files[:5])
+    total_length = 0
+    config = dict()
+    for file in files:
+        with open(file, 'r') as fp:
+            config = json.load(fp)
+            total_length += config["length"]
+    config["length"] = total_length
+    with open(op.join(tfrpath__, "tfr_config.txt"), "w") as fr:
+        json.dump(config, fr)
 
-    def init_tfrecord(self, drive_index=0):
-        outpath = self.tfrpath__
-        print("[init_tfrecord] outpath:", outpath)
-
-        # change path to check date integrity
-        self.pm.reopen([outpath], closer_func=self.on_exit)
-        self.tfr_drive_path = outpath
-        self.open_new_writer(drive_index)
-        return False
-
-    def write_tfrecord(self, example_serial, drive_index):
-        self.writer.write(example_serial)
-        self.example_count_in_shard += 1
-        self.total_example_count += 1
-        # reset and create a new tfrecord file
-        if self.example_count_in_shard > self.shard_size:
-            self.shard_count += 1
-            self.example_count_in_shard = 0
-            self.open_new_writer(drive_index)
-
-    def open_new_writer(self, drive_index):
-        outfile = f"{self.tfr_drive_path}/shard_{self.shard_count:03d}.tfrecord"
-        self.writer = tf.io.TFRecordWriter(outfile)
-
-    def write_tfrecord_config(self, example):
-        config = inspect_properties(example)
-        config["length"] = self.total_example_count
-        config["imshape"] = self.shwc_shape
-        print("## save config", config)
-        with open(op.join(self.tfr_drive_path, "tfr_config.txt"), "w") as fr:
-            json.dump(config, fr)
-
-    def wrap_up(self):
-        os.rename(self.tfrpath__, self.tfrpath)
+    os.rename(tfrpath__, tfrpath)
 

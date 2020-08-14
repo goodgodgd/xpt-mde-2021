@@ -1,10 +1,11 @@
 import numpy as np
 import cv2
 
-from tfrecords.readers.kitti_reader import KittiRawReader
+from tfrecords.readers.kitti_reader import KittiRawReader, KittiOdomReader
 from tfrecords.readers.city_reader import CityscapesReader
 from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.driving_reader import DrivingStereoReader
+import utils.convert_pose as cp
 
 
 class ExampleMaker:
@@ -22,9 +23,11 @@ class ExampleMaker:
 
     def data_reader_factory(self):
         if self.dataset == "kitti_raw":
-            return KittiRawReader(self.split, self.reader_args)     # split and ZipFile object
+            return KittiRawReader(self.split, self.reader_args)     # srcpath
+        elif self.dataset == "kitti_odom":
+            return KittiOdomReader(self.split, self.reader_args)     # split and ZipFile object
         elif self.dataset.startswith("cityscapes"):
-            return CityscapesReader(self.split, self.reader_args)     # split and ZipFile object
+            return CityscapesReader(self.split, self.reader_args)   # split and ZipFile object
         elif self.dataset == "waymo":
             return WaymoReader(self.split)
         elif self.dataset == "driving_stereo":
@@ -61,7 +64,7 @@ class ExampleMaker:
         if index % 500 == 10:
             print("\nintrinsic:\n", example["intrinsic"])
             if "pose_gt" in example:
-                print("pose\n", example["pose_gt"])
+                print("pose\n", cp.pose_matr2rvec(example["pose_gt"]))
 
         example = self.verify_snippet(example)
         return example
@@ -111,6 +114,7 @@ class ExampleMaker:
             pose_seq.append(pose)
         target_index = self.shwc_shape[0] // 2
         target_pose = pose_seq.pop(target_index)
+        # poses that transform a point from target to source frame
         pose_seq = [np.linalg.inv(pose) @ target_pose for pose in pose_seq]
         pose_seq = np.stack(pose_seq, axis=0)
         return pose_seq.astype(np.float32)
@@ -131,10 +135,11 @@ class ExampleMaker:
             image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
             cv2.imshow("image_R", image_view)
 
-        depth = example["depth_gt"]
-        depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
-        depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
-        cv2.imshow("depth", depth_view)
+        if "depth_gt" in example:
+            depth = example["depth_gt"]
+            depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
+            depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+            cv2.imshow("depth", depth_view)
 
         cv2.waitKey(wait)
         # print("\nintrinsic:\n", example["intrinsic"])

@@ -103,7 +103,10 @@ class KittiRawReader(DataReaderBase):
 
     def _list_nonstatic_frame_ids(self, drive_key):
         # drive_key example: ("2011_09_26", "0001")
-        frame_ids = self._read_frame_ids(drive_key)
+        if self.split != "train":
+            return self._read_frame_ids_test(drive_key)
+
+        frame_ids = self._read_frame_ids_train(drive_key)
         # remove first and last two frames that are not appropriate for target frame
         frame_ids = frame_ids[2:-2]
         static_frames = self._read_static_frames()
@@ -116,7 +119,21 @@ class KittiRawReader(DataReaderBase):
         frame_ids.sort()
         return frame_ids
 
-    def _read_frame_ids(self, drive_key):
+    def _read_frame_ids_test(self, drive_key):
+        date, drive_id = drive_key
+        drive_prefix = f"{date}_{drive_id}"
+        prj_tfrecords_path = op.dirname(op.dirname(op.abspath(__file__)))
+        filename = op.join(prj_tfrecords_path, "resources", "kitti_test_depth_frames.txt")
+        with open(filename, "r") as fr:
+            lines = fr.readlines()
+            test_frames = [line.strip("\n") for line in lines if line.startswith(drive_prefix)]
+            print("[_read_frame_ids_test] test_frames:", len(test_frames), test_frames[:5])
+            frame_ids = [int(frame.split()[-1]) for frame in test_frames]
+            frame_ids.sort()
+
+        return frame_ids
+
+    def _read_frame_ids_train(self, drive_key):
         # real path is /media/ian/IanBook/datasets/kitti_raw_data/2011_09_26/2011_09_26_drive_0001_sync
         date, drive_id = drive_key
         drive_path = op.join(self.base_path, date, f"{date}_drive_{drive_id}_sync", "image_02", "data")
@@ -199,6 +216,122 @@ def sub2ind(matrixSize, rowSub, colSub):
     m, n = matrixSize
     return rowSub * (n - 1) + colSub - 1
 
+# TODO ======================================================================
+
+
+class KittiOdomReader(DataReaderBase):
+    def __init__(self, split="", reader_arg=None):
+        super().__init__(split)
+        self.drive_loader = None
+        self.base_path = reader_arg
+        self.target_frame_ids = []
+        self.intrinsic = np.array(0)
+        self.intrinsic_R = np.array(0)
+        self.poses = np.array(0)
+        self.stereo_T_LR = np.array(0)
+        self.cur_images = np.array(0)
+        self.cur_image_index = -1
+
+    """
+    Public methods used outside this class
+    """
+    def init_drive(self, drive_path):
+        """
+        prepare variables to read a new sequence data
+        drive_path example: "00"
+        real path is /media/ian/IanBook/datasets/kitti_odometry/sequences/00
+        """
+        drive_id = drive_path
+        drive_path_ = op.join(self.base_path, "sequences", drive_id)
+        print("[KittiOdomReader.init_drive] drive_path_:", drive_path_)
+        self.drive_loader = self._create_drive_loader(drive_id)
+        frame_ids = self._list_frame_ids(drive_path_)
+        self.target_frame_ids = frame_ids
+        print("[KittiOdomReader.init_drive] frame_ids:", len(frame_ids), frame_ids[:5], frame_ids[-5:])
+        if self.split != "train":
+            self.poses = self._load_poses(drive_id)     # (N, 4, 4) pose matrices
+        print("[KittiRawReader.init_drive] poses:", self.poses.shape)
+        self.intrinsic = self._init_intrinsic()
+        self.intrinsic_R = self._init_intrinsic(right=True)
+        self.stereo_T_LR = self._init_extrinsic()
+        print("[KittiRawReader.init_drive] stereo_T_LR:\n", self.stereo_T_LR)
+
+    def num_frames_(self):
+        return len(self.target_frame_ids)
+
+    def get_range_(self):
+        return self.target_frame_ids
+
+    def get_image(self, index, right=False):
+        if self.cur_image_index == index:
+            images = self.cur_images
+        else:
+            images = self.drive_loader.get_rgb(index)
+            self.cur_images = images
+
+        image = np.array(images[1]) if right else np.array(images[0])
+        return image[:, :, [2, 1, 0]]
+
+    def get_pose(self, index, right=False):
+        if self.split == "train":
+            return None
+
+        T_w_cam2 = self.poses[index]
+        if right:
+            T_cam2_cam3 = self.stereo_T_LR
+            T_w_cam3 = np.dot(T_w_cam2, T_cam2_cam3)
+            return T_w_cam3.astype(np.float32)
+        else:
+            return T_w_cam2.astype(np.float32)
+
+    def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
+        return None
+
+    def get_intrinsic(self, index=0, right=False):
+        # loaded in init_drive()
+        intrinsic = self.intrinsic_R if right else self.intrinsic
+        return intrinsic.copy().astype(np.float32)
+
+    def get_stereo_extrinsic(self, index=0):
+        # loaded in init_drive()
+        return self.stereo_T_LR.copy().astype(np.float32)
+
+    """
+    Private methods used inside this class
+    """
+    def _create_drive_loader(self, drive_id):
+        return pykitti.odometry(self.base_path, drive_id)
+
+    def _list_frame_ids(self, drive_path):
+        image_pattern = op.join(drive_path, "image_2", "*.png")
+        frames = glob(image_pattern)
+        # convert file name to integer
+        frame_ids = [int(op.basename(frame)[:-4]) for frame in frames]
+        # remove first and last two frames that are not appropriate for target frame
+        if self.split == "train":
+            frame_ids = frame_ids[2:-2]
+        frame_ids.sort()
+        return frame_ids
+
+    def _load_poses(self, drive_id):
+        pose_file = op.join(self.base_path, "poses", drive_id + ".txt")
+        poses = np.loadtxt(pose_file)
+        homogeneous = np.tile(np.array([[0, 0, 0, 1]], dtype=np.float32), reps=(poses.shape[0], 1))
+        poses = np.concatenate([poses, homogeneous], axis=1)
+        poses = np.reshape(poses, (poses.shape[0], 4, 4))
+        return poses
+
+    def _init_intrinsic(self, right=False):
+        if right:
+            return self.drive_loader.calib.K_cam3
+        else:
+            return self.drive_loader.calib.K_cam2
+
+    def _init_extrinsic(self):
+        cal = self.drive_loader.calib
+        T_cam2_cam3 = np.dot(cal.T_cam2_velo, np.linalg.inv(cal.T_cam3_velo))
+        return T_cam2_cam3
+
 
 
 import cv2
@@ -228,6 +361,36 @@ def test_kitti_raw_reader():
             cv2.imshow("image", image_LR)
             depth_view = apply_color_map(depth)
             cv2.imshow("dstdepth", depth_view)
+            key = cv2.waitKey(2000)
+            if key == ord('q'):
+                break
+
+
+def test_kitti_odom_reader():
+    srcpath = opts.get_raw_data_path("kitti_odom")
+    drive_keys = ["00", "10"]
+
+    for drive_id in drive_keys:
+        print("\n!!! New drive start !!!", drive_id)
+        reader = KittiOdomReader("train", srcpath)
+        reader.init_drive(drive_id)
+        frame_indices = reader.get_range_()
+        print("frame_indices", frame_indices[:5], frame_indices[-5:])
+        for ii, fi in enumerate(frame_indices):
+            image = reader.get_image(fi)
+            image_R = reader.get_image(fi, right=True)
+            intrinsic = reader.get_intrinsic(fi)
+            pose = reader.get_pose(fi)
+            extrinsic = reader.get_stereo_extrinsic(fi)
+            if ii == 0:
+                print("image size:", image.shape)
+                print("intrinsic:\n", intrinsic)
+                print("extrinsic:\n", extrinsic)
+
+            print(f"== test_kitti_odom_reader) drive: {drive_id}, frame id: {fi}")
+            print("pose\n", pose)
+            image_LR = np.concatenate([image, image_R], axis=0)
+            cv2.imshow("image", image_LR)
             key = cv2.waitKey(2000)
             if key == ord('q'):
                 break
@@ -275,6 +438,7 @@ def test_driving_stereo_synthesis():
 
 
 if __name__ == "__main__":
-    test_kitti_raw_reader()
+    # test_kitti_raw_reader()
+    test_kitti_odom_reader()
     # test_driving_stereo_synthesis()
 
