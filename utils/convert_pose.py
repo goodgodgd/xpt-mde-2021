@@ -1,6 +1,7 @@
 import numpy as np
 import quaternion
 import tensorflow as tf
+import warnings
 from utils.decorators import shape_check
 
 

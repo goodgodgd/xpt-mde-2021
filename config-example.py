@@ -29,7 +29,7 @@ class VodeOptions:
     SNIPPET_LEN = 5
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
-    VALIDATION_FRAMES = 500
+    # cityscapes__sequence MUST be after cityscapes__extra
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
                            "cityscapes__extra": ["train"],
@@ -38,8 +38,9 @@ class VodeOptions:
                            "driving_stereo": ["train", "test"],
                            }
     # only when making small tfrecords to test training
-    DRIVE_LIMIT = 3
-    FRAME_LIMIT = 100
+    FRAME_PER_DRIVE = 100
+    TOTAL_FRAME_LIMIT = 500
+    VALIDATION_FRAMES = 300
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}

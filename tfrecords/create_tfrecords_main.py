@@ -1,6 +1,5 @@
 import os.path as op
 import numpy as np
-import tensorflow as tf
 
 import settings
 from config import opts
@@ -19,14 +18,14 @@ def convert_to_tfrecords_directly():
 
             srcpath = opts.get_raw_data_path(dataset)
             tfrmaker = tfrecord_maker_factory(dataset, split, srcpath, tfrpath)
-            tfrmaker.make(opts.DRIVE_LIMIT, opts.FRAME_LIMIT)
+            tfrmaker.make(opts.FRAME_PER_DRIVE, opts.TOTAL_FRAME_LIMIT)
 
         # create validation split from test or train dataset
         tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset.split('__')[0]}_val")
         if op.isdir(tfrpath):
             print("[convert_to_tfrecords] tfrecord already created in", op.basename(tfrpath))
             continue
-        generate_validation_tfrecords(tfrpath)
+        generate_validation_tfrecords(tfrpath, opts.VALIDATION_FRAMES)
 
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
@@ -47,5 +46,4 @@ def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True)
-    # convert_to_tfrecords()
     convert_to_tfrecords_directly()
