@@ -23,7 +23,7 @@ class ModelFactory:
                  stereo=opts.STEREO,
                  stereo_extrinsic=opts.STEREO_EXTRINSIC):
         self.global_batch = global_batch
-        S, H, W, C = opts.get_shape("SHWC", dataset)
+        S, H, W, C = opts.get_img_shape("SHWC", dataset)
         self.input_shape = (global_batch, S, H, W, C)
         self.net_names = net_names
         self.activation = depth_activation

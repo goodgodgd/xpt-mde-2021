@@ -9,7 +9,6 @@ RAW_DATA_PATHS = {
     "waymo": "/media/ian/IanBook/datasets/waymo",
     "driving_stereo": "/media/ian/IanBook/datasets/raw_zips/driving_stereo",
 }
-# RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
 RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0815"
 
 

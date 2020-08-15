@@ -24,11 +24,9 @@ def train(final_epoch=opts.EPOCHS):
 
     set_configs()
     log.copy_or_check_same()
-    model, augmenter, loss_object, optimizer = create_training_parts(initial_epoch)
-
-    # TODO WARNING! using "test" split for training dataset is just to check training process
-    dataset_train, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
-    dataset_val, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
+    dataset_train, tfr_config, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
+    dataset_val, _, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
+    model, augmenter, loss_object, optimizer = create_training_parts(initial_epoch, tfr_config)
     trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, loss_object,
                                               train_steps, opts.STEREO, augmenter, optimizer)
 
@@ -64,13 +62,13 @@ def set_configs():
 
 
 @StrategyScope
-def create_training_parts(initial_epoch):
+def create_training_parts(initial_epoch, tfr_config):
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
-    loss_object = loss_factory(weights_to_regularize=model.weights_to_regularize())
+    loss_object = loss_factory(tfr_config, weights_to_regularize=model.weights_to_regularize())
     optimizer = optimizer_factory(opts.OPTIMIZER, opts.LEARNING_RATE, initial_epoch)
     return model, augmenter, loss_object, optimizer
 
@@ -90,9 +88,11 @@ def get_dataset(dataset_name, split, shuffle):
     batch_size = opts.BATCH_SIZE
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
     assert op.isdir(tfr_train_path)
-    dataset = TfrecordReader(tfr_train_path, shuffle=shuffle, batch_size=batch_size).get_dataset()
+    tfr_reader = TfrecordReader(tfr_train_path, shuffle=shuffle, batch_size=batch_size)
+    dataset = tfr_reader.get_dataset()
+    tfr_config = tfr_reader.get_tfr_config()
     steps_per_epoch = uf.count_steps(tfr_train_path, batch_size)
-    return dataset, steps_per_epoch
+    return dataset, tfr_config, steps_per_epoch
 
 
 def save_model(model, results_val):

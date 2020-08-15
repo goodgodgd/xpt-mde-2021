@@ -191,7 +191,7 @@ def multi_scale_like_flow(image, flow_ms):
 
 
 def stack_titled_images(view_imgs, guide_lines=True):
-    dsize = opts.get_shape("HW")
+    dsize = opts.get_img_shape("HW")
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.5

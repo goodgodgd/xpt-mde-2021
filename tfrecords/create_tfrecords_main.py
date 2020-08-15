@@ -29,7 +29,7 @@ def convert_to_tfrecords_directly():
 
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
-    dstshape = opts.get_shape("SHWC", dataset.split('__')[0])
+    dstshape = opts.get_img_shape("SHWC", dataset.split('__')[0])
     if dataset == "kitti_raw":
         return tm.KittiRawTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset == "kitti_odom":

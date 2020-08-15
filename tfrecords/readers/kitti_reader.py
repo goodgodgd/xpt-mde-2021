@@ -352,7 +352,7 @@ def test_kitti_raw_reader():
             image_R = reader.get_image(fi, right=True)
             intrinsic = reader.get_intrinsic(fi)
             extrinsic = reader.get_stereo_extrinsic(fi)
-            depth = reader.get_depth(fi, image.shape[:2], opts.get_shape("HW", "kitti_raw"), intrinsic)
+            depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "kitti_raw"), intrinsic)
             print(f"== test_kitti_raw_reader) drive: {drive_key}, frame id: {fi}")
             print("image size:", image.shape)
             print("intrinsic:\n", intrinsic)

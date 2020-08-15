@@ -37,7 +37,7 @@ def test_tfrecord_reader():
 
 
 def create_model():
-    input_shape = (opts.get_shape("H")*5, opts.get_shape("W"), 3)
+    input_shape = (opts.get_img_shape("H")*5, opts.get_img_shape("W"), 3)
     model = Sequential([
         Conv2D(16, 3, padding='same', activation='relu', input_shape=input_shape),
         MaxPooling2D(),

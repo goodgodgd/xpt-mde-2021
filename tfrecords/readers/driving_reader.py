@@ -119,7 +119,7 @@ def test_driving_stereo_reader():
         for fi in frame_indices:
             image = reader.get_image(fi)
             intrinsic = reader.get_intrinsic(fi)
-            depth = reader.get_depth(fi, image.shape[:2], opts.get_shape("HW", "cityscapes"), intrinsic)
+            depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "cityscapes"), intrinsic)
             print(f"== test_city_reader) drive: {op.basename(drive_path)}, frame: {fi}")
             view = image
             depth_view = apply_color_map(depth)

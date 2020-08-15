@@ -147,7 +147,7 @@ def test_city_reader():
             extrinsic = reader.get_stereo_extrinsic(fi)
             print("intrinsic\n", intrinsic)
             print("extrinsic\n", extrinsic)
-            depth = reader.get_depth(fi, image.shape[:2], opts.get_shape("HW", "cityscapes"), intrinsic)
+            depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "cityscapes"), intrinsic)
             print(f"== test_city_reader) drive: {op.basename(drive_path)}, frame: {fi}")
             view = image[0:-1:5, 0:-1:5, :]
             depth_view = apply_color_map(depth)
