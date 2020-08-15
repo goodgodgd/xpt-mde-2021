@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import tensorflow as tf
+from utils.convert_pose import pose_matr2rvec
 
 
 class Serializer:
@@ -109,4 +110,30 @@ def apply_color_map(depth):
     depth_view = (np.clip(depth, 0, 50.) / 50. * 255).astype(np.uint8)
     depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
     return depth_view
+
+
+def show_example(example, wait=0, print_param=False):
+    image = example["image"]
+    dstshape = (int(image.shape[1] * 1000. / image.shape[0]), 1000)
+    image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
+    cv2.imshow("image", image_view)
+
+    if "image_R" in example:
+        image = example["image_R"]
+        image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
+        cv2.imshow("image_R", image_view)
+
+    if "depth_gt" in example:
+        depth = example["depth_gt"]
+        depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
+        depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+        cv2.imshow("depth", depth_view)
+
+    if print_param:
+        print("\nintrinsic:\n", example["intrinsic"])
+        if "pose_gt" in example:
+            print("pose\n", pose_matr2rvec(example["pose_gt"]))
+
+    cv2.waitKey(wait)
+
 

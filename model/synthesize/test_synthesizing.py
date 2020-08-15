@@ -7,7 +7,7 @@ import cv2
 from config import opts
 from model.synthesize.synthesize_base import SynthesizeSingleScale, SynthesizeMultiScale
 from model.synthesize.bilinear_interp import BilinearInterpolation
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 from model.model_util.augmentation import augmentation_factory
 import utils.convert_pose as cp
 import utils.util_funcs as uf
@@ -22,7 +22,7 @@ def test_synthesize_batch_multi_scale():
     """
     print("===== start test_synthesize_batch_multi_scale")
     dataname, split = "waymo", "train"
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, f"{dataname}_{split}")).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, f"{dataname}_{split}")).get_dataset()
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
 
     for i, features in enumerate(dataset):
@@ -64,7 +64,7 @@ def test_synthesize_batch_view():
     gt depth와 gt pose를 입력했을 때 스케일 별로 복원되는 이미지를 정성적으로 확인
     실제 target image와 복원된 "single" scale target image를 눈으로 비교
     """
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_dataset()
 
     print("\n===== start test_synthesize_batch_view")
     scale_idx = 1
@@ -116,7 +116,7 @@ def test_reshape_source_images():
     위 아래로 쌓인 원본 이미지를 batch 아래 한 차원을 더 만들어서 reshape이 잘 됐는지 확인(assert)
     """
     print("===== start test_reshape_source_images")
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_dataset()
     dataset = iter(dataset)
     features = next(dataset)
     stacked_image = features['image']

@@ -4,7 +4,7 @@ import numpy as np
 
 import settings
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 import utils.util_funcs as uf
 import evaluate.eval_funcs as ef
 
@@ -42,7 +42,7 @@ def evaluate_by_user_interaction():
 
 def evaluate(data_dir_name, model_name):
     total_depth_pred, total_pose_pred = load_predictions(model_name)
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_dataset()
     depth_valid = uf.check_tfrecord_including(op.join(opts.DATAPATH_TFR, data_dir_name), ["depth_gt"])
     if not uf.check_tfrecord_including(op.join(opts.DATAPATH_TFR, data_dir_name), ["pose_gt"]):
         print("Evaluation is NOT possible without pose_gt")

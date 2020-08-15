@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 
 import settings
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 import utils.util_funcs as uf
 
 
@@ -47,8 +47,8 @@ def visualize(data_dir_name, model_name):
     depths = np.load(op.join(opts.DATAPATH_PRD, model_name, "depth.npy"))
     poses = np.load(op.join(opts.DATAPATH_PRD, model_name, "pose.npy"))
     print(f"depth shape: {depths.shape}, pose shape: {poses.shape}")
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1)
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1)
+    dataset = tfrgen.get_dataset()
     fig = plt.figure()
     fig.subplots_adjust(top=0.99, bottom=0.01, left=0.2, right=0.99)
 

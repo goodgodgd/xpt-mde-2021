@@ -35,7 +35,8 @@ class PathManager:
         self.safe_exit = True
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        self.closer()
+        if self.closer:
+            self.closer()
         if self.safe_exit is False:
             print("[PathManager] the process is NOT ended properly, remove the working paths")
             for path in self.paths:

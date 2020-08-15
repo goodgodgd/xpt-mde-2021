@@ -1,10 +1,11 @@
 import os.path as op
 import numpy as np
+import tensorflow as tf
 
 import settings
 from config import opts
-from utils.util_class import WrongInputException
 import tfrecords.tfrecord_maker as tm
+from tfrecords.validation_maker import generate_validation_tfrecords
 
 
 def convert_to_tfrecords_directly():
@@ -13,12 +14,19 @@ def convert_to_tfrecords_directly():
         for split in splits:
             tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset.split('__')[0]}_{split}")
             if op.isdir(tfrpath):
-                print("[convert_to_tfrecords] tfrecord already created in", tfrpath)
+                print("[convert_to_tfrecords] tfrecord already created in", op.basename(tfrpath))
                 continue
 
             srcpath = opts.get_raw_data_path(dataset)
             tfrmaker = tfrecord_maker_factory(dataset, split, srcpath, tfrpath)
             tfrmaker.make(opts.DRIVE_LIMIT, opts.FRAME_LIMIT)
+
+        # create validation split from test or train dataset
+        tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset.split('__')[0]}_val")
+        if op.isdir(tfrpath):
+            print("[convert_to_tfrecords] tfrecord already created in", op.basename(tfrpath))
+            continue
+        generate_validation_tfrecords(tfrpath)
 
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
@@ -34,7 +42,7 @@ def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
     elif dataset is "driving_stereo":
         return tm.DrivingStereoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     else:
-        WrongInputException(f"Invalid dataset: {dataset}")
+        assert 0, f"Invalid dataset: {dataset}"
 
 
 if __name__ == "__main__":

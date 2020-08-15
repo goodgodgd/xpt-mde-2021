@@ -8,7 +8,7 @@ from config import opts
 import utils.util_funcs as uf
 
 
-class TfrecordGenerator:
+class TfrecordReader:
     def __init__(self, tfrpath, shuffle=False, epochs=1, batch_size=opts.BATCH_SIZE):
         self.tfrpath = tfrpath
         self.shuffle = shuffle
@@ -58,7 +58,7 @@ class TfrecordGenerator:
                                                        default_value=default_value)
         return features_dict
 
-    def get_generator(self):
+    def get_dataset(self):
         """
         :return features: {"image": .., "pose_gt": .., "depth_gt": .., "intrinsic": ..}
             image: image stacked in height [batch, snippet*height, width, 3]
@@ -113,10 +113,10 @@ class TfrecordGenerator:
 
 def test_read_dataset():
     """
-    Test if TfrecordGenerator works fine and print keys and shapes of input tensors
+    Test if TfrecordReader works fine and print keys and shapes of input tensors
     """
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_val"))
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_val"))
+    dataset = tfrgen.get_dataset()
     for i, x in enumerate(dataset):
         if i == 100:
             break
@@ -138,11 +138,11 @@ import numpy as np
 
 def test_reuse_dataset():
     """
-    Test if generator from TfrecordGenerator can be reused after a full iteration
+    Test if generator from TfrecordReader can be reused after a full iteration
     """
     np.set_printoptions(precision=3, suppress=True)
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_val"), epochs=2, batch_size=64)
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_val"), epochs=2, batch_size=64)
+    dataset = tfrgen.get_dataset()
     for i in range(2):
         print("Iteration:", i)
         for k, x in enumerate(dataset):

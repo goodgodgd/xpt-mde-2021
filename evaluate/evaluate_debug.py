@@ -7,7 +7,7 @@ import tensorflow as tf
 
 import settings
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 import utils.util_funcs as uf
 import utils.convert_pose as cp
 import evaluate.eval_funcs as ef
@@ -39,7 +39,7 @@ def evaluate_for_debug(data_dir_name, model_name):
     model = try_load_weights(model, model_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
 
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_dataset()
     depth_result = []
     pose_result = []
     trajectory = []
