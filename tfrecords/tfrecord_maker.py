@@ -66,16 +66,16 @@ class TfrecordMakerBase:
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
         return ExampleMaker(dataset, split, shwc_shape, data_keys)
 
-    def make(self, drive_limit=0, frame_limit=0):
+    def make(self, frame_per_drive=0, total_frame_limit=0):
         print("\n\n========== Start a new dataset:", op.basename(self.tfrpath))
         num_drives = len(self.drive_paths)
         with uc.PathManager([self.tfrpath__], closer_func=self.on_exit) as pm:
             self.pm = pm
             for di, drive_path in enumerate(self.drive_paths):
-                if (drive_limit > 0) and (di >= drive_limit):
-                    break
                 if self.init_drive_tfrecord(di):
                     continue
+                if (total_frame_limit > 0) and (self.total_example_count >= total_frame_limit):
+                    break
 
                 print("\n==== Start a new drive:", drive_path)
                 # create data reader in example maker
@@ -85,6 +85,11 @@ class TfrecordMakerBase:
 
                 last_example = dict()
                 for ii, index in enumerate(loop_range):
+                    if (frame_per_drive > 0) and (self.example_count_in_drive >= frame_per_drive):
+                        break
+                    if (total_frame_limit > 0) and (self.total_example_count >= total_frame_limit):
+                        break
+
                     try:
                         example = self.example_maker.get_example(index)
                     except StopIteration as si: # raised from xxx_reader._get_frame()
@@ -97,14 +102,13 @@ class TfrecordMakerBase:
                     if not example:             # when dict is empty, skip this index
                         uf.print_progress_status(f"==[making TFR] INVALID example, frame: {ii}/{num_frames}")
                         continue
-                    example_serial = self.serialize_example(example)
-                    if (frame_limit > 0) and (self.example_count_in_drive >= frame_limit):
-                        break
 
+                    example_serial = self.serialize_example(example)
                     last_example = example
                     self.write_tfrecord(example_serial, di)
                     uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives}, "
-                                             f"frame: {ii}/{num_frames}, example: {self.example_count_in_drive}, "
+                                             f"frame: {ii}/{num_frames}, "
+                                             f"example: ({self.example_count_in_drive}, {self.total_example_count}), "
                                              f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
                 print("")
                 self.write_tfrecord_config(last_example)

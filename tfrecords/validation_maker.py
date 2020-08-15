@@ -9,7 +9,7 @@ from tfrecords.tfrecord_reader import TfrecordReader
 from tfrecords.tfr_util import Serializer, show_example
 
 
-def generate_validation_tfrecords(tfrpath):
+def generate_validation_tfrecords(tfrpath, val_frames):
     srcpath = check_source_path(tfrpath)
     if srcpath is None:
         return
@@ -19,24 +19,25 @@ def generate_validation_tfrecords(tfrpath):
         config = json.load(fr)
     length = config["length"]
     serialize_example = Serializer()
-    val_frames = opts.VALIDATION_FRAMES
     stride = max(min(length // val_frames, 10), 1)
     save_count = 0
     print(f"\n\n!!! Start create \"{op.basename(tfrpath)}\"")
     print(f"source length={length}, stride={stride}, val_frames={val_frames}")
 
     with PathManager([tfrpath]) as pm:
-        outfile = f"{tfrpath}/validation.tfrecord"
+        outfile = f"{tfrpath}/shard_000.tfrecord"
         with tf.io.TFRecordWriter(outfile) as tfrwriter:
             for i, features in enumerate(dataset):
                 if i % stride != 0:
                     continue
+                if i >= val_frames:
+                    break
 
                 example = convert_to_np(features)
                 serialized = serialize_example(example)
                 tfrwriter.write(serialized)
                 save_count += 1
-                uf.print_progress_status(f"[generate_validation] index: {i}, count: {save_count}/{val_frames}")
+                uf.print_progress_status(f"== [validation] index: {i}, count: {save_count}/{val_frames}")
                 if save_count % 100 == 10:
                     show_example(example, 100, True)
                 elif save_count % 50 == 10:
