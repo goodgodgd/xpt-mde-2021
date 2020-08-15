@@ -15,21 +15,20 @@ PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xce
 
 
 class ModelFactory:
-    def __init__(self, dataset=opts.DATASET_TO_USE,
+    def __init__(self, dataset_cfg,
+                 dataset_name=opts.DATASET_TO_USE,
                  global_batch=opts.BATCH_SIZE,
                  net_names=opts.NET_NAMES,
                  depth_activation=opts.DEPTH_ACTIVATION,
                  pretrained_weight=opts.PRETRAINED_WEIGHT,
-                 stereo=opts.STEREO,
-                 stereo_extrinsic=opts.STEREO_EXTRINSIC):
+                 stereo=opts.STEREO):
         self.global_batch = global_batch
-        S, H, W, C = opts.get_img_shape("SHWC", dataset)
-        self.input_shape = (global_batch, S, H, W, C)
+        self.dataset_cfg = dataset_cfg
+        self.bshwc_shape = [global_batch] + dataset_cfg["imshape"]
         self.net_names = net_names
         self.activation = depth_activation
         self.pretrained_weight = pretrained_weight
         self.stereo = stereo
-        self.stereo_extrinsic = stereo_extrinsic
 
     def get_model(self):
         models = dict()
@@ -52,9 +51,9 @@ class ModelFactory:
             flownet = self.flow_net_factory(self.net_names["flow"], conv_flow)
             models["flownet"] = flownet
 
-        if self.stereo_extrinsic:
+        if "stereo_T_LR" in self.dataset_cfg:
             model_wrapper = mw.StereoPoseModelWrapper(models)
-        elif self.stereo:
+        elif ("image_R" in self.dataset_cfg) and self.stereo:
             model_wrapper = mw.StereoModelWrapper(models)
         else:
             model_wrapper = mw.ModelWrapper(models)
@@ -97,11 +96,11 @@ class ModelFactory:
 
     def depth_net_factory(self, net_name, conv2d_d, pred_activ, upsample_interp):
         if net_name == "DepthNetBasic":
-            depth_net = DepthNetBasic(self.input_shape, self.global_batch, conv2d_d, pred_activ, upsample_interp)()
+            depth_net = DepthNetBasic(self.bshwc_shape, self.global_batch, conv2d_d, pred_activ, upsample_interp)()
         elif net_name == "DepthNetNoResize":
-            depth_net = DepthNetNoResize(self.input_shape, self.global_batch, conv2d_d, pred_activ, upsample_interp)()
+            depth_net = DepthNetNoResize(self.bshwc_shape, self.global_batch, conv2d_d, pred_activ, upsample_interp)()
         elif net_name in PRETRAINED_MODELS:
-            depth_net = DepthNetFromPretrained(self.input_shape, self.global_batch, conv2d_d, pred_activ, upsample_interp,
+            depth_net = DepthNetFromPretrained(self.bshwc_shape, self.global_batch, conv2d_d, pred_activ, upsample_interp,
                                                net_name, self.pretrained_weight)()
         else:
             raise WrongInputException("[depth_net_factory] wrong depth net name: " + net_name)
@@ -109,14 +108,14 @@ class ModelFactory:
 
     def pose_net_factory(self, net_name, conv2d_p):
         if net_name == "PoseNet":
-            posenet = PoseNet(self.input_shape, self.global_batch, conv2d_p)()
+            posenet = PoseNet(self.bshwc_shape, self.global_batch, conv2d_p)()
         else:
             raise WrongInputException("[pose_net_factory] wrong pose net name: " + net_name)
         return posenet
 
     def flow_net_factory(self, net_name, conv2d_f):
         if net_name == "PWCNet":
-            flownet = PWCNet(self.input_shape, self.global_batch, conv2d_f)()
+            flownet = PWCNet(self.bshwc_shape, self.global_batch, conv2d_f)()
         else:
             raise WrongInputException("[flow_net_factory] wrong flow net name: " + net_name)
         return flownet

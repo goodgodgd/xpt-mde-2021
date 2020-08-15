@@ -64,7 +64,7 @@ def set_configs():
 @StrategyScope
 def create_training_parts(initial_epoch, tfr_config):
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
-    model = ModelFactory(global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
+    model = ModelFactory(tfr_config, global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)

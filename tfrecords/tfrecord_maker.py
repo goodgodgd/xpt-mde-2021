@@ -4,6 +4,7 @@ from glob import glob
 import tensorflow as tf
 import shutil
 import json
+import copy
 
 import utils.util_funcs as uf
 import utils.util_class as uc
@@ -104,7 +105,7 @@ class TfrecordMakerBase:
                         continue
 
                     example_serial = self.serialize_example(example)
-                    last_example = example
+                    last_example = copy.deepcopy(example)
                     self.write_tfrecord(example_serial, di)
                     uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives}, "
                                              f"frame: {ii}/{num_frames}, "

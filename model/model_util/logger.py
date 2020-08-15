@@ -175,14 +175,8 @@ def copy_or_check_same():
                   not callable(getattr(SavedOptions, attr)) and not attr.startswith('__')}
     curr_opts = {attr: CurrOptions.__dict__[attr] for attr in CurrOptions.__dict__ if
                  not callable(getattr(CurrOptions, attr)) and not attr.startswith('__')}
-    print("saved_opts", saved_opts)
-    print("curr_opts", curr_opts)
-    dont_care_opts = ["BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "ENABLE_SHAPE_DECOR",
-                      "CKPT_NAME", "LOG_LOSS", "PROJECT_ROOT", "DATASET", "TRAIN_MODE", "LOSS_WEIGHTS"]
 
     for key, saved_val in saved_opts.items():
-        if key in dont_care_opts:
-            continue
         curr_val = curr_opts[key]
         assert saved_val == curr_val, f"key: {key}, {curr_val} != {saved_val}"
 
