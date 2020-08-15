@@ -8,7 +8,7 @@ import settings
 from config import opts
 import utils.util_funcs as uf
 import utils.convert_pose as cp
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 import model.loss_and_metric.losses as ls
 
@@ -22,7 +22,7 @@ def test_photometric_loss_quality(suffix=""):
     assert 없음
     """
     print("\n===== start test_photometric_loss_quality")
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_dataset()
 
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
@@ -83,7 +83,7 @@ def test_photometric_loss_quantity(suffix=""):
     두 가지 pose로 복원된 영상을 눈으로 확인하고 gt 데이터의 loss가 더 낮음을 확인 (assert)
     """
     print("\n===== start test_photometric_loss_quantity")
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_dataset()
 
     for i, features in enumerate(dataset):
         print("\n--- fetch a batch data")
@@ -155,7 +155,7 @@ def test_smootheness_loss_quantity():
     두 가지 depth를 눈으로 확인하고 gt 데이터의 loss가 더 낮음을 확인 (assert)
     """
     print("\n===== start test_smootheness_loss_quantity")
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_dataset()
 
     """
     gather additional data required to compute losses
@@ -231,7 +231,7 @@ def tu_smootheness_loss(depth_gt, target_image):
 
 def test_stereo_loss():
     print("\n===== start test_photometric_loss_quality")
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test")).get_dataset()
     stereo_loss = ls.StereoDepthLoss("L1")
     total_loss = ls.TotalLoss()
 

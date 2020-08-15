@@ -30,7 +30,7 @@ class VodeOptions:
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
     VALIDATION_FRAMES = 500
-    DATASETS_TO_PREPARE = {"kitti_raw": ["test", "test"],
+    DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
                            "cityscapes__extra": ["train"],
                            "cityscapes__sequence": ["train"],
@@ -38,8 +38,8 @@ class VodeOptions:
                            "driving_stereo": ["train", "test"],
                            }
     # only when making small tfrecords to test training
-    DRIVE_LIMIT = 0
-    FRAME_LIMIT = 0
+    DRIVE_LIMIT = 3
+    FRAME_LIMIT = 100
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}
@@ -50,7 +50,7 @@ class VodeOptions:
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
-    DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
+    DATAPATH_TFR = op.join(DATAPATH, "tfrecords_small")
     DATAPATH_CKP = op.join(DATAPATH, "checkpts")
     DATAPATH_LOG = op.join(DATAPATH, "log")
     DATAPATH_PRD = op.join(DATAPATH, "prediction")

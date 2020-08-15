@@ -121,7 +121,7 @@ class KittiRawReader(DataReaderBase):
 
     def _read_frame_ids_test(self, drive_key):
         date, drive_id = drive_key
-        drive_prefix = f"{date}_{drive_id}"
+        drive_prefix = f"{date} {drive_id}"
         prj_tfrecords_path = op.dirname(op.dirname(op.abspath(__file__)))
         filename = op.join(prj_tfrecords_path, "resources", "kitti_test_depth_frames.txt")
         with open(filename, "r") as fr:
@@ -396,7 +396,7 @@ def test_kitti_odom_reader():
                 break
 
 
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 import utils.util_funcs as uf
 import utils.convert_pose as cp
@@ -405,7 +405,7 @@ import tensorflow as tf
 
 def test_kitti_raw_synthesis():
     tfrpath = op.join(opts.DATAPATH_TFR, "kitti_raw_train")
-    dataset = TfrecordGenerator(tfrpath).get_generator()
+    dataset = TfrecordReader(tfrpath).get_dataset()
     batid, srcid = 0, 0
 
     for i, features in enumerate(dataset):

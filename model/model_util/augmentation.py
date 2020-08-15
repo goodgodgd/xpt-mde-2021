@@ -332,7 +332,7 @@ def test_flip_intrinsic():
 import os.path as op
 import cv2
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 from utils.util_funcs import to_uint8_image, multi_scale_depths
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 from utils.convert_pose import pose_matr2rvec_batch
@@ -340,8 +340,8 @@ from utils.convert_pose import pose_matr2rvec_batch
 
 def test_augmentations():
     print("===== test test_augmentations")
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
+    dataset = tfrgen.get_dataset()
     total_aug = TotalAugment()
     data_aug = {"CropAndResize": CropAndResize(aug_prob=0.5),
                 "HorizontalFlip": HorizontalFlip(aug_prob=0.5),
@@ -418,8 +418,8 @@ def prep_synthesize(features):
 
 def test_augmentation_factory():
     print("===== test test_augmentations")
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
+    dataset = tfrgen.get_dataset()
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
 
     for bi, features in enumerate(dataset):
@@ -456,8 +456,8 @@ import utils.util_funcs as uf
 
 def test_stereo_augmentation():
     print("===== test test_augmentations")
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
+    dataset = tfrgen.get_dataset()
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
     batidx, sclidx = 0, 0
 

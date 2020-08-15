@@ -5,7 +5,7 @@ import numpy as np
 
 import settings
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 import utils.util_funcs as uf
 from model.build_model.model_factory import ModelFactory
 from model.model_util.augmentation import augmentation_factory
@@ -90,7 +90,7 @@ def get_dataset(dataset_name, split, shuffle):
     batch_size = opts.BATCH_SIZE
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
     assert op.isdir(tfr_train_path)
-    dataset = TfrecordGenerator(tfr_train_path, shuffle=shuffle, batch_size=batch_size).get_generator()
+    dataset = TfrecordReader(tfr_train_path, shuffle=shuffle, batch_size=batch_size).get_dataset()
     steps_per_epoch = uf.count_steps(tfr_train_path, batch_size)
     return dataset, steps_per_epoch
 
@@ -151,7 +151,7 @@ def test_model_wrapper_output():
     model = ModelFactory().get_model()
     model = try_load_weights(model, ckpt_name)
     model.compile(optimizer="sgd", loss="mean_absolute_error")
-    dataset = TfrecordGenerator(op.join(opts.DATAPATH_TFR, test_dir_name)).get_generator()
+    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, test_dir_name)).get_dataset()
 
     print("===== check model output shape")
     for features in dataset:

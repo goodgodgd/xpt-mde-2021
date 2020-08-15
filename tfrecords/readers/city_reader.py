@@ -168,7 +168,7 @@ def list_drive_paths(filelist):
     return drive_paths
 
 
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 from model.synthesize.synthesize_base import SynthesizeMultiScale
 import utils.util_funcs as uf
 import utils.convert_pose as cp
@@ -177,7 +177,7 @@ import tensorflow as tf
 
 def test_city_stereo_synthesis():
     tfrpath = op.join(opts.DATAPATH_TFR, "cityscapes_train__")
-    dataset = TfrecordGenerator(tfrpath).get_generator()
+    dataset = TfrecordReader(tfrpath).get_dataset()
     batid, srcid = 0, 0
 
     for i, features in enumerate(dataset):

@@ -5,7 +5,8 @@ from tfrecords.readers.kitti_reader import KittiRawReader, KittiOdomReader
 from tfrecords.readers.city_reader import CityscapesReader
 from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.driving_reader import DrivingStereoReader
-import utils.convert_pose as cp
+from utils.convert_pose import pose_matr2rvec
+from tfrecords.tfr_util import show_example
 
 
 class ExampleMaker:
@@ -60,11 +61,11 @@ class ExampleMaker:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic(frame_id)
 
         if index % 100 == 10:
-            self.show_example(example, 200)
+            show_example(example, 200)
         if index % 500 == 10:
             print("\nintrinsic:\n", example["intrinsic"])
             if "pose_gt" in example:
-                print("pose\n", cp.pose_matr2rvec(example["pose_gt"]))
+                print("pose\n", pose_matr2rvec(example["pose_gt"]))
 
         example = self.verify_snippet(example)
         return example
@@ -123,28 +124,6 @@ class ExampleMaker:
         intrinsic = self.data_reader.get_intrinsic(index)
         depth_map = self.data_reader.get_depth(index, raw_shape_hwc[:2], self.shwc_shape[1:3], intrinsic)
         return depth_map.astype(np.float32)
-
-    def show_example(self, example, wait=0):
-        image = example["image"]
-        dstshape = (int(image.shape[1] * 1000. / image.shape[0]), 1000)
-        image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
-        cv2.imshow("image", image_view)
-
-        if "image_R" in example:
-            image = example["image_R"]
-            image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
-            cv2.imshow("image_R", image_view)
-
-        if "depth_gt" in example:
-            depth = example["depth_gt"]
-            depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
-            depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
-            cv2.imshow("depth", depth_view)
-
-        cv2.waitKey(wait)
-        # print("\nintrinsic:\n", example["intrinsic"])
-        # if "pose_gt" in example:
-        #     print("pose\n", example["pose_gt"])
 
     def verify_snippet(self, example):
         if self.dataset is "waymo":

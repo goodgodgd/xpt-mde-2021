@@ -7,17 +7,17 @@ from tensorflow.keras.layers import Conv2D, MaxPooling2D, GlobalAvgPool2D
 
 import settings
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 import gc
 
 
 def test_tfrecord_reader():
     """
-    Test if TfrecordGenerator works fine and print keys and shapes of input tensors
+    Test if TfrecordReader works fine and print keys and shapes of input tensors
     """
     model = create_model()
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=True)
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=True)
+    dataset = tfrgen.get_dataset()
     batch_means = []
     for ei in range(50):
         y_means = []

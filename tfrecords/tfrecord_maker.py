@@ -18,7 +18,7 @@ class TfrecordMakerBase:
         self.srcpath = srcpath
         self.tfrpath = tfrpath              # final root path of tfrecords of this dataset
         self.tfrpath__ = tfrpath + "__"     # temporary root path of tfrecords of this dataset
-        self.tfr_drive_path = tfrpath       # path to write "current" tfrecords
+        self.tfr_drive_path = ""            # path to write "current" tfrecords
         self.shwc_shape = shwc_shape
         self.shard_size = shard_size        # max number of examples in a shard
         self.shard_count = 0                # number of shards written in this drive
@@ -163,11 +163,13 @@ class TfrecordMakerSingleDir(TfrecordMakerBase):
         self.pm.reopen([outpath], closer_func=self.on_exit)
         self.tfr_drive_path = outpath
         self.example_count_in_drive = 0
-        self.open_new_writer(drive_index)
+        if drive_index == 0:
+            self.open_new_writer(drive_index)
         return False
 
     def open_new_writer(self, drive_index):
         outfile = f"{self.tfr_drive_path}/shard_{self.shard_count:03d}.tfrecord"
+        print("open a new tfrecord:", op.basename(outfile))
         self.writer = tf.io.TFRecordWriter(outfile)
 
     def write_tfrecord_config(self, example):

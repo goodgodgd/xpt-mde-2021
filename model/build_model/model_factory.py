@@ -139,7 +139,7 @@ class ExponentialActivation:
 # ==================================================
 import os.path as op
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordGenerator
+from tfrecords.tfrecord_reader import TfrecordReader
 
 
 def test_build_model():
@@ -162,8 +162,8 @@ def test_build_model():
 
 def test_model_predictions():
     print("\n===== start test_model_predictions")
-    tfrgen = TfrecordGenerator(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
-    dataset = tfrgen.get_generator()
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_test"), shuffle=False)
+    dataset = tfrgen.get_dataset()
     total_steps = tfrgen.get_total_steps()
     vode_model = ModelFactory(stereo=True).get_model()
 
