@@ -22,7 +22,7 @@ def generate_validation_tfrecords(tfrpath):
     val_frames = opts.VALIDATION_FRAMES
     stride = max(min(length // val_frames, 10), 1)
     save_count = 0
-    print("\n\n!!! Start create", op.basename(tfrpath))
+    print(f"\n\n!!! Start create \"{op.basename(tfrpath)}\"")
     print(f"source length={length}, stride={stride}, val_frames={val_frames}")
 
     with PathManager([tfrpath]) as pm:

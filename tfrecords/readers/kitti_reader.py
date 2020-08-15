@@ -121,7 +121,7 @@ class KittiRawReader(DataReaderBase):
 
     def _read_frame_ids_test(self, drive_key):
         date, drive_id = drive_key
-        drive_prefix = f"{date}_{drive_id}"
+        drive_prefix = f"{date} {drive_id}"
         prj_tfrecords_path = op.dirname(op.dirname(op.abspath(__file__)))
         filename = op.join(prj_tfrecords_path, "resources", "kitti_test_depth_frames.txt")
         with open(filename, "r") as fr:
