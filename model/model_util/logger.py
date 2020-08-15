@@ -165,17 +165,18 @@ def copy_or_check_same():
     if opts.DATAPATH_CKP not in sys.path:
         sys.path.append(opts.DATAPATH_CKP)
     print(sys.path)
-    class_path = opts.CKPT_NAME + ".saved_config" + ".VodeOptions"
+    class_path = opts.CKPT_NAME + ".saved_config" + ".FixedOptions"
     module_name, class_name = class_path.rsplit('.', 1)
     module_obj = importlib.import_module(module_name)
     SavedOptions = getattr(module_obj, class_name)
-    from config import VodeOptions as CurrOptions
+    from config import FixedOptions as CurrOptions
 
     saved_opts = {attr: SavedOptions.__dict__[attr] for attr in SavedOptions.__dict__ if
                   not callable(getattr(SavedOptions, attr)) and not attr.startswith('__')}
     curr_opts = {attr: CurrOptions.__dict__[attr] for attr in CurrOptions.__dict__ if
                  not callable(getattr(CurrOptions, attr)) and not attr.startswith('__')}
-
+    print("saved_opts", saved_opts)
+    print("curr_opts", curr_opts)
     dont_care_opts = ["BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "ENABLE_SHAPE_DECOR",
                       "CKPT_NAME", "LOG_LOSS", "PROJECT_ROOT", "DATASET", "TRAIN_MODE", "LOSS_WEIGHTS"]
 
