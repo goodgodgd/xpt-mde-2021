@@ -39,7 +39,7 @@ def train(dataset_name, target_epoch, learning_rate):
         print("save intermediate results ...")
         log.save_reconstruction_samples(model, dataset_val, val_steps, epoch)
         save_model(model, result_val)
-        log.save_log(epoch, result_train, result_val)
+        log.save_log(epoch, dataset_name, result_train, result_val)
 
 
 def set_configs():

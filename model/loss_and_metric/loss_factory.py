@@ -10,12 +10,12 @@ def loss_factory(dataset_cfg, loss_weights=opts.LOSS_WEIGHTS, stereo_cfg=opts.ST
                  "SSIM_R": lm.PhotometricLossMultiScale("SSIM", key_suffix="_R"),
                  "smoothe": lm.SmoothenessLossMultiScale(),
                  "smoothe_R": lm.SmoothenessLossMultiScale(key_suffix="_R"),
-                 "stereo_L1": lm.StereoDepthLoss("L1"),
-                 "stereo_SSIM": lm.StereoDepthLoss("SSIM"),
-                 "stereo_pose": lm.StereoPoseLoss(),
-                 "flow_L2": lm.FlowWarpLossMultiScale("L2"),
-                 "flow_L2_R": lm.FlowWarpLossMultiScale("L2", key_suffix="_R"),
-                 "flow_L2_reg": lm.L2Regularizer(weights_to_regularize),
+                 "stereoL1": lm.StereoDepthLoss("L1"),
+                 "stereoSSIM": lm.StereoDepthLoss("SSIM"),
+                 "stereoPose": lm.StereoPoseLoss(),
+                 "flowL2": lm.FlowWarpLossMultiScale("L2"),
+                 "flowL2_R": lm.FlowWarpLossMultiScale("L2", key_suffix="_R"),
+                 "flow_reg": lm.L2Regularizer(weights_to_regularize),
                  }
     losses = dict()
     weights = dict()
@@ -33,11 +33,11 @@ def loss_factory(dataset_cfg, loss_weights=opts.LOSS_WEIGHTS, stereo_cfg=opts.ST
 
 
 def check_loss_dependency(loss_key, dataset_cfg):
-    loss_dependency = [(["L1", "SSIM", "smoothe", "flow_L2", "flow_L2_reg"],
+    loss_dependency = [(["L1", "SSIM", "smoothe", "flowL2", "flow_reg"],
                         ["image", "intrinsic"]),
-                       (["L1_R", "SSIM_R", "smoothe_R", "flow_L2_R"],
+                       (["L1_R", "SSIM_R", "smoothe_R", "flowL2_R"],
                         ["image_R", "intrinsic_R"]),
-                       (["stereo_L1", "stereo_SSIM", "stereo_pose"],
+                       (["stereoL1", "stereoSSIM", "stereoPose"],
                         ["image", "intrinsic", "image_R", "intrinsic_R", "stereo_T_LR"])
                        ]
     # find dependency for loss_key
