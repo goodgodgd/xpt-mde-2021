@@ -16,23 +16,23 @@ from model.model_util.distributer import StrategyScope, StrategyDataset
 import model.train_val as tv
 
 
-def train(final_epoch=opts.EPOCHS):
+def train(dataset_name, target_epoch, learning_rate):
     initial_epoch = uf.read_previous_epoch(opts.CKPT_NAME)
-    if final_epoch <= initial_epoch:
-        print(f"!! final_epoch {final_epoch} <= initial_epoch {initial_epoch}, no need to train")
+    if target_epoch <= initial_epoch:
+        print(f"!! target_epoch {target_epoch} <= initial_epoch {initial_epoch}, no need to train")
         return
 
     set_configs()
     log.copy_or_check_same()
-    dataset_train, tfr_config, train_steps = get_dataset(opts.DATASET_TO_USE, "train", True)
-    dataset_val, _, val_steps = get_dataset(opts.DATASET_TO_USE, "val", False)
-    model, augmenter, loss_object, optimizer = create_training_parts(initial_epoch, tfr_config)
+    dataset_train, tfr_config, train_steps = get_dataset(dataset_name, "train", True)
+    dataset_val, _, val_steps = get_dataset(dataset_name, "val", False)
+    model, augmenter, loss_object, optimizer = create_training_parts(initial_epoch, tfr_config, learning_rate)
     trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, loss_object,
                                               train_steps, opts.STEREO, augmenter, optimizer)
 
     print(f"\n\n========== START TRAINING ON {opts.CKPT_NAME} ==========")
-    for epoch in range(initial_epoch, final_epoch):
-        print(f"========== Start epoch: {epoch}/{final_epoch} ==========")
+    for epoch in range(initial_epoch, target_epoch):
+        print(f"========== Start epoch: {epoch}/{target_epoch} ==========")
         result_train = trainer.run_an_epoch(dataset_train)
         result_val = validater.run_an_epoch(dataset_val)
 
@@ -62,14 +62,14 @@ def set_configs():
 
 
 @StrategyScope
-def create_training_parts(initial_epoch, tfr_config):
+def create_training_parts(initial_epoch, tfr_config, learning_rate):
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(tfr_config, global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
     loss_object = loss_factory(tfr_config, weights_to_regularize=model.weights_to_regularize())
-    optimizer = optimizer_factory(opts.OPTIMIZER, opts.LEARNING_RATE, initial_epoch)
+    optimizer = optimizer_factory(opts.OPTIMIZER, learning_rate, initial_epoch)
     return model, augmenter, loss_object, optimizer
 
 
@@ -166,8 +166,9 @@ def test_model_wrapper_output():
 
 
 if __name__ == "__main__":
-    reset_period = 15
-    for epoch_ in range(reset_period, opts.EPOCHS, reset_period):
-        train(epoch_)
+    target_epoch_ = 0
+    for dataset_name_, epoch_, learning_rate_ in opts.TRAINING_PLAN:
+        target_epoch_ += epoch_
+        train(dataset_name_, target_epoch_, learning_rate_)
     # predict()
     # test_model_wrapper_output()

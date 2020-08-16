@@ -9,6 +9,7 @@ RAW_DATA_PATHS = {
     "waymo": "/media/ian/IanBook/datasets/waymo",
     "driving_stereo": "/media/ian/IanBook/datasets/raw_zips/driving_stereo",
 }
+# RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
 RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0815"
 
 
@@ -88,23 +89,36 @@ class VodeOptions(FixedOptions):
     """
     training options
     """
-    CKPT_NAME = "vode1"
-    EPOCHS = 51
-    LEARNING_RATE = 0.0001
+    CKPT_NAME = "vode2"
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
-    DATASET_TO_USE = ["kitti_raw", "kitti_odom"][0]
-    STEREO_EXTRINSIC = True
     SSIM_RATIO = 0.8
-    LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
-                    "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
-                    "smoothe": 1., "smoothe_R": 1.,
-                    "stereo_L1": 0.01, "stereo_SSIM": 0.01,
-                    "stereo_pose": 1.,
-                    "flow_L2": 1., "flow_L2_R": 1.,
-                    "flow_L2_reg": 4e-7
-                    }
+    LOSS_WEIGHTS = {
+        "L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
+        "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
+        "smoothe": 1., "smoothe_R": 1.,
+        "stereo_L1": 0.01, "stereo_SSIM": 0.01,
+        "stereo_pose": 1.,
+        "flow_L2": 1., "flow_L2_R": 1.,
+        "flow_L2_reg": 4e-7
+    }
+    TRAINING_PLAN = [
+        # pretraining first round
+        ("kitti_raw", 2, 0.0001),
+        ("kitti_odom", 2, 0.0001),
+        ("waymo", 2, 0.0001),
+        ("driving_stereo", 2, 0.0001),
+        ("cityscapes", 2, 0.0001),
+        # pretraining second round
+        ("kitti_raw", 2, 0.0001),
+        ("kitti_odom", 2, 0.0001),
+        ("waymo", 2, 0.0001),
+        ("driving_stereo", 2, 0.0001),
+        ("cityscapes", 2, 0.0001),
+        # fine tuning
+        ("kitti_raw", 2, 0.0001),
+    ]
 
     @classmethod
     def get_raw_data_path(cls, dataset_name):
@@ -116,7 +130,7 @@ class VodeOptions(FixedOptions):
             assert 0, f"Invalid dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}"
 
     @classmethod
-    def get_shape(cls, code="HW", dataset=DATASET_TO_USE, scale_div=1):
+    def get_img_shape(cls, code="HW", dataset="kitti_raw", scale_div=1):
         imsize = cls.IMAGE_SIZES[dataset]
         if code is "H":
             return imsize[0] // scale_div

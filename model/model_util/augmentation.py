@@ -154,7 +154,8 @@ class HorizontalFlip(AugmentBase):
         if "intrinsic_R" in features:
             feat_aug["intrinsic_R"] = self.flip_intrinsic(features["intrinsic_R"], features["image5d"].get_shape())
 
-        feat_aug["pose_gt"] = self.flip_gt_pose(features["pose_gt"])
+        if "pose_gt" in features:
+            feat_aug["pose_gt"] = self.flip_gt_pose(features["pose_gt"])
         if "pose_gt_R" in features:
             feat_aug["pose_gt_R"] = self.flip_gt_pose(features["pose_gt_R"])
 

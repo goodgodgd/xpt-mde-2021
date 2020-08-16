@@ -16,7 +16,6 @@ PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xce
 
 class ModelFactory:
     def __init__(self, dataset_cfg,
-                 dataset_name=opts.DATASET_TO_USE,
                  global_batch=opts.BATCH_SIZE,
                  net_names=opts.NET_NAMES,
                  depth_activation=opts.DEPTH_ACTIVATION,
