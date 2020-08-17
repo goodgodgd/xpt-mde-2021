@@ -37,10 +37,11 @@ def save_log(epoch, dataset_name, results_train, results_val):
 
 
 def save_results(epoch, dataset_name, results_train, results_val, columns, filename):
+    # make column widths fixed, all widths are fixed to 6 characters except for epoch and dataset
     train_result = results_train.mean(axis=0).to_dict()
     val_result = results_val.mean(axis=0).to_dict()
 
-    epoch_result = {"epoch": f"{epoch:<5}", "dataset": dataset_name[:7]}
+    epoch_result = {"epoch": f"{epoch:<5}", "dataset": f"{dataset_name[:7]:<7}"}
     for colname in columns:
         epoch_result[TRAIN_PREFIX + colname] = train_result[colname]
     seperator = "  |   "
@@ -50,11 +51,11 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
     epoch_result = to_fixed_width_column(epoch_result)
 
     # save "how-to-read-columns.json"
-    renamerfile = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "how-to-read-columns.json")
+    renamerfile = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "how-to-read-columns.txt")
     if not op.isfile(renamerfile):
         with open(renamerfile, "w") as fw:
             json.dump(RENAMER, fw, separators=(',\n', ': '))
-            fw.write("\nsmootheness loss and flow reguluarization loss are scaled up to x1000\n")
+            fw.write("\n\nSmootheness loss and flow reguluarization loss are scaled up to x1000\n")
 
     filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
     # if the file existed, append new data to it
@@ -161,7 +162,7 @@ def make_reconstructed_views(model, dataset, total_steps):
 
         # create intermediate data
         augm_data = total_loss.append_data(features, predictions)
-        if opts.STEREO:
+        if opts.STEREO and ("image_R" in features):
             augm_data_rig = total_loss.append_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
             augm_data_stereo = total_loss.synethesize_stereo(features, predictions, augm_data)
@@ -180,7 +181,7 @@ def make_reconstructed_views(model, dataset, total_steps):
         if "flow_ms" in predictions:
             view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
 
-        if opts.STEREO:
+        if opts.STEREO and ("stereo_synth_ms" in augm_data):
             view_imgs["right_source"] = augm_data["target_R"][batchidx]
             view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
             # view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])

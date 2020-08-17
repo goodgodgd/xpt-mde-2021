@@ -2,7 +2,7 @@ from config import opts
 import model.loss_and_metric.losses as lm
 
 
-def loss_factory(dataset_cfg, loss_weights=opts.LOSS_WEIGHTS, stereo_cfg=opts.STEREO,
+def loss_factory(dataset_cfg, loss_weights, stereo=opts.STEREO,
                  weights_to_regularize=None, batch_size=opts.BATCH_SIZE):
     loss_pool = {"L1": lm.PhotometricLossMultiScale("L1"),
                  "L1_R": lm.PhotometricLossMultiScale("L1", key_suffix="_R"),
@@ -29,7 +29,7 @@ def loss_factory(dataset_cfg, loss_weights=opts.LOSS_WEIGHTS, stereo_cfg=opts.ST
         weights[name] = weight
 
     print("[loss_factory] loss weights:", weights)
-    return lm.TotalLoss(losses, weights, stereo_cfg, batch_size)
+    return lm.TotalLoss(losses, weights, stereo, batch_size)
 
 
 def check_loss_dependency(loss_key, dataset_cfg):
