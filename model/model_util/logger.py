@@ -37,7 +37,18 @@ def save_log(epoch, dataset_name, results_train, results_val):
 
 
 def save_results(epoch, dataset_name, results_train, results_val, columns, filename):
-    # make column widths fixed, all widths are fixed to 6 characters except for epoch and dataset
+    """
+    저장된 csv 파일에서 하나의 column 너비는 가급적 6 글자가 되도록 맞춘다.
+    예시:
+        epoch,dataset,:loss ,:TE   ,:RE   ,  |   ,!loss ,!TE   ,!RE
+        0    ,kitti_r,1.9476,1.3867,0.0130,  |   ,1.1700,0.2056,0.0065
+        1    ,kitti_r,1.8911,1.3442,0.0129,  |   ,1.1845,0.2120,0.0051
+
+    - column 이름에서 ':'는 training 결과를 말하고 '!'는 validation 결과를 뜻한다.
+    - 6글자에 맞추기 위해 단어들을 줄여서 썼는데 약자들은 상단의 RENAMER나
+      checkpts의 how-to-read-columns.txt 에서도 확인할 수 있다.
+    - smootheness loss나 regularization loss는 크기가 작아서 1000을 곱해서 저장한다.
+    """
     train_result = results_train.mean(axis=0).to_dict()
     val_result = results_val.mean(axis=0).to_dict()
 
