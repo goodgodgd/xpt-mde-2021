@@ -3,10 +3,11 @@ from utils.decorators import shape_check
 
 
 @shape_check
-def photometric_loss_l1(synt_target, orig_target):
+def photometric_loss_l1(synt_target, orig_target, reduce=True):
     """
     :param synt_target: scaled synthesized target image [batch, numsrc, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
+    :param reduce: whether to reduce loss to batch size or not
     :return: photo_loss [batch]
     """
     orig_target = tf.expand_dims(orig_target, axis=1)
@@ -19,16 +20,17 @@ def photometric_loss_l1(synt_target, orig_target):
     # photo_error: [batch, numsrc, height/scale, width/scale, 3]
     photo_error = tf.abs(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
-    # average per example
-    photo_loss = tf.reduce_mean(photo_error, axis=[1, 2, 3, 4])
-    return photo_loss
+    if reduce:  # reduce to average per example
+        photo_error = tf.reduce_mean(photo_error, axis=[1, 2, 3, 4])
+    return photo_error
 
 
 @shape_check
-def photometric_loss_l2(synt_target, orig_target):
+def photometric_loss_l2(synt_target, orig_target, reduce=True):
     """
     :param synt_target: scaled synthesized target image [batch, numsrc, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
+    :param reduce: whether to reduce loss to batch size or not
     :return: photo_loss [batch]
     """
     orig_target = tf.expand_dims(orig_target, axis=1)
@@ -41,16 +43,17 @@ def photometric_loss_l2(synt_target, orig_target):
     # photo_error: [batch, numsrc, height/scale, width/scale, 3]
     photo_error = tf.square(synt_target - orig_target)
     photo_error = tf.where(error_mask, tf.constant(0, dtype=tf.float32), photo_error)
-    # average per example
-    photo_loss = tf.reduce_mean(photo_error, axis=[1, 2, 3, 4])
-    return photo_loss
+    if reduce:  # reduce to average per example
+        photo_error = tf.reduce_mean(photo_error, axis=[1, 2, 3, 4])
+    return photo_error
 
 
 @shape_check
-def photometric_loss_ssim(synt_target, orig_target):
+def photometric_loss_ssim(synt_target, orig_target, reduce=True):
     """
     :param synt_target: scaled synthesized target image [batch, numsrc, height/scale, width/scale, 3]
     :param orig_target: scaled original target image [batch, height/scale, width/scale, 3]
+    :param reduce: whether to reduce loss to batch size or not
     :return: photo_loss [batch]
     """
     numsrc = synt_target.get_shape().as_list()[1]
@@ -89,4 +92,7 @@ def photometric_loss_ssim(synt_target, orig_target):
     ssim = tf.where(error_mask, tf.constant(0, dtype=tf.float32), ssim)
     # average per example
     ssim = tf.reduce_mean(ssim, axis=[1, 2, 3, 4])
+
+    if reduce:  # reduce to average per example
+        ssim = tf.reduce_mean(ssim, axis=[1, 2, 3, 4])
     return ssim

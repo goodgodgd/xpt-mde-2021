@@ -6,6 +6,8 @@ def loss_factory(dataset_cfg, loss_weights, stereo=opts.STEREO,
                  weights_to_regularize=None, batch_size=opts.BATCH_SIZE):
     loss_pool = {"L1": lm.PhotometricLossMultiScale("L1"),
                  "L1_R": lm.PhotometricLossMultiScale("L1", key_suffix="_R"),
+                 "md2": lm.MonoDepth2LossMultiScale("L1"),
+                 "md2_R": lm.MonoDepth2LossMultiScale("L1", key_suffix="_R"),
                  "SSIM": lm.PhotometricLossMultiScale("SSIM"),
                  "SSIM_R": lm.PhotometricLossMultiScale("SSIM", key_suffix="_R"),
                  "smoothe": lm.SmoothenessLossMultiScale(),

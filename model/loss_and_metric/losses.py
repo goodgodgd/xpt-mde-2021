@@ -182,6 +182,44 @@ class PhotometricLossMultiScale(PhotometricLoss):
         return loss_batch
 
 
+class MonoDepth2LossMultiScale(PhotometricLoss):
+    def __init__(self, method, key_suffix=""):
+        super().__init__(method, key_suffix)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.append_data()'
+        :return: photo_loss [batch]
+        """
+        synth_target_ms = augm_data["synth_target_ms" + self.key_suffix]
+        original_target = augm_data["target" + self.key_suffix]
+        Ho, Wo = original_target.get_shape[2:4]
+
+        losses = []
+        for i, synt_target in enumerate(synth_target_ms):
+            # resize synthesized target to original image size
+            B, N, Hs, Ws, C = synt_target.get_shape()[2:]
+            synt_target = tf.reshape(synt_target, (B*N, Hs, Ws, C))
+            synt_target_rsz = tf.image.resize(synt_target, (Ho, Wo), method="bilinear")
+            synt_target_rsz = tf.reshape(synt_target_rsz, (B, N, Ho, Wo, C))
+            op_name = f"mono2_loss_{i}" + self.key_suffix
+            # compute L1 loss without reduce_mean -> [batch, numsrc, height, width, channel]
+            loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                 name=op_name)([synt_target_rsz, original_target])
+            # take minimum loss over sources for each pixel -> [batch, height, width, channel]
+            op_name = f"mono2_loss_min_{i}" + self.key_suffix
+            loss = layers.Lambda(lambda x: tf.reduce_min(x, axis=1), name=op_name)(loss)
+            losses.append(loss)
+
+        # average over image [scales, batch, height, width, channel] -> [scales, batch]
+        op_name = "mono2_loss_mean" + self.key_suffix
+        losses = layers.Lambda(lambda x: tf.reduce_mean(x, axis=[2, 3, 4]), name=op_name)(losses)
+        # average over scales [scales, batch] -> [batch]
+        op_name = "mono2_loss_sum" + self.key_suffix
+        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=op_name)(losses)
+        return loss_batch
+
+
 class SmoothenessLossMultiScale(LossBase):
     def __init__(self, key_suffix=""):
         self.key_suffix = key_suffix
