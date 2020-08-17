@@ -30,7 +30,7 @@ def generate_validation_tfrecords(tfrpath, val_frames):
             for i, features in enumerate(dataset):
                 if i % stride != 0:
                     continue
-                if i >= val_frames:
+                if save_count >= val_frames:
                     break
 
                 example = convert_to_np(features)

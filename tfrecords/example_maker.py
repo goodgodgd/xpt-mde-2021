@@ -136,7 +136,7 @@ class ExampleMaker:
                 return dict()   # empty dict means skip this frame
 
             max_dist = np.max(distances)
-            if max_dist > 5.:
+            if max_dist > 10.:
                 print("\n  Change scene? distance=", max_dist)
                 return dict()   # empty dict means skip this frame
         return example

@@ -5,27 +5,30 @@ https://keras.io/applications/
 import tensorflow as tf
 import tensorflow.keras.applications as tfapp
 import json
+import os.path as op
 import settings
 
-IMG_SHAPE = (128, 384, 3)
+IMG_SHAPE = (256, 384, 3)
+NASNET_SHAPE = (IMG_SHAPE[0] + 2, IMG_SHAPE[1] + 2, 3)
+EXCEPTION_SHAPE = (IMG_SHAPE[0] + 6, IMG_SHAPE[1] + 6, 3)
 
 
 def extract_scaled_layers():
     models = collect_models()
     layer_names = collect_layers(models)
-    with open(settings.sub_package_path + '/scaled_layers.json', 'w') as fp:
+    with open(op.dirname(op.abspath(__file__)) + '/scaled_layers.json', 'w') as fp:
         json.dump(layer_names, fp, separators=(',\n', ': '))
 
 
 def collect_models():
     models = dict()
     models["MobileNetV2"] = tfapp.MobileNetV2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
-    models["NASNetMobile"] = tfapp.NASNetMobile(input_shape=(130, 386, 3), include_top=False, weights='imagenet')
+    models["NASNetMobile"] = tfapp.NASNetMobile(input_shape=NASNET_SHAPE, include_top=False, weights='imagenet')
     models["DenseNet121"] = tfapp.DenseNet121(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
     models["VGG16"] = tfapp.VGG16(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
-    models["Xception"] = tfapp.Xception(input_shape=(134, 390, 3), include_top=False, weights='imagenet')
+    models["Xception"] = tfapp.Xception(input_shape=EXCEPTION_SHAPE, include_top=False, weights='imagenet')
     models["ResNet50V2"] = tfapp.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
-    models["NASNetLarge"] = tfapp.NASNetLarge(input_shape=(130, 386, 3), include_top=False, weights='imagenet')
+    models["NASNetLarge"] = tfapp.NASNetLarge(input_shape=NASNET_SHAPE, include_top=False, weights='imagenet')
 
     # omit non 2^n shape
     # models["InceptionV3"] = tfapp.InceptionV3(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
@@ -36,8 +39,7 @@ def collect_models():
 
 def collect_layers(models, print_layer_shapes=True):
     print("\n\ncollect scaled layers")
-    scaled_heights = (IMG_SHAPE[0]/2, IMG_SHAPE[0]/4, IMG_SHAPE[0]/8, IMG_SHAPE[0]/16, IMG_SHAPE[0]/32)
-    scaled_heights = [int(sc) for sc in scaled_heights]
+    scaled_shapes = [(IMG_SHAPE[0]//sc, IMG_SHAPE[1]//sc) for sc in [2, 4, 8, 16, 32]]
     total_layers = dict()
 
     print("\nprint model summary in markdown table")
@@ -49,7 +51,7 @@ def collect_layers(models, print_layer_shapes=True):
     for model_name, model in models.items():
         print("\n\n\n" + "%"*30)
         print(f"model name: {model_name}")
-        layer_names = ["anonymous"] * len(scaled_heights)
+        layer_info = dict()
 
         print("="*30 + "\ncollect last layer names of selected scales")
         for layer_index, layer in enumerate(model.layers):
@@ -59,18 +61,19 @@ def collect_layers(models, print_layer_shapes=True):
             if "input" in layer.name:
                 continue
 
-            out_height = layer.output_shape[1]
-            for scid, sc_height in enumerate(scaled_heights):
-                if sc_height == out_height \
+            out_height, out_width = layer.output_shape[1:3]
+            for scid, (sc_height, sc_width) in enumerate(scaled_shapes):
+                if (sc_height == out_height) and (sc_width == out_width) \
                     and ((("NASNet" in model_name) and ("activation" in layer.name))
                          or ("NASNet" not in model_name)):
-                    layer_names[scid] = [layer_index, layer.name]
+                    layer_info[scid] = [layer_index, layer.name, sc_height, sc_width]
 
         print("="*30 + "\ncollected layer names")
-        for layer_name, height in zip(layer_names, scaled_heights):
-            print(f"scaled height: {height}, layer name: {layer_name}")
+        for scid, info in layer_info.items():
+            print(f"scale id: {scid}, layer index: {info[0]}, name: {info[1]}, shape: {info[2:]}")
 
-        total_layers[model_name] = layer_names
+        layer_info = [info for info in layer_info.values()]
+        total_layers[model_name] = layer_info
 
     return total_layers
 

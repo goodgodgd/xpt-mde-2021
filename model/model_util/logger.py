@@ -6,71 +6,118 @@ import cv2
 import tensorflow as tf
 import importlib
 import shutil
+import copy
+import json
 
 from config import opts
 import utils.util_funcs as uf
 import model.loss_and_metric.losses as lm
 
+RENAMER = {"trjerr": "TE", "roterr": "RE", "depth": "de",
+           "SSIM": "SS", "smoothe": "sm", "pose": "ps", "stereo": "st", "flow": "fl",
+           "stereoPose": "stps", "_reg": "Rg", "_R": "R"}
+TRAIN_PREFIX = ":"
+VALID_PREFIX = "!"
 
-def save_log(epoch, results_train, results_val):
+
+def save_log(epoch, dataset_name, results_train, results_val):
     """
-    :param epoch: current epoch
+    :param epoch:
+    :param dataset_name:
     :param results_train: dict of losses, metrics and depths from training data
     :param results_val: dict of losses, metrics and depths from validation data
     """
     summ_cols = ["loss", "trjerr", "roterr"]
-    summary = save_results(epoch, results_train, results_val, summ_cols, "history.csv")
+    summary = save_results(epoch, dataset_name, results_train, results_val, summ_cols, "history.csv")
     other_cols = [colname for colname in results_train.keys() if colname not in summ_cols]
-    _ = save_results(epoch, results_train, results_val, other_cols, "mean_result.csv")
+    _ = save_results(epoch, dataset_name, results_train, results_val, other_cols, "mean_result.csv")
 
     save_scales(epoch, results_train, results_val, "scales.txt")
     draw_and_save_plot(summary, "history.png")
 
 
-def save_results(epoch, results_train, results_val, columns, filename):
+def save_results(epoch, dataset_name, results_train, results_val, columns, filename):
+    """
+    저장된 csv 파일에서 하나의 column 너비는 가급적 6 글자가 되도록 맞춘다.
+    예시:
+        epoch,dataset,:loss ,:TE   ,:RE   ,  |   ,!loss ,!TE   ,!RE
+        0    ,kitti_r,1.9476,1.3867,0.0130,  |   ,1.1700,0.2056,0.0065
+        1    ,kitti_r,1.8911,1.3442,0.0129,  |   ,1.1845,0.2120,0.0051
+
+    - column 이름에서 ':'는 training 결과를 말하고 '!'는 validation 결과를 뜻한다.
+    - 6글자에 맞추기 위해 단어들을 줄여서 썼는데 약자들은 상단의 RENAMER나
+      checkpts의 how-to-read-columns.txt 에서도 확인할 수 있다.
+    - smootheness loss나 regularization loss는 크기가 작아서 1000을 곱해서 저장한다.
+    """
     train_result = results_train.mean(axis=0).to_dict()
     val_result = results_val.mean(axis=0).to_dict()
-    epoch_result = {"epoch": epoch}
+
+    epoch_result = {"epoch": f"{epoch:<5}", "dataset": f"{dataset_name[:7]:<7}"}
     for colname in columns:
-        epoch_result["t_" + colname] = train_result[colname]
-    epoch_result["|"] = "|"
+        epoch_result[TRAIN_PREFIX + colname] = train_result[colname]
+    seperator = "  |   "
+    epoch_result[seperator] = seperator
     for colname in columns:
-        epoch_result["v_" + colname] = val_result[colname]
+        epoch_result[VALID_PREFIX + colname] = val_result[colname]
+    epoch_result = to_fixed_width_column(epoch_result)
+
+    # save "how-to-read-columns.json"
+    renamerfile = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "how-to-read-columns.txt")
+    if not op.isfile(renamerfile):
+        with open(renamerfile, "w") as fw:
+            json.dump(RENAMER, fw, separators=(',\n', ': '))
+            fw.write("\n\nSmootheness loss and flow reguluarization loss are scaled up to x1000\n")
 
     filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)
     # if the file existed, append new data to it
     if op.isfile(filepath):
-        existing = pd.read_csv(filepath, encoding='utf-8', converters={'epoch': lambda c: int(c)})
+        existing = pd.read_csv(filepath, encoding='utf-8', converters={'epoch': lambda c: f"{int(c):<5}"})
         results = existing.append(epoch_result, ignore_index=True)
         results = results.drop_duplicates(subset='epoch', keep='last')
+        results = results.fillna(0.)
+        # reorder columns
+        train_cols = [col for col in list(results) if col.startswith(TRAIN_PREFIX)]
+        val_cols = [col for col in list(results) if col.startswith(VALID_PREFIX)]
+        columns = ["epoch", "dataset"] + train_cols + [seperator] + val_cols
+        results = results.loc[:, columns]
         results = results.sort_values(by=['epoch'])
     else:
         results = pd.DataFrame([epoch_result])
 
-    # reorder columns
-    all_loss_cols = list(opts.LOSS_WEIGHTS.keys())
-    loss_cols = [col for col in columns if col in all_loss_cols]
-    other_cols = [col for col in columns if col not in all_loss_cols]
-    split_cols = loss_cols + other_cols
-    train_cols = ["t_" + col for col in split_cols]
-    val_cols = ["v_" + col for col in split_cols]
-    total_cols = ["epoch"] + train_cols + ["|"] + val_cols
-    results = results.loc[:, total_cols]
-
     # write to a file
-    results['epoch'] = results['epoch'].astype(int)
     results.to_csv(filepath, encoding='utf-8', index=False, float_format='%.4f')
     print(f"write {filename}\n", results.tail())
     return results
+
+
+def to_fixed_width_column(srcdict):
+    # scale up small values
+    middict = copy.deepcopy(srcdict)
+    for key, val in srcdict.items():
+        if "smooth" in key.lower() or "reg" in key.lower():
+            middict[key] = val * 1000.
+
+    # rename keys to shorter strings
+    dstdict = dict()
+    for key, val in middict.items():
+        newkey = copy.deepcopy(key)
+        for old, new in RENAMER.items():
+            if old in newkey:
+                newkey = newkey.replace(old, new)
+
+        if (newkey != "epoch") and (newkey != "dataset"):
+            newkey = f"{newkey[:6]:<6}"
+        dstdict[newkey] = val
+    return dstdict
 
 
 def draw_and_save_plot(results, filename):
     # plot graphs of loss and metrics
     fig, axes = plt.subplots(3, 1)
     fig.set_size_inches(7, 7)
-    for i, ax, colname, title in zip(range(3), axes, ['loss', 'trjerr', 'roterr'], ['Loss', 'Trajectory Error', 'Rotation Error']):
-        ax.plot(results['epoch'], results['t_' + colname], label='train_' + colname)
-        ax.plot(results['epoch'], results['v_' + colname], label='val_' + colname)
+    for i, ax, colname, title in zip(range(3), axes, ['loss ', 'TE   ', 'RE   '], ['Loss', 'Trajectory Error', 'Rotation Error']):
+        ax.plot(results['epoch'].astype(int), results[TRAIN_PREFIX + colname], label='train_' + colname)
+        ax.plot(results['epoch'].astype(int), results[VALID_PREFIX + colname], label='val_' + colname)
         ax.set_xlabel('epoch')
         ax.set_ylabel(colname)
         ax.set_title(title)
@@ -126,7 +173,7 @@ def make_reconstructed_views(model, dataset, total_steps):
 
         # create intermediate data
         augm_data = total_loss.append_data(features, predictions)
-        if opts.STEREO:
+        if opts.STEREO and ("image_R" in features):
             augm_data_rig = total_loss.append_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
             augm_data_stereo = total_loss.synethesize_stereo(features, predictions, augm_data)
@@ -145,7 +192,7 @@ def make_reconstructed_views(model, dataset, total_steps):
         if "flow_ms" in predictions:
             view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
 
-        if opts.STEREO:
+        if opts.STEREO and ("stereo_synth_ms" in augm_data):
             view_imgs["right_source"] = augm_data["target_R"][batchidx]
             view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
             # view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
@@ -165,23 +212,18 @@ def copy_or_check_same():
     if opts.DATAPATH_CKP not in sys.path:
         sys.path.append(opts.DATAPATH_CKP)
     print(sys.path)
-    class_path = opts.CKPT_NAME + ".saved_config" + ".VodeOptions"
+    class_path = opts.CKPT_NAME + ".saved_config" + ".FixedOptions"
     module_name, class_name = class_path.rsplit('.', 1)
     module_obj = importlib.import_module(module_name)
     SavedOptions = getattr(module_obj, class_name)
-    from config import VodeOptions as CurrOptions
+    from config import FixedOptions as CurrOptions
 
     saved_opts = {attr: SavedOptions.__dict__[attr] for attr in SavedOptions.__dict__ if
                   not callable(getattr(SavedOptions, attr)) and not attr.startswith('__')}
     curr_opts = {attr: CurrOptions.__dict__[attr] for attr in CurrOptions.__dict__ if
                  not callable(getattr(CurrOptions, attr)) and not attr.startswith('__')}
 
-    dont_care_opts = ["BATCH_SIZE", "EPOCHS", "LEARNING_RATE", "ENABLE_SHAPE_DECOR",
-                      "CKPT_NAME", "LOG_LOSS", "PROJECT_ROOT", "DATASET", "TRAIN_MODE", "LOSS_WEIGHTS"]
-
     for key, saved_val in saved_opts.items():
-        if key in dont_care_opts:
-            continue
         curr_val = curr_opts[key]
         assert saved_val == curr_val, f"key: {key}, {curr_val} != {saved_val}"
 

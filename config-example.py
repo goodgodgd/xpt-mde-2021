@@ -10,18 +10,10 @@ RAW_DATA_PATHS = {
     "driving_stereo": "/media/ian/IanBook/datasets/raw_zips/driving_stereo",
 }
 # RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
-RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0801"
-
-IMAGE_SIZES = {
-    "kitti_raw": (128, 384),
-    "kitti_odom": (128, 384),
-    "cityscapes": (196, 384),
-    "waymo": (256, 384),
-    "driving_stereo": (196, 384),
-}
+RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0815"
 
 
-class VodeOptions:
+class FixedOptions:
     """
     data options
     """
@@ -29,6 +21,36 @@ class VodeOptions:
     SNIPPET_LEN = 5
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
+
+    """
+    training options
+    """
+    PER_REPLICA_BATCH = 4
+    BATCH_SIZE = PER_REPLICA_BATCH
+    OPTIMIZER = ["adam_constant"][0]
+    DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]
+    PRETRAINED_WEIGHT = True
+
+    """
+    network options: network architecture, convolution args, ... 
+    """
+    NET_NAMES = {"depth": "NASNetMobile",
+                 "camera": "PoseNet",
+                 "flow": "PWCNet"
+                 }
+    DEPTH_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
+                       "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
+    DEPTH_UPSAMPLE_INTERP = "nearest"
+    POSE_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
+                      "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
+    FLOW_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
+                      "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
+
+
+class VodeOptions(FixedOptions):
+    """
+    data options
+    """
     # cityscapes__sequence MUST be after cityscapes__extra
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
@@ -37,6 +59,12 @@ class VodeOptions:
                            "waymo": ["train"],
                            "driving_stereo": ["train", "test"],
                            }
+    IMAGE_SIZES = {"kitti_raw": (128, 384),
+                   "kitti_odom": (128, 384),
+                   "cityscapes": (192, 384),
+                   "waymo": (256, 384),
+                   "driving_stereo": (192, 384),
+                   }
     # only when making small tfrecords to test training
     FRAME_PER_DRIVE = 100
     TOTAL_FRAME_LIMIT = 500
@@ -61,43 +89,36 @@ class VodeOptions:
     """
     training options
     """
-    CKPT_NAME = "vode7"
-    PER_REPLICA_BATCH = 4
-    BATCH_SIZE = PER_REPLICA_BATCH
-    EPOCHS = 51
-    LEARNING_RATE = 0.0001
+    CKPT_NAME = "vode0"
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
-    DATASET_TO_USE = ["kitti_raw", "kitti_odom"][0]
-    STEREO_EXTRINSIC = True
     SSIM_RATIO = 0.8
-    LOSS_WEIGHTS = {"L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
-                    "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
-                    "smoothe": 1., "smoothe_R": 1.,
-                    "stereo_L1": 0.01, "stereo_SSIM": 0.01,
-                    "stereo_pose": 1.,
-                    "flow_L2": 1., "flow_L2_R": 1.,
-                    "flow_L2_reg": 4e-7
-                    }
-    OPTIMIZER = ["adam_constant"][0]
-    DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]
-    PRETRAINED_WEIGHT = True
-
-    """
-    network options: network architecture, convolution args, ... 
-    """
-    NET_NAMES = {"depth": "NASNetMobile",
-                 "camera": "PoseNet",
-                 "flow": "PWCNet"
-                 }
-    DEPTH_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
-                       "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
-    DEPTH_UPSAMPLE_INTERP = "nearest"
-    POSE_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
-                      "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
-    FLOW_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
-                      "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
+    LOSS_WEIGHTS_T1 = {
+        "L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
+        "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
+        "smoothe": 1., "smoothe_R": 1.,
+        "stereoL1": 0.01, "stereoSSIM": 0.01,
+        "stereoPose": 1.,
+        "flowL2": 1., "flowL2_R": 1.,
+        "flow_reg": 4e-7
+    }
+    TRAINING_PLAN = [
+        # pretraining first round
+        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
+        ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
+        ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
+        ("driving_stereo",  2, 0.0001, LOSS_WEIGHTS_T1),
+        ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
+        # pretraining second round
+        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
+        ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
+        ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
+        ("driving_stereo",  2, 0.0001, LOSS_WEIGHTS_T1),
+        ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
+        # fine tuning
+        ("kitti_raw",       10, 0.0001, LOSS_WEIGHTS_T1),
+    ]
 
     @classmethod
     def get_raw_data_path(cls, dataset_name):
@@ -109,8 +130,8 @@ class VodeOptions:
             assert 0, f"Invalid dataset name, available datasets are {list(RAW_DATA_PATHS.keys())}"
 
     @classmethod
-    def get_shape(cls, code="HW", dataset=DATASET_TO_USE, scale_div=1):
-        imsize = IMAGE_SIZES[dataset]
+    def get_img_shape(cls, code="HW", dataset="kitti_raw", scale_div=1):
+        imsize = cls.IMAGE_SIZES[dataset]
         if code is "H":
             return imsize[0] // scale_div
         elif code is "W":

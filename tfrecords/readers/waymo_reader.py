@@ -175,7 +175,7 @@ def test_waymo_reader():
                 image = reader.get_image(fi)
                 pose = reader.get_pose(fi)
                 intrinsic = reader.get_intrinsic(fi)
-                depth = reader.get_depth(fi, image.shape[:2], opts.get_shape("HW", "waymo"), intrinsic)
+                depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "waymo"), intrinsic)
             except StopIteration as si:
                 print("StopIteration:", si)
                 break

@@ -211,7 +211,8 @@ def inspect_model(preds, features, step, steps_per_epoch):
     # pose: [batch, numsrc, 6]
     print("pose_pr", preds["pose"][0, 0, :3].numpy(), preds["pose"][0, 1, :3].numpy())
     # pose_gt: [batch, numsrc, 4, 4]
-    print("pose_gt", features["pose_gt"][0, 0, :3, 3].numpy(), features["pose_gt"][0, 1, :3, 3].numpy())
+    if "pose_gt" in features:
+        print("pose_gt", features["pose_gt"][0, 0, :3, 3].numpy(), features["pose_gt"][0, 1, :3, 3].numpy())
     if "pose_LR" in preds:
         # pose: [batch, numsrc, 6]
         print("T_LR_pr", preds["pose_LR"][0, 0, :3].numpy(), preds["pose_LR"][0, 1, :3].numpy())

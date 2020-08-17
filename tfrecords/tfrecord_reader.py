@@ -107,6 +107,8 @@ class TfrecordReader:
     def get_total_steps(self):
         return self.config["length"] // self.batch_size
 
+    def get_tfr_config(self):
+        return self.config
 
 # --------------------------------------------------------------------------------
 # TESTS

@@ -191,7 +191,8 @@ def multi_scale_like_flow(image, flow_ms):
 
 
 def stack_titled_images(view_imgs, guide_lines=True):
-    dsize = opts.get_shape("HW")
+    # resize all images to the first image size
+    hw_size = view_imgs[list(view_imgs.keys())[0]].get_shape()[:2]
     location = (20, 20)
     font = cv2.FONT_HERSHEY_SIMPLEX
     font_scale = 0.5
@@ -200,7 +201,7 @@ def stack_titled_images(view_imgs, guide_lines=True):
     view = []
 
     for name, flimage in view_imgs.items():
-        flimage_rsz = tf.image.resize(flimage, size=dsize, method="nearest")
+        flimage_rsz = tf.image.resize(flimage, size=hw_size, method="nearest")
         u8image = to_uint8_image(flimage_rsz).numpy()
         if u8image.shape[-1] == 1:
             u8image = cv2.cvtColor(u8image, cv2.COLOR_GRAY2BGR)

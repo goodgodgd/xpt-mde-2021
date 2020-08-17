@@ -46,8 +46,8 @@ def test_synthesize_batch_multi_scale():
         source_image = uf.to_uint8_image(source_image).numpy()[0, 0]
         recon_img0 = uf.to_uint8_image(synth_target_ms[0]).numpy()[0, 0]
         recon_img1 = uf.to_uint8_image(synth_target_ms[2]).numpy()[0, 0]
-        print("recon image size:", recon_img0.shape, recon_img1.shape, opts.get_shape("WH", dataname))
-        recon_img1 = cv2.resize(recon_img1, opts.get_shape("WH", dataname), cv2.INTER_NEAREST)
+        print("recon image size:", recon_img0.shape, recon_img1.shape, opts.get_img_shape("WH", dataname))
+        recon_img1 = cv2.resize(recon_img1, opts.get_img_shape("WH", dataname), cv2.INTER_NEAREST)
         view = np.concatenate([source_image, target_image, recon_img0, recon_img1], axis=0)
         print("Check if all the images are the same")
         cv2.imshow("source, target, and reconstructed", view)
@@ -132,7 +132,7 @@ def test_reshape_source_images():
     print("reorganized source image shape", reshaped_image.get_shape().as_list())
     reshaped_image = uf.to_uint8_image(reshaped_image).numpy()
     imgidx = 2
-    scsize = opts.get_shape("HW", scale_div=2)
+    scsize = opts.get_img_shape("HW", scale_div=2)
     scaled_image = tf.image.resize(source_image, size=(scsize[0]*4, scsize[1]), method="bilinear")
     scaled_image = uf.to_uint8_image(scaled_image).numpy()
     scaled_image = scaled_image[0, scsize[0]*imgidx:scsize[0]*(imgidx+1)]

@@ -34,11 +34,12 @@ class TotalLoss:
                 losses: list of losses computed from loss_objects
         """
         augm_data = self.append_data(features, predictions)
-        if self.stereo:
+        if self.stereo and ("image_R" in features):
             augm_data_rig = self.append_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
-            augm_data_stereo = self.synethesize_stereo(features, predictions, augm_data)
-            augm_data.update(augm_data_stereo)
+            if self.stereo and ("stereo_T_LR" in features):
+                augm_data_stereo = self.synethesize_stereo(features, predictions, augm_data)
+                augm_data.update(augm_data_stereo)
 
         losses = []
         loss_by_type = dict()
