@@ -79,6 +79,7 @@ class DrivingStereoReader(DataReaderBase):
         image_bytes = self.zip_files[zipkey].open(filename)
         image = Image.open(image_bytes)
         image = np.array(image, np.uint8)
+        image = image[:, :, [2, 1, 0]]
         return image
 
     def get_pose(self, index, right=False):
@@ -103,8 +104,10 @@ class DrivingStereoReader(DataReaderBase):
         return self.stereo_T_LR.copy()
 
 
+# ======================================================================
 import cv2
 from config import opts
+from utils.util_funcs import print_progress_status
 
 
 def test_driving_stereo_reader():
@@ -120,12 +123,17 @@ def test_driving_stereo_reader():
             image = reader.get_image(fi)
             intrinsic = reader.get_intrinsic(fi)
             depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "cityscapes"), intrinsic)
-            print(f"== test_city_reader) drive: {op.basename(drive_path)}, frame: {fi}")
+
+            drive_path = op.basename(drive_path)
+            frame_name = op.basename(reader.frame_names[fi])
+            frame_name = frame_name.replace(op.basename(drive_path[:-4]), 'drive')
+            frame_name = frame_name.replace(op.basename(drive_path[:10]), 'date')
+            print(f"== test_city_reader) drive: {op.basename(drive_path)}, frame: {fi}, {frame_name}")
             view = image
             depth_view = apply_color_map(depth)
             cv2.imshow("image", view)
             cv2.imshow("dstdepth", depth_view)
-            key = cv2.waitKey(2000)
+            key = cv2.waitKey(0)
             if key == ord('q'):
                 break
 
@@ -172,6 +180,6 @@ def test_driving_stereo_synthesis():
 
 
 if __name__ == "__main__":
-    # test_driving_stereo_reader()
-    test_driving_stereo_synthesis()
+    test_driving_stereo_reader()
+    # test_driving_stereo_synthesis()
 

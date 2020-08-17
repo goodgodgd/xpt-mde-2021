@@ -120,6 +120,7 @@ class CityscapesReader(DataReaderBase):
         return param
 
 
+# ======================================================================
 import cv2
 from config import opts
 import zipfile

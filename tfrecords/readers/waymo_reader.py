@@ -157,6 +157,7 @@ def get_waymo_depth_map(frame, srcshape_hw, dstshape_hw, intrinsic):
     return depth_map
 
 
+# ======================================================================
 import cv2
 import utils.util_funcs as uf
 from config import opts
@@ -188,9 +189,11 @@ def test_waymo_reader():
             cv2.imshow("image", view)
             cv2.imshow("depth", depth)
             if dist < 5:
-                cv2.waitKey(10)
+                key = cv2.waitKey(10)
             else:
-                cv2.waitKey(2000)
+                key = cv2.waitKey(2000)
+            if key == ord('q'):
+                break
             pose_bef = pose
 
 

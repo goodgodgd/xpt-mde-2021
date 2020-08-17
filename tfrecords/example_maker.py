@@ -141,3 +141,55 @@ class ExampleMaker:
                 return dict()   # empty dict means skip this frame
         return example
 
+
+# ======================================================================
+import cv2
+from config import opts
+from utils.util_funcs import print_progress_status
+
+
+# This test is FAILED !!!
+def test_static_frames():
+    data_keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR", "decode_type"]
+    shape_shwc = opts.get_img_shape("SHWC")
+    maker = ExampleMaker("driving_stereo", "train", shape_shwc, data_keys)
+    drive_path = "/media/ian/IanBook/datasets/raw_zips/driving_stereo/train-left-image/2018-07-16-15-18-53.zip"
+    maker.init_reader(drive_path)
+    frame_indices = maker.get_range()
+    for index in frame_indices:
+        try:
+            example = maker.get_example(index)
+            print_progress_status(f"index: {index} / {frame_indices[-1]}")
+            check_static_snippet(example, shape_shwc)
+        except ValueError as ve:
+            print("\n[ValueError]", ve)
+
+
+def check_static_snippet(example, shape_shwc):
+    height = shape_shwc[1]
+    image = example["image"]
+    frame_bef = cv2.cvtColor(image[:height], cv2.COLOR_BGRA2GRAY)
+    frame_cur = cv2.cvtColor(image[-height:], cv2.COLOR_BGRA2GRAY)
+    frame_aft = cv2.cvtColor(image[-2*height:-height], cv2.COLOR_BGRA2GRAY)
+    flow1 = cv2.calcOpticalFlowFarneback(frame_bef, frame_cur,
+                                         flow=None, pyr_scale=0.5, levels=3, winsize=10,
+                                         iterations=3, poly_n=5, poly_sigma=1.1, flags=0)
+    flow2 = cv2.calcOpticalFlowFarneback(frame_cur, frame_aft,
+                                         flow=None, pyr_scale=0.5, levels=3, winsize=15,
+                                         iterations=3, poly_n=5, poly_sigma=1.1, flags=0)
+    flow1_dist = np.sqrt(flow1[:, :, 0] * flow1[:, :, 0] + flow1[:, :, 1] * flow1[:, :, 1])
+    flow2_dist = np.sqrt(flow2[:, :, 0] * flow2[:, :, 0] + flow2[:, :, 1] * flow2[:, :, 1])
+    img_size = flow1.shape[0] * flow1.shape[1]
+    valid1 = np.count_nonzero((2 < flow1_dist) & (flow1_dist < 50)) / img_size
+    valid2 = np.count_nonzero((2 < flow2_dist) & (flow2_dist < 50)) / img_size
+    print(f"valid flow ratio: {valid1:.4f}, {valid2:.4f}")
+    if (valid1 < 0.5) or (valid1 < 0.5):
+        print("!!! frame jumped !!!")
+    cv2.imshow("snippet", example["image"])
+    frame = np.concatenate([frame_bef, frame_cur, frame_aft], axis=0)
+    cv2.imshow("frame bef cur aft", frame)
+    cv2.waitKey(0)
+
+
+if __name__ == "__main__":
+    test_static_frames()
