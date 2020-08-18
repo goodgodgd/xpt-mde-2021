@@ -39,28 +39,28 @@ class WaymoReader(DataReaderBase):
         return range(2, self.num_frames_()-2)
 
     def get_image(self, index, right=False):
-        assert right is False, "waymo dataset is monocular"
+        if right: return None
         frame = self._get_frame(index)
         front_image = tf.image.decode_jpeg(frame.images[0].image)
         front_image = front_image.numpy()[:, :, [2, 1, 0]]  # rgb to bgr
         return front_image.astype(np.uint8)
 
     def get_pose(self, index, right=False):
-        assert right is False, "waymo dataset is monocular"
+        if right: return None
         frame = self._get_frame(index)
         pose_c2w = tf.reshape(frame.images[0].pose.transform, (4, 4)) @ T_C2V
         pose_c2w = pose_c2w.numpy()
         return pose_c2w.astype(np.float32)
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
-        assert right is False, "waymo dataset is monocular"
+        if right: return None
         frame = self._get_frame(index)
         depth = get_waymo_depth_map(frame, srcshape_hw, dstshape_hw, intrinsic)
         depth = depth[..., np.newaxis]
         return depth.astype(np.float32)
 
     def get_intrinsic(self, index=0, right=False):
-        assert right is False, "waymo dataset is monocular"
+        if right: return None
         frame = self._get_frame(index)
         intrin = frame.context.camera_calibrations[0].intrinsic
         intrin = np.array([[intrin[0], 0, intrin[2]], [0, intrin[1], intrin[3]], [0, 0, 1]])
@@ -157,6 +157,7 @@ def get_waymo_depth_map(frame, srcshape_hw, dstshape_hw, intrinsic):
     return depth_map
 
 
+# ======================================================================
 import cv2
 import utils.util_funcs as uf
 from config import opts
@@ -188,9 +189,11 @@ def test_waymo_reader():
             cv2.imshow("image", view)
             cv2.imshow("depth", depth)
             if dist < 5:
-                cv2.waitKey(10)
+                key = cv2.waitKey(10)
             else:
-                cv2.waitKey(2000)
+                key = cv2.waitKey(2000)
+            if key == ord('q'):
+                break
             pose_bef = pose
 
 

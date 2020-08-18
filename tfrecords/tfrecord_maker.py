@@ -27,7 +27,7 @@ class TfrecordMakerBase:
         self.example_count_in_drive = 0     # number of examples in this drive
         self.total_example_count = 0        # number of examples in this dataset generated in this session
         self.drive_paths = self.list_drive_paths(srcpath, split)
-        self.data_keys = self.get_dataset_keys(dataset.split("__")[0], split, stereo)
+        self.data_keys = self.get_dataset_keys(stereo)
         self.example_maker = self.get_example_maker(dataset, split, shwc_shape, self.data_keys)
         self.serialize_example = Serializer()
         self.writer = None
@@ -36,32 +36,10 @@ class TfrecordMakerBase:
     def list_drive_paths(self, srcpath, split):
         raise NotImplementedError()
 
-    def get_dataset_keys(self, dataset, split, stereo):
-        keys = []
-        if dataset == "kitti_raw":
-            keys = ["image", "intrinsic", "depth_gt", "pose_gt"]
-            if stereo:
-                keys += ["image_R", "intrinsic_R", "depth_gt_R", "pose_gt_R", "stereo_T_LR"]
-        elif (dataset == "kitti_odom") and (split == "train"):
-            keys = ["image", "intrinsic"]
-            if stereo:
-                keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
-        elif (dataset == "kitti_odom") and (split == "test"):
-            keys = ["image", "intrinsic", "pose_gt"]
-            if stereo:
-                keys += ["image_R", "intrinsic_R", "pose_gt_R", "stereo_T_LR"]
-        elif dataset == "cityscapes":
-            keys = ["image", "intrinsic", "depth_gt"]
-            if stereo:
-                keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
-        elif dataset == "waymo":
-            keys = ["image", "intrinsic", "depth_gt", "pose_gt"]
-        elif dataset == "driving_stereo":
-            keys = ["image", "intrinsic", "depth_gt"]
-            if stereo:
-                keys += ["image_R", "intrinsic_R", "stereo_T_LR"]
-        else:
-            assert 0, f"[get_dataset_keys] Wrong dataset: {dataset}, {split}, {stereo}"
+    def get_dataset_keys(self, stereo):
+        keys = ["image", "intrinsic", "depth_gt", "pose_gt"]
+        if stereo:
+            keys += ["image_R", "intrinsic_R", "depth_gt_R", "pose_gt_R", "stereo_T_LR"]
         return keys
 
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
@@ -191,11 +169,12 @@ class TfrecordMakerSingleDir(TfrecordMakerBase):
 
 # For ONLY kitti dataset, tfrecords are generated from extracted files
 class KittiRawTfrecordMaker(TfrecordMakerSingleDir):
-    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape, crop=False):
+        self.crop = crop
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
 
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
-        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
+        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath, crop=self.crop)
 
     def list_drive_paths(self, srcpath, split):
         # create drive paths like : ("2011_09_26", "0001")
@@ -212,12 +191,12 @@ class KittiRawTfrecordMaker(TfrecordMakerSingleDir):
 
 # For ONLY kitti dataset, tfrecords are generated from extracted files
 class KittiOdomTfrecordMaker(TfrecordMakerSingleDir):
-    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape, crop=False):
+        self.crop = crop
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
-        self.total_example_count = 0
 
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
-        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
+        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath, crop=self.crop)
 
     def list_drive_paths(self, srcpath, split):
         # create drive paths like : "00"

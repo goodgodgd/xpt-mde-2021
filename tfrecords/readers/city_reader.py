@@ -1,6 +1,5 @@
 import os.path as op
 import numpy as np
-from glob import glob
 from PIL import Image
 import json
 
@@ -50,7 +49,6 @@ class CityscapesReader(DataReaderBase):
         return self.target_indices
 
     def get_image(self, index, right=False):
-        # assert right is False, "city dataset is monocular"
         if right:
             filename = self.frame_names[index].replace("leftImg8bit", "rightImg8bit")
             image_bytes = self.zip_files["rightImg"].open(filename)
@@ -64,7 +62,7 @@ class CityscapesReader(DataReaderBase):
         return None
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
-        # assert right is False, "city dataset is monocular"
+        if right: return None
         params = self._get_camera_param(index)
         baseline = params["extrinsic"]["baseline"]
         fx = params["intrinsic"]["fx"]
@@ -81,7 +79,6 @@ class CityscapesReader(DataReaderBase):
         return depth.astype(np.float32)
 
     def get_intrinsic(self, index=0, right=False):
-        # assert right is False, "city dataset is monocular"
         params = self._get_camera_param(index)
         fx = params["intrinsic"]["fx"]
         fy = params["intrinsic"]["fy"]
@@ -120,6 +117,7 @@ class CityscapesReader(DataReaderBase):
         return param
 
 
+# ======================================================================
 import cv2
 from config import opts
 import zipfile

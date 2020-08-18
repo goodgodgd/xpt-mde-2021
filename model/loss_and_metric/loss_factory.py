@@ -4,19 +4,31 @@ import model.loss_and_metric.losses as lm
 
 def loss_factory(dataset_cfg, loss_weights, stereo=opts.STEREO,
                  weights_to_regularize=None, batch_size=opts.BATCH_SIZE):
-    loss_pool = {"L1": lm.PhotometricLossMultiScale("L1"),
-                 "L1_R": lm.PhotometricLossMultiScale("L1", key_suffix="_R"),
-                 "SSIM": lm.PhotometricLossMultiScale("SSIM"),
-                 "SSIM_R": lm.PhotometricLossMultiScale("SSIM", key_suffix="_R"),
-                 "smoothe": lm.SmoothenessLossMultiScale(),
-                 "smoothe_R": lm.SmoothenessLossMultiScale(key_suffix="_R"),
-                 "stereoL1": lm.StereoDepthLoss("L1"),
-                 "stereoSSIM": lm.StereoDepthLoss("SSIM"),
-                 "stereoPose": lm.StereoPoseLoss(),
-                 "flowL2": lm.FlowWarpLossMultiScale("L2"),
-                 "flowL2_R": lm.FlowWarpLossMultiScale("L2", key_suffix="_R"),
-                 "flow_reg": lm.L2Regularizer(weights_to_regularize),
-                 }
+    loss_pool = {
+        "L1": lm.PhotometricLossMultiScale("L1"),
+        "L1_R": lm.PhotometricLossMultiScale("L1", key_suffix="_R"),
+        "SSIM": lm.PhotometricLossMultiScale("SSIM"),
+        "SSIM_R": lm.PhotometricLossMultiScale("SSIM", key_suffix="_R"),
+
+        "md2L1": lm.MonoDepth2LossMultiScale("L1"),
+        "md2L1_R": lm.MonoDepth2LossMultiScale("L1", key_suffix="_R"),
+        "md2SSIM": lm.MonoDepth2LossMultiScale("SSIM"),
+        "md2SSIM_R": lm.MonoDepth2LossMultiScale("SSIM", key_suffix="_R"),
+
+        "cmbL1": lm.CombinedLossMultiScale("L1"),
+        "cmbL1_R": lm.CombinedLossMultiScale("L1", key_suffix="_R"),
+        "cmbSSIM": lm.CombinedLossMultiScale("SSIM"),
+        "cmbSSIM_R": lm.CombinedLossMultiScale("SSIM", key_suffix="_R"),
+
+        "smoothe": lm.SmoothenessLossMultiScale(),
+        "smoothe_R": lm.SmoothenessLossMultiScale(key_suffix="_R"),
+        "stereoL1": lm.StereoDepthLoss("L1"),
+        "stereoSSIM": lm.StereoDepthLoss("SSIM"),
+        "stereoPose": lm.StereoPoseLoss(),
+        "flowL2": lm.FlowWarpLossMultiScale("L2"),
+        "flowL2_R": lm.FlowWarpLossMultiScale("L2", key_suffix="_R"),
+        "flow_reg": lm.L2Regularizer(weights_to_regularize),
+    }
     losses = dict()
     weights = dict()
 

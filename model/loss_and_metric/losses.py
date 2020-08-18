@@ -177,9 +177,98 @@ class PhotometricLossMultiScale(PhotometricLoss):
             losses.append(loss)
 
         name = "photo_loss_sum" + self.key_suffix
-        # losses: [scales, batch] -> sum -> [batch]
+        # loss sum: [scales, batch] -> [batch]
         loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=name)(losses)
         return loss_batch
+
+
+class MonoDepth2LossMultiScale(PhotometricLoss):
+    def __init__(self, method, key_suffix=""):
+        super().__init__(method, key_suffix)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.append_data()'
+        :return: photo_loss [batch]
+        """
+        synth_target_ms = augm_data["synth_target_ms" + self.key_suffix]
+        original_target = augm_data["target" + self.key_suffix]
+        Ho, Wo = original_target.shape[1:3]
+
+        losses = []
+        for i, synt_target in enumerate(synth_target_ms):
+            # resize synthesized target to original image size
+            synt_target_rsz = resize_bilinear(synt_target, (Ho, Wo))
+            op_name = f"mono2_loss_{i}" + self.key_suffix
+            # compute L1 loss without reduce_mean -> [batch, numsrc, height, width, channel]
+            loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                 name=op_name)([synt_target_rsz, original_target])
+            # take minimum loss over sources for each pixel -> [batch, height, width, channel]
+            op_name = f"mono2_loss_min_{i}" + self.key_suffix
+            loss = layers.Lambda(lambda x: tf.reduce_min(x, axis=1), name=op_name)(loss)
+            losses.append(loss)
+
+        # average over image [scales, batch, height, width, channel] -> [scales, batch]
+        op_name = "mono2_loss_mean" + self.key_suffix
+        losses = layers.Lambda(lambda x: tf.reduce_mean(x, axis=[2, 3, 4]), name=op_name)(losses)
+        # average over scales [scales, batch] -> [batch]
+        op_name = "mono2_loss_sum" + self.key_suffix
+        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=op_name)(losses)
+        return loss_batch
+
+
+class CombinedLossMultiScale(PhotometricLoss):
+    def __init__(self, method, key_suffix=""):
+        super().__init__(method, key_suffix)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.append_data()'
+        :return: photo_loss [batch]
+        """
+        synth_target_ms = augm_data["synth_target_ms" + self.key_suffix]
+        warped_target_ms = augm_data["warped_target_ms" + self.key_suffix]
+        original_target = augm_data["target" + self.key_suffix]
+        Ho, Wo = original_target.shape[1:3]
+
+        # compare multi scale static flow with fixed scale optical flow with 1/4 scale
+        warped_target = warped_target_ms[0]
+        warped_target = resize_bilinear(warped_target, (Ho, Wo))
+        op_name = f"comb_flow_loss_{0}" + self.key_suffix
+        # flow loss: [batch, numsrc, height, width, 3]
+        flow_loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                  name=op_name)([warped_target, original_target])
+
+        losses = []
+        for i, synt_target in enumerate(synth_target_ms):
+            # resize synthesized target to original image size
+            synt_target_rsz = resize_bilinear(synt_target, (Ho, Wo))
+            op_name = f"comb_mono2_loss_{i}" + self.key_suffix
+            # compute L1 loss without reduce_mean -> [batch, numsrc, height, width, 3]
+            static_loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                        name=op_name)([synt_target_rsz, original_target])
+
+            # extract static loss lower than optical flow loss
+            mask = tf.cast(static_loss < flow_loss, tf.float32)
+            static_loss = static_loss * mask
+            # reduce mean -> [batch]
+            op_name = f"comb_photo_mean_{i}" + self.key_suffix
+            loss = layers.Lambda(lambda x: tf.reduce_mean(x, axis=[1, 2, 3, 4]), name=op_name)(static_loss)
+            losses.append(loss)
+
+        # sum losses: [scales, batch] -> [batch]
+        op_name = f"comb_photo_sum" + self.key_suffix
+        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=op_name)(losses)
+        return loss_batch
+
+
+def resize_bilinear(srcimg, dst_hw):
+    Hd, Wd = dst_hw
+    B, N, Hs, Ws, C = srcimg.get_shape()
+    srcimg = tf.reshape(srcimg, (B * N, Hs, Ws, C))
+    dstimg = tf.image.resize(srcimg, (Hd, Wd), method="bilinear")
+    dstimg = tf.reshape(dstimg, (B, N, Hd, Wd, C))
+    return dstimg
 
 
 class SmoothenessLossMultiScale(LossBase):

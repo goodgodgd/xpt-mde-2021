@@ -22,6 +22,16 @@ class FixedOptions:
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
 
+    IMAGE_SIZES = {"kitti_raw": (128, 512),
+                   "kitti_odom": (128, 512),
+                   "cityscapes": (192, 384),
+                   "waymo": (256, 384),
+                   "driving_stereo": (192, 384),
+                   }
+    IMAGE_CROP = {"kitti_raw": True,
+                  "kitti_odom": True,
+                  }
+
     """
     training options
     """
@@ -57,14 +67,8 @@ class VodeOptions(FixedOptions):
                            "cityscapes__extra": ["train"],
                            "cityscapes__sequence": ["train"],
                            "waymo": ["train"],
-                           "driving_stereo": ["train", "test"],
+                           # "driving_stereo": ["train", "test"],
                            }
-    IMAGE_SIZES = {"kitti_raw": (128, 384),
-                   "kitti_odom": (128, 384),
-                   "cityscapes": (192, 384),
-                   "waymo": (256, 384),
-                   "driving_stereo": (192, 384),
-                   }
     # only when making small tfrecords to test training
     FRAME_PER_DRIVE = 100
     TOTAL_FRAME_LIMIT = 500
@@ -89,7 +93,7 @@ class VodeOptions(FixedOptions):
     """
     training options
     """
-    CKPT_NAME = "vode0"
+    CKPT_NAME = "vode1"
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
@@ -103,18 +107,27 @@ class VodeOptions(FixedOptions):
         "flowL2": 1., "flowL2_R": 1.,
         "flow_reg": 4e-7
     }
+    LOSS_WEIGHTS_T2 = {
+        "md2L1": (1. - SSIM_RATIO) * 1., "md2L1_R": (1. - SSIM_RATIO) * 1.,
+        "md2SSIM": SSIM_RATIO * 0.5, "md2SSIM_R": SSIM_RATIO * 0.5,
+        "cmbL1": (1. - SSIM_RATIO) * 1., "cmbL1_R": (1. - SSIM_RATIO) * 1.,
+        "cmbSSIM": SSIM_RATIO * 0.5, "cmbSSIM_R": SSIM_RATIO * 0.5,
+        "smoothe": 1., "smoothe_R": 1.,
+        "stereoL1": 0.01, "stereoSSIM": 0.01,
+        "stereoPose": 1.,
+        "flowL2": 1., "flowL2_R": 1.,
+        "flow_reg": 4e-7
+    }
     TRAINING_PLAN = [
         # pretraining first round
-        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
+        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T2),
         ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
         ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
-        ("driving_stereo",  2, 0.0001, LOSS_WEIGHTS_T1),
         ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
         # pretraining second round
         ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
         ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
         ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
-        ("driving_stereo",  2, 0.0001, LOSS_WEIGHTS_T1),
         ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
         # fine tuning
         ("kitti_raw",       10, 0.0001, LOSS_WEIGHTS_T1),
