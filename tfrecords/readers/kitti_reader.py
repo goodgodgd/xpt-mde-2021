@@ -30,10 +30,8 @@ class KittiRawReader(DataReaderBase):
         real path is /media/ian/IanBook/datasets/kitti_raw_data/2011_09_26/2011_09_26_drive_0001_sync
         """
         drive_key = drive_path
-        print("[KittiRawReader.init_drive] drive_key:", drive_key)
         self.drive_loader = self._create_drive_loader(drive_key)
         self.target_frame_ids = self._list_nonstatic_frame_ids(drive_key)
-        # print("[KittiRawReader.init_drive] target_frame_ids:", self.target_frame_ids)
         self.intrinsic = self._init_intrinsic()
         self.intrinsic_R = self._init_intrinsic(right=True)
         self.stereo_T_LR = self._init_extrinsic()
@@ -250,7 +248,6 @@ class KittiOdomReader(DataReaderBase):
         print("[KittiOdomReader.init_drive] frame_ids:", len(frame_ids), frame_ids[:5], frame_ids[-5:])
         if self.split != "train":
             self.poses = self._load_poses(drive_id)     # (N, 4, 4) pose matrices
-        print("[KittiRawReader.init_drive] poses:", self.poses.shape)
         self.intrinsic = self._init_intrinsic()
         self.intrinsic_R = self._init_intrinsic(right=True)
         self.stereo_T_LR = self._init_extrinsic()
@@ -339,6 +336,7 @@ from config import opts
 
 
 def test_kitti_raw_reader():
+    print("\n===== start test_kitti_raw_reader")
     srcpath = opts.get_raw_data_path("kitti_raw")
     drive_keys = [("2011_09_26", "0011"), ("2011_09_26", "0017")]
 
@@ -367,6 +365,7 @@ def test_kitti_raw_reader():
 
 
 def test_kitti_odom_reader():
+    print("\n===== start test_kitti_odom_reader")
     srcpath = opts.get_raw_data_path("kitti_odom")
     drive_keys = ["00", "10"]
 
@@ -404,6 +403,7 @@ import tensorflow as tf
 
 
 def test_kitti_raw_synthesis():
+    print("\n===== start test_kitti_raw_synthesis")
     tfrpath = op.join(opts.DATAPATH_TFR, "kitti_raw_train")
     dataset = TfrecordReader(tfrpath).get_dataset()
     batid, srcid = 0, 0
@@ -437,8 +437,41 @@ def test_kitti_raw_synthesis():
             break
 
 
+def test_crop_image():
+    print("\n===== start test_crop_image")
+    srcpath = opts.get_raw_data_path("kitti_raw")
+    drive_keys = [("2011_09_26", "0011"), ("2011_09_26", "0017")]
+
+    for drive_key in drive_keys:
+        print("\n!!! New drive start !!!", drive_key)
+        reader = KittiRawReader("train", srcpath)
+        reader.init_drive(drive_key)
+        frame_indices = reader.get_range_()
+        for fi in frame_indices:
+            image = reader.get_image(fi)
+            height, width = image.shape[:2]
+            vcrop_size = (width // 4, width)
+            hcrop_size = (height, height*3)
+
+            row_beg = int((height - vcrop_size[0]) * 0.6)
+            vcrop_middle = image[row_beg:row_beg + vcrop_size[0]]
+            row_beg = (height - vcrop_size[0])
+            vcrop_bottom = image[row_beg:]
+            hcrop_range = [(width - hcrop_size[1]) // 2, (width - hcrop_size[1]) // 2 + hcrop_size[1]]
+            hcrop_image = image[:, hcrop_range[0]:hcrop_range[1]]
+
+            cv2.imshow("original", image)
+            cv2.imshow("vertical middle", vcrop_middle)
+            cv2.imshow("vertical bottom", vcrop_bottom)
+            cv2.imshow("horizontal crop", hcrop_image)
+            key = cv2.waitKey(2000)
+            if key == ord('q'):
+                break
+
+
 if __name__ == "__main__":
     # test_kitti_raw_reader()
     # test_kitti_odom_reader()
-    test_kitti_raw_synthesis()
+    # test_kitti_raw_synthesis()
+    test_crop_image()
 

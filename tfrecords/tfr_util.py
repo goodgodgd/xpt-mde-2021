@@ -18,7 +18,9 @@ class Serializer:
     def convert_to_feature(self, example_dict):
         features = dict()
         for key, value in example_dict.items():
-            if isinstance(value, np.ndarray):
+            if value is None:
+                continue
+            elif isinstance(value, np.ndarray):
                 features[key] = self._bytes_feature(value.tostring())
             elif isinstance(value, int):
                 features[key] = self._int64_feature(value)
