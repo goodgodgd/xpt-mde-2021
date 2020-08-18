@@ -90,8 +90,6 @@ def photometric_loss_ssim(synt_target, orig_target, reduce=True):
     ssim = ssim_n / ssim_d
     ssim = tf.clip_by_value((1 - ssim) / 2, 0, 1)
     ssim = tf.where(error_mask, tf.constant(0, dtype=tf.float32), ssim)
-    # average per example
-    ssim = tf.reduce_mean(ssim, axis=[1, 2, 3, 4])
 
     if reduce:  # reduce to average per example
         ssim = tf.reduce_mean(ssim, axis=[1, 2, 3, 4])
