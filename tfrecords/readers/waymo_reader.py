@@ -6,6 +6,7 @@ from waymo_open_dataset.utils import frame_utils
 from waymo_open_dataset import dataset_pb2 as open_dataset
 
 from tfrecords.readers.reader_base import DataReaderBase
+from utils.util_class import MyExceptionToCatch
 
 T_C2V = tf.constant([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=tf.float32)
 FRONT_IND = 0
@@ -86,7 +87,7 @@ class WaymoReader(DataReaderBase):
             frame = self.frame_buffer[index]
             time_of_day = f"{frame.context.stats.time_of_day}"
             if time_of_day != "Day":
-                raise ValueError(f"time_of_day is not Day: {time_of_day}")
+                raise MyExceptionToCatch(f"time_of_day is not Day: {time_of_day}")
             return frame
 
         if (index == self.latest_index + 1) or self.latest_index < 0:
@@ -100,7 +101,7 @@ class WaymoReader(DataReaderBase):
             self.latest_index = index
             time_of_day = f"{frame.context.stats.time_of_day}"
             if time_of_day != "Day":
-                raise ValueError(f"time_of_day is not Day: {time_of_day}")
+                raise MyExceptionToCatch(f"time_of_day is not Day: {time_of_day}")
             # remove an old frame
             return frame
 

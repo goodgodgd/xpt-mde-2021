@@ -10,6 +10,7 @@ import utils.util_funcs as uf
 import utils.util_class as uc
 from tfrecords.example_maker import ExampleMaker
 from tfrecords.tfr_util import Serializer, inspect_properties
+from utils.util_class import MyExceptionToCatch
 
 
 class TfrecordMakerBase:
@@ -74,8 +75,8 @@ class TfrecordMakerBase:
                     except StopIteration as si: # raised from xxx_reader._get_frame()
                         print("\n[StopIteration] stop this drive", si)
                         break
-                    except ValueError as ve:    # raised from xxx_reader._get_frame()
-                        uf.print_progress_status(f"==[making TFR] ValueError frame: {ii}/{num_frames}, {ve}")
+                    except MyExceptionToCatch as ve:    # raised from xxx_reader._get_frame()
+                        uf.print_progress_status(f"==[making TFR] (Exception) frame: {ii}/{num_frames}, {ve}")
                         continue
 
                     if not example:             # when dict is empty, skip this index

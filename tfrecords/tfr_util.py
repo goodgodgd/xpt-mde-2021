@@ -76,6 +76,8 @@ def read_data_config(value):
 
 
 def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
+    if depth_map.ndim == 3:
+        depth_map = depth_map[:, :, 0]
     # depth_view = apply_color_map(depth_map)
     # depth_view = cv2.resize(depth_view, (dstshape_hw[1], dstshape_hw[0]))
     # cv2.imshow("srcdepth", depth_view)
@@ -89,10 +91,10 @@ def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
 
     dst_depth = np.zeros(du.shape).astype(np.float32)
     weight = np.zeros(du.shape).astype(np.float32)
-    for dy in range(-radi_y, radi_y+1):
-        for dx in range(-radi_x, radi_x+1):
-            v_inds = np.clip(sv + dy, 0, srcshape_hw[0] - 1).astype(np.uint16)
-            u_inds = np.clip(su + dx, 0, srcshape_hw[1] - 1).astype(np.uint16)
+    for sdy in range(-radi_y, radi_y+1):
+        for sdx in range(-radi_x, radi_x+1):
+            v_inds = np.clip(sv + sdy, 0, srcshape_hw[0] - 1).astype(np.uint16)
+            u_inds = np.clip(su + sdx, 0, srcshape_hw[1] - 1).astype(np.uint16)
 
             # if (dx==1) and (dy==1):
             #     print("u_inds", u_inds[0:400:20])
@@ -108,9 +110,11 @@ def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
 
 
 def apply_color_map(depth):
-    depth = depth[:, :, 0]
+    if len(depth.shape) > 2:
+        depth = depth[:, :, 0]
     depth_view = (np.clip(depth, 0, 50.) / 50. * 255).astype(np.uint8)
     depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+    depth_view[depth == 0, :] = (0, 0, 0)
     return depth_view
 
 
