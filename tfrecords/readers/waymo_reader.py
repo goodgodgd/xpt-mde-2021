@@ -43,7 +43,7 @@ class WaymoReader(DataReaderBase):
         if right: return None
         frame = self._get_frame(index)
         front_image = tf.image.decode_jpeg(frame.images[0].image)
-        front_image = front_image.numpy()[:, :, [2, 1, 0]]  # rgb to bgr
+        front_image = cv2.cvtColor(front_image.numpy(), cv2.COLOR_RGB2BGR)
         return front_image.astype(np.uint8)
 
     def get_pose(self, index, right=False):
@@ -78,7 +78,7 @@ class WaymoReader(DataReaderBase):
     """
     def _get_dataset(self, drive_path):
         filenames = tf.io.gfile.glob(f"{drive_path}/*.tfrecord")
-        print("[_get_dataset] read tfrecords in", op.basename(drive_path), filenames)
+        print("[WaymoReader._get_dataset] read tfrecords in", op.basename(drive_path), filenames)
         dataset = tf.data.TFRecordDataset(filenames, compression_type='')
         return dataset
 

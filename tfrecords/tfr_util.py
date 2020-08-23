@@ -49,11 +49,12 @@ class Serializer:
 def inspect_properties(example):
     config = dict()
     for key, value in example.items():
-        config[key] = read_data_config(value)
+        if value is not None:
+            config[key] = read_data_config(key, value)
     return config
 
 
-def read_data_config(value):
+def read_data_config(key, value):
     parse_type = ""
     decode_type = ""
     shape = ()
@@ -63,14 +64,14 @@ def read_data_config(value):
         elif value.dtype == np.float32:
             decode_type = "tf.float32"
         else:
-            assert 0, f"[read_data_config] Wrong numpy type: {value.dtype}"
+            assert 0, f"[read_data_config] Wrong numpy type: {value.dtype}, key={key}"
         parse_type = "tf.string"
         shape = list(value.shape)
     elif isinstance(value, int):
         parse_type = "tf.int64"
         shape = None
     else:
-        assert 0, f"[read_data_config] Wrong type: {type(value)}"
+        assert 0, f"[read_data_config] Wrong type: {type(value)}, key={key}"
 
     return {"parse_type": parse_type, "decode_type": decode_type, "shape": shape}
 
@@ -118,26 +119,28 @@ def apply_color_map(depth):
     return depth_view
 
 
-def show_example(example, wait=0, print_param=False):
+def show_example(example, wait=0, print_param=False, max_height=1000, suffix=""):
     image = example["image"]
-    dstshape = (int(image.shape[1] * 1000. / image.shape[0]), 1000)
-    image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
-    cv2.imshow("image", image_view)
+    dstsize_wh = (image.shape[1], image.shape[0])
+    if max_height:
+        dstsize_wh = (int(image.shape[1] * max_height / image.shape[0]), max_height)
+    image_view = cv2.resize(image, dstsize_wh) if image.shape[0] > 1000 else image.copy()
+    cv2.imshow("image" + suffix, image_view)
 
-    if "image_R" in example:
+    if "image_R" in example and example["image_R"] is not None:
         image = example["image_R"]
-        image_view = cv2.resize(image, dstshape) if image.shape[0] > 1000 else image.copy()
-        cv2.imshow("image_R", image_view)
+        image_view = cv2.resize(image, dstsize_wh) if image.shape[0] > 1000 else image.copy()
+        cv2.imshow("image_R" + suffix, image_view)
 
-    if "depth_gt" in example:
+    if "depth_gt" in example and example["depth_gt"] is not None:
         depth = example["depth_gt"]
         depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
         depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
-        cv2.imshow("depth", depth_view)
+        cv2.imshow("depth" + suffix, depth_view)
 
     if print_param:
         print("\nintrinsic:\n", example["intrinsic"])
-        if "pose_gt" in example:
+        if "pose_gt" in example and example["pose_gt"] is not None:
             print("pose\n", pose_matr2rvec(example["pose_gt"]))
 
     cv2.waitKey(wait)

@@ -51,11 +51,9 @@ def convert_tar_to_vanilla_zip():
 class A2D2Reader(DataReaderBase):
     def __init__(self, split="", reader_arg=None):
         super().__init__(split)
-        self.zip_files = reader_arg
+        self.zip_files = dict()
         self.frame_buffer = dict()
-        configfile = op.join(op.dirname(self.zip_files["camera_left"].filename), "cams_lidars.json")
-        print("conf", configfile)
-        self.sensor_config = SensorConfig(configfile)
+        self.sensor_config = SensorConfig("")
         self.latest_index = 0
 
     """
@@ -65,9 +63,22 @@ class A2D2Reader(DataReaderBase):
         """
         prepare variables to read a new sequence data
         """
+        self.zip_files = self.load_zipfiles(drive_path)
+        configfile = op.join(op.dirname(self.zip_files["camera_left"].filename), "cams_lidars.json")
+        print("[A2D2Reader] sensor config file:", configfile)
+        self.sensor_config = SensorConfig(configfile)
         self.frame_names = self.zip_files["camera_left"].namelist()
         self.frame_names = [name for name in self.frame_names if name.endswith(".png")]
         self.frame_names.sort()
+
+    def load_zipfiles(self, drive_path):
+        camera_left = drive_path
+        zfiles = dict()
+        zfiles["camera_left"] = zipfile.ZipFile(camera_left, "r")
+        zfiles["camera_right"] = zipfile.ZipFile(camera_left.replace("camera_frontleft", "camera_frontright"), "r")
+        zfiles["lidar_left"] = zipfile.ZipFile(camera_left.replace("camera_frontleft", "lidar_frontleft"), "r")
+        zfiles["lidar_right"] = zipfile.ZipFile(camera_left.replace("camera_frontleft", "lidar_frontright"), "r")
+        return zfiles
 
     def num_frames_(self):
         return len(self.frame_names)
@@ -81,8 +92,7 @@ class A2D2Reader(DataReaderBase):
         return self.get_frame_data(index, key)
 
     def get_pose(self, index, right=False):
-        key = "pose_gt_R" if right else "pose_gt"
-        return self.get_frame_data(index, key)
+        return None
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         key = "depth_gt_R" if right else "depth_gt"
@@ -107,18 +117,14 @@ class A2D2Reader(DataReaderBase):
 
         # add new frame
         frame_data = dict()
-        print("[get_frame_data] 2")
         frame_data["image"] = self._read_image(index)
-        print("[get_frame_data] 3")
         frame_data["intrinsic"] = self.sensor_config.get_cam_matrix("front_left")
-        print("[get_frame_data] 4")
         frame_data["depth_gt"] = self._read_depth_map(index)
-        print("[get_frame_data] 5")
         frame_data["image_R"] = self._read_image(index, right=True)
         frame_data["intrinsic_R"] = self.sensor_config.get_cam_matrix("front_right")
+        frame_data["depth_gt_R"] = self._read_depth_map(index, right=True)
         frame_data["stereo_T_LR"] = self.sensor_config.get_stereo_extrinsic()
         self.frame_buffer[index] = frame_data
-        print("[get_frame_data] 3")
 
         # remove old frames
         if self.latest_index < index:
@@ -127,7 +133,6 @@ class A2D2Reader(DataReaderBase):
         for frame_idx in self.frame_buffer:
             if frame_idx < self.latest_index - 20:
                 indices_pop.append(frame_idx)
-        print("[get_frame_data] 4")
         for frame_idx in indices_pop:
             self.frame_buffer.pop(frame_idx)
 
@@ -141,11 +146,11 @@ class A2D2Reader(DataReaderBase):
         if right:
             image_name = self.frame_names[index].replace("frontleft", "frontright").replace("front_left", "front_right")
             zipkey = "camera_right"
-            cam_dir = "front_right"
+            # cam_dir = "front_right"
         else:
             image_name = self.frame_names[index]
             zipkey = "camera_left"
-            cam_dir = "front_left"
+            # cam_dir = "front_left"
         image_bytes = self.zip_files[zipkey].open(image_name)
         image = Image.open(image_bytes)
         image = np.array(image, np.uint8)
@@ -166,7 +171,6 @@ class A2D2Reader(DataReaderBase):
         camera_key = "front_right" if right else "front_left"
         imsize_hw = self.sensor_config.get_resolution_hw(camera_key)
 
-        print("image size:", imsize_hw)
         assert (lidar_row >= 0).all() and (lidar_row < imsize_hw[0]).all(), \
             f"wrong index: {lidar_row[lidar_row >= 0]}, {lidar_row[lidar_row < imsize_hw[0]]}"
         assert (lidar_col >= 0).all() and (lidar_col < imsize_hw[1]).all(), \
@@ -181,8 +185,9 @@ class A2D2Reader(DataReaderBase):
 class SensorConfig:
     # refer to: https://www.a2d2.audi/a2d2/en/tutorial.html
     def __init__(self, cfgfile):
-        with open(cfgfile, "r") as fr:
-            self.sensor_config = json.load(fr)
+        if cfgfile:
+            with open(cfgfile, "r") as fr:
+                self.sensor_config = json.load(fr)
         self.undist_remap = dict()
 
     def get_cam_matrix(self, cam_key):
@@ -245,7 +250,7 @@ class SensorConfig:
     def get_stereo_extrinsic(self):
         left_view = self.sensor_config["cameras"]["front_left"]["view"]
         right_view = self.sensor_config["cameras"]["front_right"]["view"]
-        return self._transform_from_to(right_view, left_view)
+        return self._transform_from_to(right_view, left_view).astype(np.float32)
 
     def _transform_from_to(self, source, target):
         transform = np.dot(np.linalg.inv(self._get_transform_to_global(target)),
@@ -412,10 +417,10 @@ def test_remap():
 
 
 if __name__ == "__main__":
-    # convert_tar_to_vanilla_zip()
+    convert_tar_to_vanilla_zip()
     # test_read_npz()
     # visualize_depth_map()
-    test_a2d2_reader()
+    # test_a2d2_reader()
     # test_remap()
 
 

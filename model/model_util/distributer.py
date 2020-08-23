@@ -37,8 +37,8 @@ class StrategyDataset:
         if opts.TRAIN_MODE == "distributed":
             print("[StrategyDataset]", self.func.__name__, *args)
             strategy = DistributionStrategy.get_strategy()
-            datset, steps = self.func(*args, **kwargs)
-            dist_dataset = strategy.experimental_distribute_dataset(datset)
+            dataset, steps = self.func(*args, **kwargs)
+            dist_dataset = strategy.experimental_distribute_dataset(dataset)
             return dist_dataset, steps
         else:
             return self.func(*args, **kwargs)

@@ -39,6 +39,8 @@ def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
         return tm.CityscapesTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset is "waymo":
         return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
+    elif dataset is "a2d2":
+        return tm.A2D2TfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset is "driving_stereo":
         return tm.DrivingStereoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     else:

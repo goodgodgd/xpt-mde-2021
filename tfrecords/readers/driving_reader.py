@@ -79,7 +79,7 @@ class DrivingStereoReader(DataReaderBase):
         image_bytes = self.zip_files[zipkey].open(filename)
         image = Image.open(image_bytes)
         image = np.array(image, np.uint8)
-        image = image[:, :, [2, 1, 0]]
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         return image
 
     def get_pose(self, index, right=False):
