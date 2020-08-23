@@ -6,6 +6,7 @@ from waymo_open_dataset.utils import frame_utils
 from waymo_open_dataset import dataset_pb2 as open_dataset
 
 from tfrecords.readers.reader_base import DataReaderBase
+from utils.util_class import MyExceptionToCatch
 
 T_C2V = tf.constant([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=tf.float32)
 FRONT_IND = 0
@@ -42,7 +43,7 @@ class WaymoReader(DataReaderBase):
         if right: return None
         frame = self._get_frame(index)
         front_image = tf.image.decode_jpeg(frame.images[0].image)
-        front_image = front_image.numpy()[:, :, [2, 1, 0]]  # rgb to bgr
+        front_image = cv2.cvtColor(front_image.numpy(), cv2.COLOR_RGB2BGR)
         return front_image.astype(np.uint8)
 
     def get_pose(self, index, right=False):
@@ -77,7 +78,7 @@ class WaymoReader(DataReaderBase):
     """
     def _get_dataset(self, drive_path):
         filenames = tf.io.gfile.glob(f"{drive_path}/*.tfrecord")
-        print("[_get_dataset] read tfrecords in", op.basename(drive_path), filenames)
+        print("[WaymoReader._get_dataset] read tfrecords in", op.basename(drive_path), filenames)
         dataset = tf.data.TFRecordDataset(filenames, compression_type='')
         return dataset
 
@@ -86,7 +87,7 @@ class WaymoReader(DataReaderBase):
             frame = self.frame_buffer[index]
             time_of_day = f"{frame.context.stats.time_of_day}"
             if time_of_day != "Day":
-                raise ValueError(f"time_of_day is not Day: {time_of_day}")
+                raise MyExceptionToCatch(f"time_of_day is not Day: {time_of_day}")
             return frame
 
         if (index == self.latest_index + 1) or self.latest_index < 0:
@@ -100,7 +101,7 @@ class WaymoReader(DataReaderBase):
             self.latest_index = index
             time_of_day = f"{frame.context.stats.time_of_day}"
             if time_of_day != "Day":
-                raise ValueError(f"time_of_day is not Day: {time_of_day}")
+                raise MyExceptionToCatch(f"time_of_day is not Day: {time_of_day}")
             # remove an old frame
             return frame
 

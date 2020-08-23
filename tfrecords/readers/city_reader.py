@@ -2,9 +2,10 @@ import os.path as op
 import numpy as np
 from PIL import Image
 import json
+from utils.util_class import MyExceptionToCatch
 
 from tfrecords.readers.reader_base import DataReaderBase
-from tfrecords.tfr_util import resize_depth_map, apply_color_map
+from tfrecords.tfr_util import resize_depth_map
 
 
 class CityscapesReader(DataReaderBase):
@@ -107,7 +108,7 @@ class CityscapesReader(DataReaderBase):
         subdrive = "_".join(subdrive)
         subdrive_files = [file for file in self.camera_names if file.startswith(subdrive)]
         if not subdrive_files:
-            raise ValueError(f"No json file like {subdrive}")
+            raise MyExceptionToCatch(f"No json file like {subdrive}")
 
         filename = subdrive_files[0]
         contents = self.zip_files["camera"].read(filename)
@@ -121,6 +122,7 @@ class CityscapesReader(DataReaderBase):
 import cv2
 from config import opts
 import zipfile
+from tfrecords.tfr_util import apply_color_map
 
 
 def test_city_reader():

@@ -5,7 +5,7 @@ from tfrecords.readers.kitti_reader import KittiRawReader, KittiOdomReader
 from tfrecords.readers.city_reader import CityscapesReader
 from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.driving_reader import DrivingStereoReader
-from utils.convert_pose import pose_matr2rvec
+from tfrecords.readers.a2d2_reader import A2D2Reader
 from tfrecords.tfr_util import show_example
 
 
@@ -34,6 +34,8 @@ class ExampleMaker:
             return WaymoReader(self.split)
         elif self.dataset == "driving_stereo":
             return DrivingStereoReader(self.split)
+        elif self.dataset == "a2d2":
+            return A2D2Reader(self.split, self.reader_args)
         else:
             assert 0, f"[data_reader_factory] invalid dataset name {self.dataset}"
 
@@ -46,27 +48,34 @@ class ExampleMaker:
     def get_example(self, index):
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
-        example["image"], raw_shape_hwc = self.load_snippet_images(frame_seq_ids)
-        example["intrinsic"] = self.load_intrinsic(frame_id, raw_shape_hwc)
+        example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
+        example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:
-            example["depth_gt"] = self.load_depth_map(frame_id, raw_shape_hwc)
+            example["depth_gt"] = self.load_depth_map(frame_id, rawshape_hw, rszshape_hw)
         if "pose_gt" in self.data_keys:
             example["pose_gt"] = self.load_snippet_poses(frame_seq_ids)
         if "image_R" in self.data_keys:
-            example["image_R"], _ = self.load_snippet_images(frame_seq_ids, right=True)
+            example["image_R"], _, _ = self.load_snippet_images(frame_seq_ids, right=True)
         if "intrinsic_R" in self.data_keys:
-            example["intrinsic_R"] = self.load_intrinsic(frame_id, raw_shape_hwc, right=True)
+            example["intrinsic_R"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw, right=True)
+        if "depth_gt_R" in self.data_keys:
+            example["depth_gt_R"] = self.load_depth_map(frame_id, rawshape_hw, rszshape_hw, right=True)
         if "pose_gt_R" in self.data_keys:
             example["pose_gt_R"] = self.load_snippet_poses(frame_seq_ids, right=True)
         if "stereo_T_LR" in self.data_keys:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic(frame_id)
 
-        if index % 100 == 10:
-            show_example(example, 200)
+        # if index % 500 == 10:
+        #     show_example(example, 200, print_param=True, max_height=0)
+        # elif index % 100 == 10:
+        #     show_example(example, 200)
+
+        example = self.crop_example(example, rszshape_hw)
+
         if index % 500 == 10:
-            print("\nintrinsic:\n", example["intrinsic"])
-            if example["pose_gt"] is not None:
-                print("pose\n", pose_matr2rvec(example["pose_gt"]))
+            show_example(example, 200, print_param=True, suffix="_crop")
+        elif index % 100 == 10:
+            show_example(example, 200, suffix="_crop")
 
         example = self.verify_snippet(example)
         return example
@@ -81,45 +90,42 @@ class ExampleMaker:
 
     def load_snippet_images(self, frame_ids, right=False):
         image_seq = []
-        raw_shape = self.shwc_shape[1:]
-        dstsize_wh = (self.shwc_shape[2], self.shwc_shape[1])
+        rawshape_hw, rszshape_hw = (), ()
+        dstshape_hw = (self.shwc_shape[1], self.shwc_shape[2])
 
         for fid in frame_ids:
             image = self.data_reader.get_image(fid, right=right)
             if image is None:
-                return None
-            raw_shape = image.shape
-            if self.crop:
-                yxhw = self.crop_yxhw_range(image.shape)
-                image = image[yxhw[0]:yxhw[0] + yxhw[2], yxhw[1]:yxhw[1] + yxhw[3]]
-            image = cv2.resize(image, dstsize_wh)
+                return None, 0, 0
+            rawshape_hw = image.shape[:2]
+            rszshape_hw = self.get_resize_shape(rawshape_hw, dstshape_hw)
+            image = cv2.resize(image, (rszshape_hw[1], rszshape_hw[0]))
             image_seq.append(image)
         # move target image to the bottom
         target_index = self.shwc_shape[0] // 2
         target_image = image_seq.pop(target_index)
         image_seq.append(target_image)
         image_seq = np.concatenate(image_seq, axis=0).astype(np.uint8)
-        return image_seq, raw_shape
+        return image_seq, rawshape_hw, rszshape_hw
 
-    def load_intrinsic(self, index, raw_shape_hwc, right=False):
+    def get_resize_shape(self, rawshape_hw, dstshape_hw):
+        raw_ratio = rawshape_hw[1] / rawshape_hw[0]
+        dst_ratio = dstshape_hw[1] / dstshape_hw[0]
+        if np.abs(dst_ratio - raw_ratio) < 0.05:
+            return dstshape_hw
+        elif dst_ratio > raw_ratio:     # if dst is wider
+            return int(rawshape_hw[0] * dstshape_hw[1] / rawshape_hw[1] + 0.5), dstshape_hw[1]
+        else:                           # if dst is taller
+            return dstshape_hw[0], int(rawshape_hw[1] * dstshape_hw[0] / rawshape_hw[0] + 0.5)
+
+    def load_intrinsic(self, index, rawshape_hw, rszshape_hw, right=False):
         intrinsic = self.data_reader.get_intrinsic(index, right=right)
         if intrinsic is None:
             return None
-
-        dst_shape_hw = self.shwc_shape[1:3]
-        src_shape_hw = raw_shape_hwc[:2]
-        if self.crop:
-            yxhw = self.crop_yxhw_range(raw_shape_hwc)
-            if index == 10:
-                print("\ncrop image yxhw:", yxhw)
-            intrinsic[0, 2] = intrinsic[0, 2] - yxhw[1]  # cx
-            intrinsic[1, 2] = intrinsic[1, 2] - yxhw[0]  # cy
-            src_shape_hw = yxhw[2:]
-
         # scale fx, cx
-        intrinsic[0] = intrinsic[0] * dst_shape_hw[1] / src_shape_hw[1]
+        intrinsic[0] = intrinsic[0] * rszshape_hw[1] / rawshape_hw[1]
         # scale fy, cy
-        intrinsic[1] = intrinsic[1] * dst_shape_hw[0] / src_shape_hw[0]
+        intrinsic[1] = intrinsic[1] * rszshape_hw[0] / rawshape_hw[0]
         return intrinsic.astype(np.float32)
 
     def load_snippet_poses(self, frame_ids, right=False):
@@ -136,10 +142,10 @@ class ExampleMaker:
         pose_seq = np.stack(pose_seq, axis=0)
         return pose_seq.astype(np.float32)
 
-    def load_depth_map(self, index, raw_shape_hwc):
+    def load_depth_map(self, index, rawshape_hw, rszshape_hw, right=False):
         intrinsic = self.data_reader.get_intrinsic(index)
         if intrinsic is None: return None
-        depth_map = self.data_reader.get_depth(index, raw_shape_hwc[:2], self.shwc_shape[1:3], intrinsic)
+        depth_map = self.data_reader.get_depth(index, rawshape_hw, rszshape_hw, intrinsic, right)
         if depth_map is None: return None
         return depth_map.astype(np.float32)
 
@@ -159,26 +165,68 @@ class ExampleMaker:
                 return dict()   # empty dict means skip this frame
         return example
 
-    def crop_yxhw_range(self, raw_shape_hwc):
-        raw_h, raw_w = raw_shape_hwc[:2]
-        exm_h, exm_w = self.shwc_shape[1:3]
-        # crop vertically: crop upper region of image
-        # e.g. KITTI: (376, 1241) -> (310, 1241) -> (128, 512)
-        if raw_w / raw_h < exm_w / exm_h:
-            new_height = int(exm_h * raw_w / exm_w + 0.5)
-            row_begin = int((raw_h - new_height) * 0.6)
-            return row_begin, 0, new_height, raw_w
-        # crop horizontally: crop both left and right sides
-        # e.g. KITTI: (376, 1241) -> (376, 1128) -> (128, 384)
+    def crop_example(self, example, rszshape_hw):
+        if rszshape_hw == self.shwc_shape[1:3]:
+            return example
+
+        cy, cx, ch, cw = self.get_crop_range(rszshape_hw)
+
+        def crop_image(image):
+            image5d = image.reshape(-1, rszshape_hw[0], rszshape_hw[1], 3)
+            image_crop = image5d[:, cy:cy + ch, cx:cx + cw]
+            # print("crop_image:", image.shape, image5d.shape, image_crop.shape, cy, cx, ch, cw)
+            image_crop = image_crop.reshape(-1, cw, 3)
+            return image_crop
+
+        example["image"] = crop_image(example["image"])
+        if "image_R" in example and example["image_R"] is not None:
+            example["image_R"] = crop_image(example["image_R"])
+
+        def crop_intrinsic(intrinsic_):
+            intrinsic = np.copy(intrinsic_)
+            intrinsic[0, 2] = intrinsic[0, 2] - cx
+            intrinsic[1, 2] = intrinsic[1, 2] - cy
+            return intrinsic
+
+        example["intrinsic"] = crop_intrinsic(example["intrinsic"])
+        if "intrinsic_R" in example and example["intrinsic_R"] is not None:
+            example["intrinsic_R"] = crop_intrinsic(example["intrinsic_R"])
+
+        if "depth_gt" in example and example["depth_gt"] is not None:
+            example["depth_gt"] = example["depth_gt"][cy:cy + ch, cx:cx + cw]
+        if "depth_gt_R" in example and example["depth_gt_R"] is not None:
+            example["depth_gt_R"] = example["depth_gt_R"][cy:cy + ch, cx:cx + cw]
+
+        return example
+
+    def get_crop_range(self, rszshape_hw):
+        rsz_h, rsz_w = rszshape_hw
+        dst_h, dst_w = self.shwc_shape[1:3]
+
+        if self.dataset.startswith("kitti"):
+            # crop vertically
+            if (rsz_h > dst_h) and (rsz_w == dst_w):
+                row_beg = int((rsz_h - dst_h) * 0.7)
+                return row_beg, 0, dst_h, dst_w
+            # crop horizontally: crop both left and right sides
+            else:
+                col_beg = (rsz_w - dst_w) // 2
+                return 0, col_beg, dst_h, dst_w
+        elif self.dataset == "a2d2":
+            # crop vertically
+            if (rsz_h > dst_h) and (rsz_w == dst_w):
+                row_beg = 0
+                return row_beg, 0, dst_h, dst_w
+            # crop horizontally: crop both left and right sides
+            else:
+                col_beg = (rsz_w - dst_w) // 2
+                return 0, col_beg, dst_h, dst_w
         else:
-            new_width = int(exm_w * raw_h / exm_h + 0.5)
-            col_begin = (raw_w - new_width) // 2
-            return 0, col_begin, raw_h, new_width
+            assert 0, f"Wrong dataset to crop: {self.dataset}"
 
 
 
 # ======================================================================
-import cv2
 from config import opts
 from utils.util_funcs import print_progress_status
 

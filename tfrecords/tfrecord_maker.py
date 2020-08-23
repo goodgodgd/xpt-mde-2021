@@ -10,6 +10,7 @@ import utils.util_funcs as uf
 import utils.util_class as uc
 from tfrecords.example_maker import ExampleMaker
 from tfrecords.tfr_util import Serializer, inspect_properties
+from utils.util_class import MyExceptionToCatch
 
 
 class TfrecordMakerBase:
@@ -74,8 +75,8 @@ class TfrecordMakerBase:
                     except StopIteration as si: # raised from xxx_reader._get_frame()
                         print("\n[StopIteration] stop this drive", si)
                         break
-                    except ValueError as ve:    # raised from xxx_reader._get_frame()
-                        uf.print_progress_status(f"==[making TFR] ValueError frame: {ii}/{num_frames}, {ve}")
+                    except MyExceptionToCatch as ve:    # raised from xxx_reader._get_frame()
+                        uf.print_progress_status(f"==[making TFR] (Exception) frame: {ii}/{num_frames}, {ve}")
                         continue
 
                     if not example:             # when dict is empty, skip this index
@@ -85,13 +86,12 @@ class TfrecordMakerBase:
                     example_serial = self.serialize_example(example)
                     last_example = copy.deepcopy(example)
                     self.write_tfrecord(example_serial, di)
-                    uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives}, "
-                                             f"frame: {ii}/{num_frames}, "
-                                             f"example: ({self.example_count_in_drive}, {self.total_example_count}), "
+                    uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives} | "
+                                             f"drive: {ii}/{num_frames}, count: {self.example_count_in_drive} | "
+                                             f"total: {self.total_example_count} | "
                                              f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
                 print("")
                 self.write_tfrecord_config(last_example)
-
             pm.set_ok()
         self.wrap_up()
 
@@ -326,6 +326,43 @@ class CityscapesTfrecordMaker(TfrecordMakerBase):
         # TODO WARNING!! sequence MUST be created after extra!
         if self.zip_suffix == "sequence":
             move_tfrecord_and_merge_configs(self.tfrpath__, self.tfrpath)
+
+
+class A2D2TfrecordMaker(TfrecordMakerBase):
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
+        super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
+
+    def list_drive_paths(self, srcpath, split):
+        drive_paths = glob(self.srcpath + "/*_camera_frontleft.zip")
+        return drive_paths
+
+    def get_example_maker(self, dataset, split, shwc_shape, data_keys):
+        return ExampleMaker(dataset, split, shwc_shape, data_keys)
+
+    def init_drive_tfrecord(self, drive_index=0):
+        drivetime = op.basename(self.drive_paths[drive_index]).split("-")[1].split("_")[0]
+        # example: "20180810150607" from "camera_lidar-20180810150607_camera_frontleft.zip"
+        outpath = op.join(self.tfrpath__, drivetime)
+        print("[init_drive_tfrecord] outpath:", outpath)
+        if op.isdir(outpath):
+            print(f"[init_drive_tfrecord] {op.basename(outpath)} exists. move onto the next")
+            return True
+
+        # change path to check date integrity
+        self.pm.reopen([outpath], closer_func=self.on_exit)
+        self.tfr_drive_path = outpath
+        self.shard_count = 0
+        self.example_count_in_shard = 0
+        self.example_count_in_drive = 0
+        self.open_new_writer(drive_index)
+        return False
+
+    def open_new_writer(self, drive_index):
+        outfile = f"{self.tfr_drive_path}/drive_{drive_index:03d}_shard_{self.shard_count:03d}.tfrecord"
+        self.writer = tf.io.TFRecordWriter(outfile)
+
+    def wrap_up(self):
+        move_tfrecord_and_merge_configs(self.tfrpath__, self.tfrpath)
 
 
 def move_tfrecord_and_merge_configs(tfrpath__, tfrpath):

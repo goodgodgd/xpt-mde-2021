@@ -51,7 +51,8 @@ class KittiRawReader(DataReaderBase):
             self.cur_images = images
 
         image = np.array(images[1]) if right else np.array(images[0])
-        return image[:, :, [2, 1, 0]]
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        return image
 
     def get_pose(self, index, right=False):
         T_w_imu = self.drive_loader.oxts[index].T_w_imu
@@ -267,7 +268,8 @@ class KittiOdomReader(DataReaderBase):
             self.cur_images = images
 
         image = np.array(images[1]) if right else np.array(images[0])
-        return image[:, :, [2, 1, 0]]
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        return image
 
     def get_pose(self, index, right=False):
         if self.split == "train":

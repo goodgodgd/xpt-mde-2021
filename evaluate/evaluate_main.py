@@ -9,37 +9,6 @@ import utils.util_funcs as uf
 import evaluate.eval_funcs as ef
 
 
-def evaluate_by_user_interaction():
-    options = {"data_dir_name": "kitti_raw_test",
-               "model_name": "vode_model",
-               }
-
-    print("\n===== Select evaluation options")
-
-    print(f"Default options:")
-    for key, value in options.items():
-        print(f"\t{key} = {value}")
-    print("\nIf you are happy with default options, please press enter")
-    print("Otherwise, please press any other key")
-    select = input()
-
-    if select == "":
-        print(f"You selected default options.")
-    else:
-        message = "Type 1 or 2 to specify dataset: 1) kitti_raw_test, 2) kitti_odom_test"
-        ds_id = uf.input_integer(message, 1, 2)
-        if ds_id == 1:
-            options["data_dir_name"] = "kitti_raw_test"
-        if ds_id == 2:
-            options["data_dir_name"] = "kitti_odom_test"
-
-        print("Type model_name: dir name under opts.DATAPATH_CKP and opts.DATAPATH_PRD")
-        options["model_name"] = input()
-
-    print("Prediction options:", options)
-    evaluate(**options)
-
-
 def evaluate(data_dir_name, model_name):
     total_depth_pred, total_pose_pred = load_predictions(model_name)
     dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_dataset()
@@ -62,7 +31,7 @@ def evaluate(data_dir_name, model_name):
         trajectory_errors.append(trj_err)
         rotational_errors.append(rot_err)
 
-        if depth_valid:
+        if "depth_gt" in x:
             depth_true = x["depth_gt"].numpy()[0]
             depth_pred = total_depth_pred[i]
             depth_err = evaluate_depth(depth_pred, depth_true)
