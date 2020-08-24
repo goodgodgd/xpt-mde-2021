@@ -17,9 +17,12 @@ from utils.util_funcs import print_progress_status
 
 
 def convert_tar_to_vanilla_zip():
+    from config import opts
+
     print("\n==== convert_tar_to_vanilla_zip")
-    tar_pattern = "/media/ian/IanBook/datasets/raw_zips/a2d2/*.tar"
+    tar_pattern = opts.get_raw_data_path("a2d2") + "/../*.tar"
     tar_files = glob(tar_pattern)
+    print("tar files:", tar_pattern, tar_files)
     tar_files = [file for file in tar_files if "frontcenter" not in file]
     for ti, tar_name in enumerate(tar_files):
         print("\n====== open tar file:", op.basename(tar_name))
@@ -298,7 +301,6 @@ class SensorConfig:
 
 
 # ======================================================================
-from config import opts
 from tfrecords.tfr_util import apply_color_map
 
 

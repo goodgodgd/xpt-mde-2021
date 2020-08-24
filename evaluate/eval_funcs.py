@@ -29,9 +29,10 @@ def recover_pred_snippet_poses(poses):
     :param poses: source poses that transforms points in target to source frame
                     format=(tx, ty, tz, ux, uy, uz) shape=[numsrc, 6]
     :return: snippet pose matrices that transforms points in source[i] frame to source[0] frame
-                    format=(4x4 transformation) shape=[snippet_len, 4, 4]
+                    format=(4x4 transformation) shape=[snippet, 4, 4]
                     order=[source[0], source[1], target, source[2], source[3]]
     """
+    # insert origin pose as target pose into the middle
     target_pose = np.zeros(shape=(1, 6), dtype=np.float32)
     poses_vec = np.concatenate([poses[:2], target_pose, poses[2:]], axis=0)
     poses_mat = cp.pose_rvec2matr(poses_vec)
@@ -73,9 +74,9 @@ def relative_pose_from_first(poses_mat):
 
 def calc_trajectory_error(pose_pred_mat, pose_true_mat):
     """
-    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :return: trajectory error in meter [snippet_len]
+    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet, 5, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet, 5, 4, 4]
+    :return: trajectory error in meter [snippet]
     """
     xyz_pred = pose_pred_mat[:, :3, 3]
     xyz_true = pose_true_mat[:, :3, 3]
@@ -88,9 +89,9 @@ def calc_trajectory_error(pose_pred_mat, pose_true_mat):
 
 def calc_rotational_error(pose_pred_mat, pose_true_mat):
     """
-    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :return: rotational error in rad [snippet_len]
+    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet, 5, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet, 5, 4, 4]
+    :return: rotational error in rad [snippet]
     """
     rot_pred = pose_pred_mat[:, :3, :3]
     rot_true = pose_true_mat[:, :3, :3]

@@ -7,7 +7,8 @@ RAW_DATA_PATHS = {
     "cityscapes__extra": "/media/ian/IanBook/datasets/raw_zips/cityscapes",
     "cityscapes__sequence": "/media/ian/IanBook/datasets/raw_zips/cityscapes",
     "waymo": "/media/ian/IanBook/datasets/waymo",
-    "driving_stereo": "/media/ian/IanBook/datasets/raw_zips/driving_stereo",
+    "a2d2": "/media/ian/IanBook/datasets/raw_zips/a2d2/zips",
+    # "driving_stereo": "/media/ian/IanBook/datasets/raw_zips/driving_stereo",
 }
 # RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
 RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0815"
@@ -26,6 +27,7 @@ class FixedOptions:
                    "kitti_odom": (128, 512),
                    "cityscapes": (192, 384),
                    "waymo": (256, 384),
+                   "a2d2": (256, 512),
                    "driving_stereo": (192, 384),
                    }
     IMAGE_CROP = {"kitti_raw": True,
@@ -35,7 +37,7 @@ class FixedOptions:
     """
     training options
     """
-    PER_REPLICA_BATCH = 4
+    PER_REPLICA_BATCH = 2
     BATCH_SIZE = PER_REPLICA_BATCH
     OPTIMIZER = ["adam_constant"][0]
     DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]
@@ -44,7 +46,7 @@ class FixedOptions:
     """
     network options: network architecture, convolution args, ... 
     """
-    NET_NAMES = {"depth": "NASNetMobile",
+    NET_NAMES = {"depth": ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][1],
                  "camera": "PoseNet",
                  "flow": "PWCNet"
                  }
@@ -64,6 +66,7 @@ class VodeOptions(FixedOptions):
     # cityscapes__sequence MUST be after cityscapes__extra
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
+                           "a2d2": ["train"],
                            "cityscapes__extra": ["train"],
                            "cityscapes__sequence": ["train"],
                            "waymo": ["train"],
@@ -93,7 +96,7 @@ class VodeOptions(FixedOptions):
     """
     training options
     """
-    CKPT_NAME = "vode1"
+    CKPT_NAME = "vode2"
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
@@ -120,17 +123,23 @@ class VodeOptions(FixedOptions):
     }
     TRAINING_PLAN = [
         # pretraining first round
-        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T2),
+        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
         ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
+        ("a2d2",            2, 0.0001, LOSS_WEIGHTS_T1),
         ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
         ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
         # pretraining second round
         ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
         ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
+        ("a2d2",            2, 0.0001, LOSS_WEIGHTS_T1),
         ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
         ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
         # fine tuning
         ("kitti_raw",       10, 0.0001, LOSS_WEIGHTS_T1),
+    ]
+    TEST_PLAN = [
+        ("kitti_raw",       ["depth"]),
+        ("kitti_odom",      ["pose"]),
     ]
 
     @classmethod
@@ -168,7 +177,7 @@ class VodeOptions(FixedOptions):
 
 
 opts = VodeOptions()
-
+print("ckpt path", opts.DATAPATH_CKP)
 
 import numpy as np
 np.set_printoptions(precision=4, suppress=True, linewidth=100)

@@ -32,10 +32,10 @@ class ExampleMaker:
             return CityscapesReader(self.split, self.reader_args)   # split and ZipFile object
         elif self.dataset == "waymo":
             return WaymoReader(self.split)
-        elif self.dataset == "driving_stereo":
-            return DrivingStereoReader(self.split)
         elif self.dataset == "a2d2":
             return A2D2Reader(self.split, self.reader_args)
+        elif self.dataset == "driving_stereo":
+            return DrivingStereoReader(self.split)
         else:
             assert 0, f"[data_reader_factory] invalid dataset name {self.dataset}"
 

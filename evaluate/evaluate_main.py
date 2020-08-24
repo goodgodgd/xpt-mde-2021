@@ -4,62 +4,47 @@ import numpy as np
 
 import settings
 from config import opts
-from tfrecords.tfrecord_reader import TfrecordReader
-import utils.util_funcs as uf
 import evaluate.eval_funcs as ef
 
 
-def evaluate(data_dir_name, model_name):
-    total_depth_pred, total_pose_pred = load_predictions(model_name)
-    dataset = TfrecordReader(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1).get_dataset()
-    depth_valid = uf.check_tfrecord_including(op.join(opts.DATAPATH_TFR, data_dir_name), ["depth_gt"])
-    if not uf.check_tfrecord_including(op.join(opts.DATAPATH_TFR, data_dir_name), ["pose_gt"]):
-        print("Evaluation is NOT possible without pose_gt")
-        return
+def evaluate_by_plan():
+    for dataset_name, save_keys in opts.TEST_PLAN:
+        evaluate(dataset_name)
 
-    depth_errors = []
-    trajectory_errors = []
-    rotational_errors = []
 
-    for i, x in enumerate(dataset):
-        if i >= total_pose_pred.shape[0]:
-            break
-        uf.print_numeric_progress(i, 0)
-        pose_true = x["pose_gt"].numpy()[0]
-        pose_pred = total_pose_pred[i]
-        trj_err, rot_err = evaluate_pose(pose_pred, pose_true)
-        trajectory_errors.append(trj_err)
-        rotational_errors.append(rot_err)
+def evaluate(dataset_name, pred_path=opts.DATAPATH_PRD, ckpt_name=opts.CKPT_NAME):
+    filename = op.join(pred_path, ckpt_name, dataset_name + ".npz")
+    results = np.load(filename)
+    results = {key: results[key] for key in results.files}
+    os.makedirs(op.join(opts.DATAPATH_EVL, ckpt_name), exist_ok=True)
 
-        if "depth_gt" in x:
-            depth_true = x["depth_gt"].numpy()[0]
-            depth_pred = total_depth_pred[i]
+    if "pose" in results and "pose_gt" in results:
+        trj_errors = []
+        rot_errors = []
+        for pose_pred, pose_true in zip(results["pose"], results["pose_gt"]):
+            print("pose shape", pose_pred.shape, pose_true.shape)
+            trj_err, rot_err = evaluate_pose(pose_pred, pose_true)
+            trj_errors.append(trj_err)
+            rot_errors.append(rot_err)
+
+        print("")
+        trj_errors = np.stack(trj_errors, axis=0)
+        rot_errors = np.stack(rot_errors, axis=0)
+        print(f"trajectory errors: {trj_errors.shape}\n{trj_errors[:5]}\n-> mean={np.mean(trj_errors, axis=0)}")
+        print(f"rotational errors: {rot_errors.shape}\n{rot_errors[:5]}\n-> mean={np.mean(rot_errors, axis=0)}")
+        os.makedirs(op.join(opts.DATAPATH_EVL, ckpt_name), exist_ok=True)
+        np.savetxt(op.join(opts.DATAPATH_EVL, ckpt_name, "trajectory_error.txt"), trj_errors, fmt="%1.4f")
+        np.savetxt(op.join(opts.DATAPATH_EVL, ckpt_name, "rotation_error.txt"), rot_errors, fmt="%1.4f")
+
+    if "depth" in results and "depth_gt" in results:
+        depth_errors = []
+        for depth_pred, depth_true in zip(results["depth"], results["depth_gt"]):
             depth_err = evaluate_depth(depth_pred, depth_true)
             depth_errors.append(depth_err)
 
-    print("")
-    trajectory_errors = np.array(trajectory_errors)
-    rotational_errors = np.array(rotational_errors)
-    print(f"trajectory error shape: {trajectory_errors.shape}\n{trajectory_errors[:5]}")
-    print(f"rotational error shape: {rotational_errors.shape}\n{rotational_errors[:5]}")
-    os.makedirs(op.join(opts.DATAPATH_EVL, model_name), exist_ok=True)
-    np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "trajectory_error.txt"), trajectory_errors, fmt="%1.4f")
-    np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "rotation_error.txt"), rotational_errors, fmt="%1.4f")
-
-    if depth_valid:
         depth_errors = np.array(depth_errors)
-        print(f"depth error shape: {depth_errors.shape}\n{depth_errors[:5]}")
-        np.savetxt(op.join(opts.DATAPATH_EVL, model_name, "depthe_error.txt"), depth_errors, fmt="%1.4f")
-
-
-def load_predictions(model_name):
-    pred_dir_path = op.join(opts.DATAPATH_PRD, model_name)
-    os.makedirs(pred_dir_path, exist_ok=True)
-    depth_pred = np.load(op.join(pred_dir_path, "depth.npy"))
-    print(f"[load_predictions] load depth from {pred_dir_path}, shape={depth_pred.shape}")
-    pose_pred = np.load(op.join(pred_dir_path, "pose.npy"))
-    print(f"[load_predictions] load pose from {pred_dir_path}, shape={pose_pred.shape}")
-    return depth_pred, pose_pred
+        print(f"depth errors: {depth_errors.shape}\n{depth_errors[:5]}\n-> mean={np.mean(depth_errors, axis=0)}")
+        np.savetxt(op.join(opts.DATAPATH_EVL, ckpt_name, "depth_error.txt"), depth_errors, fmt="%1.4f")
 
 
 def evaluate_depth(depth_pred, depth_true):
@@ -100,4 +85,4 @@ def evaluate_pose(pose_pred, pose_true):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    evaluate('kitti_raw_test', 'vode1')
+    evaluate_by_plan()
