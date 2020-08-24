@@ -28,7 +28,7 @@ class FixedOptions:
                    "cityscapes": (192, 384),
                    "waymo": (256, 384),
                    "a2d2": (256, 512),
-                   # "driving_stereo": (192, 384),
+                   "driving_stereo": (192, 384),
                    }
     IMAGE_CROP = {"kitti_raw": True,
                   "kitti_odom": True,
@@ -37,7 +37,7 @@ class FixedOptions:
     """
     training options
     """
-    PER_REPLICA_BATCH = 4
+    PER_REPLICA_BATCH = 2
     BATCH_SIZE = PER_REPLICA_BATCH
     OPTIMIZER = ["adam_constant"][0]
     DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]
@@ -96,7 +96,7 @@ class VodeOptions(FixedOptions):
     """
     training options
     """
-    CKPT_NAME = "vode1"
+    CKPT_NAME = "vode2"
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
@@ -123,17 +123,23 @@ class VodeOptions(FixedOptions):
     }
     TRAINING_PLAN = [
         # pretraining first round
-        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T2),
+        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
         ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
+        ("a2d2",            2, 0.0001, LOSS_WEIGHTS_T1),
         ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
         ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
         # pretraining second round
         ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
         ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
+        ("a2d2",            2, 0.0001, LOSS_WEIGHTS_T1),
         ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
         ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
         # fine tuning
         ("kitti_raw",       10, 0.0001, LOSS_WEIGHTS_T1),
+    ]
+    TEST_PLAN = [
+        ("kitti_raw",       ["depth"]),
+        ("kitti_odom",      ["pose"]),
     ]
 
     @classmethod
@@ -171,7 +177,7 @@ class VodeOptions(FixedOptions):
 
 
 opts = VodeOptions()
-
+print("ckpt path", opts.DATAPATH_CKP)
 
 import numpy as np
 np.set_printoptions(precision=4, suppress=True, linewidth=100)
