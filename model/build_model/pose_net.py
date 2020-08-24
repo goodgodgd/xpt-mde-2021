@@ -9,7 +9,7 @@ class PoseNet:
         self.input_shape = input_shape
         self.global_batch = global_batch
         self.conv2d_p = conv2d
-        print("[PoseNet] convolution default options:", input_shape, vars(conv2d))
+        print("[PoseNet] convolution default options:", vars(conv2d))
 
     def __call__(self):
         batch, snippet, height, width, channel = self.input_shape

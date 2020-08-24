@@ -32,6 +32,7 @@ def recover_pred_snippet_poses(poses):
                     format=(4x4 transformation) shape=[snippet_len, 4, 4]
                     order=[source[0], source[1], target, source[2], source[3]]
     """
+    # insert origin pose as target pose into the middle
     target_pose = np.zeros(shape=(1, 6), dtype=np.float32)
     poses_vec = np.concatenate([poses[:2], target_pose, poses[2:]], axis=0)
     poses_mat = cp.pose_rvec2matr(poses_vec)
@@ -73,9 +74,9 @@ def relative_pose_from_first(poses_mat):
 
 def calc_trajectory_error(pose_pred_mat, pose_true_mat):
     """
-    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet_len, 5, 4, 4]
-    :return: trajectory error in meter [snippet_len]
+    :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [numsrc, 5, 4, 4]
+    :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [numsrc, 5, 4, 4]
+    :return: trajectory error in meter [numsrc]
     """
     xyz_pred = pose_pred_mat[:, :3, 3]
     xyz_true = pose_true_mat[:, :3, 3]

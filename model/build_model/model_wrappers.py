@@ -4,6 +4,7 @@ import os.path as op
 
 from config import opts
 import utils.util_funcs as uf
+import utils.convert_pose as cp
 
 
 class ModelWrapper:
@@ -14,18 +15,21 @@ class ModelWrapper:
         predictions = self.predict_batch(features)
         return predictions
 
-    def predict_dataset(self, dataset, total_steps):
-        outputs = {name[:-3]: [] for name, model in self.models.items()}
+    def predict_dataset(self, dataset, save_keys, total_steps):
+        outputs = {key: [] for key in save_keys}
+        outputs.update({key + "_gt": [] for key in save_keys})
         for step, features in enumerate(dataset):
             predictions = self.predict_batch(features)
-            outputs = self.append_outputs(predictions, outputs)
+            outputs = self.append_outputs(features, predictions, outputs)
             uf.print_progress_status(f"Progress: {step} / {total_steps}")
 
         print("")
         # concatenate batch outputs along batch axis
+        results = {}
         for key, data in outputs.items():
-            outputs[key] = np.concatenate(data, axis=0)
-        return outputs
+            if data:
+                results[key] = np.concatenate(data, axis=0)
+        return results
 
     def predict_batch(self, features, suffix=""):
         predictions = dict()
@@ -39,16 +43,25 @@ class ModelWrapper:
         predictions = {key + suffix: value for key, value in predictions.items()}
         return predictions
 
-    def append_outputs(self, predictions, outputs, suffix=""):
-        if ("pose" + suffix in predictions) and ("pose" + suffix in outputs):
-            pose = predictions["pose" + suffix]         # [batch, numsrc, 6]
-            outputs["pose" + suffix].append(pose)
+    def append_outputs(self, features, predictions, outputs, suffix=""):
+        if "pose" + suffix in outputs:
+            # [batch, numsrc, 6]
+            pose_gt = features["pose_gt" + suffix]
+            outputs["pose_gt" + suffix].append(pose_gt)
+            outputs["pose" + suffix].append(predictions["pose" + suffix])
         # only the highest resolution ouput is used for evaluation
-        if ("depth_ms" + suffix in predictions) and ("depth" + suffix in outputs):
-            depth_ms = predictions["depth_ms" + suffix] # [batch, height, width, 1]
+        if "depth" + suffix in outputs:
+            # [batch, height, width, 1]
+            depth_gt = features["depth_gt" + suffix]
+            outputs["depth_gt" + suffix].append(depth_gt)
+            depth_ms = predictions["depth_ms" + suffix]
             outputs["depth" + suffix].append(depth_ms[0])
-        if ("flow_ms" + suffix in predictions) and ("flow" + suffix in outputs):
-            flow_ms = predictions["flow_ms" + suffix]   # [batch, numsrc, height, width, 2]
+        if "flow" + suffix in outputs:
+            # [batch, numsrc, height, width, 2]
+            # TODO: add "flow_gt" to tfrecords
+            # flow_gt = features["flow_gt" + suffix]
+            # outputs["flow_gt" + suffix].append(flow_gt)
+            flow_ms = predictions["flow_ms" + suffix]
             outputs["flow" + suffix].append(flow_ms[0])
         return outputs
 
@@ -110,29 +123,6 @@ class StereoModelWrapper(ModelWrapper):
         preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
         return
-
-    def predict_dataset(self, dataset, total_steps):
-        outputs = {name[:-3]: [] for name, model in self.models.items()}
-        outputs_right = {name[:-3] + "_R": [] for name, model in self.models.items()}
-        outputs.update(outputs_right)
-
-        for step, features in enumerate(dataset):
-            predictions = self.predict_batch(features)
-            preds_right = self.predict_batch(features, "_R")
-            predictions.update(preds_right)
-            outputs = self.append_outputs(predictions, outputs)
-            outputs = self.append_outputs(predictions, outputs, "_R")
-            uf.print_progress_status(f"Progress: {step} / {total_steps}")
-
-        print("")
-        # concatenate batch outputs along batch axis
-        results = dict()
-        for key, data in outputs.items():
-            if data:
-                results[key] = tf.concat(data, axis=0)
-            else:
-                print(f"{key} is EMPTY!!")
-        return results
 
 
 class StereoPoseModelWrapper(StereoModelWrapper):

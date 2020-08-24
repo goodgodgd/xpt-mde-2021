@@ -21,8 +21,6 @@ def train_by_plan():
     for dataset_name, epoch, learning_rate, loss_weights in opts.TRAINING_PLAN:
         target_epoch += epoch
         train(dataset_name, target_epoch, learning_rate, loss_weights)
-    # predict()
-    # test_model_wrapper_output()
 
 
 def train(dataset_name, target_epoch, learning_rate, loss_weights):
@@ -64,6 +62,7 @@ def set_configs():
             # Currently, memory growth needs to be the same across GPUs
             for gpu in gpus:
                 tf.config.experimental.set_memory_growth(gpu, True)
+
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
             print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
         except RuntimeError as e:
@@ -76,7 +75,7 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(tfr_config, global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
-    model.compile(optimizer='sgd', loss='mean_absolute_error')
+    # model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
     loss_object = loss_factory(tfr_config, loss_weights, weights_to_regularize=model.weights_to_regularize())
     optimizer = optimizer_factory(opts.OPTIMIZER, learning_rate, initial_epoch)
@@ -94,8 +93,7 @@ def try_load_weights(model, weights_suffix='latest'):
 
 
 @StrategyDataset
-def get_dataset(dataset_name, split, shuffle):
-    batch_size = opts.BATCH_SIZE
+def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
     assert op.isdir(tfr_train_path)
     tfr_reader = TfrecordReader(tfr_train_path, shuffle=shuffle, batch_size=batch_size)
@@ -127,29 +125,30 @@ def save_model_weights(model, weights_suffix):
     model.save_weights(model_dir_path, weights_suffix)
 
 
-def predict(weight_name="latest.h5"):
+def predict_by_plan():
+    for dataset_name, save_keys in opts.TEST_PLAN:
+        predict(dataset_name, save_keys)
+
+
+def predict(dataset_name, save_keys, weights_suffix="latest"):
     set_configs()
-    model = ModelFactory(global_batch=1).get_model()
-    model = try_load_weights(model, weight_name)
-    model.compile(optimizer="sgd", loss="mean_absolute_error")
+    dataset, tfr_config, steps = get_dataset(dataset_name, "test", True)
+    model = ModelFactory(tfr_config).get_model()
+    model = try_load_weights(model, weights_suffix)
+    results = model.predict_dataset(dataset, save_keys, steps)
+    # {pose: [N, numsrc, 6], depth: [N, height, width, 1]}
+    for key, pred in results.items():
+        print(f"[predict] key={key}, shape={pred.shape}")
 
-    dataset, steps = get_dataset(opts.DATASET_TO_USE, "test", False)
-    # [disp_s1, disp_s2, disp_s4, disp_s8, pose] = model.predict({"image": ...})
-    # TODO: predict and collect outputs in for loop
-    predictions = model.predict(dataset, steps)
-    for key, pred in predictions.items():
-        print(f"prediction: key={key}, shape={pred.shape}")
-
-    save_predictions(opts.CKPT_NAME, predictions)
+    save_predictions(opts.CKPT_NAME, dataset_name, results)
 
 
-def save_predictions(ckpt_name, predictions):
+def save_predictions(ckpt_name, dataset_name, results):
     pred_dir_path = op.join(opts.DATAPATH_PRD, ckpt_name)
     print(f"save predictions in {pred_dir_path})")
     os.makedirs(pred_dir_path, exist_ok=True)
-    for key, value in predictions.items():
-        print(f"\tsave {key}.npy")
-        np.save(op.join(pred_dir_path, f"{key}.npy"), value)
+    print(f"\tsave {dataset_name}.npy")
+    np.savez(op.join(pred_dir_path, f"{dataset_name}.npz"), **results)
 
 
 # ==================== tests ====================
@@ -175,5 +174,19 @@ def test_model_wrapper_output():
         break
 
 
+def test_npz():
+    src = {"A": np.ones((5, 5), dtype=np.int32), "B": np.zeros((3, 3), dtype=np.float32)}
+    filename = "/home/ian/workspace/vode/test.npz"
+    np.savez(filename, **src)
+    dst = np.load(filename)
+    print("keys:", dst.files)
+    for key in dst.files:
+        print(f"key={key}, value={dst[key]}")
+    dst = {key: dst[key] for key in dst.files}
+    print("to dict:", dst)
+
+
 if __name__ == "__main__":
-    train_by_plan()
+    # train_by_plan()
+    predict_by_plan()
+
