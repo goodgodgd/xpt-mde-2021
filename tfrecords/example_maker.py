@@ -49,6 +49,7 @@ class ExampleMaker:
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
         example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
+
         example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:
             example["depth_gt"] = self.load_depth_map(frame_id, rawshape_hw, rszshape_hw)
@@ -76,7 +77,6 @@ class ExampleMaker:
             show_example(example, 200, print_param=True, suffix="_crop")
         elif index % 100 == 10:
             show_example(example, 200, suffix="_crop")
-
         example = self.verify_snippet(example)
         return example
 
@@ -221,6 +221,16 @@ class ExampleMaker:
             else:
                 col_beg = (rsz_w - dst_w) // 2
                 return 0, col_beg, dst_h, dst_w
+
+        elif self.dataset == "driving_stereo":
+            if (rsz_h > dst_h) and (rsz_w == dst_w):
+                row_beg = 0
+                return row_beg, 0, dst_h, dst_w
+            # crop horizontally: crop both left and right sides
+            else:
+                col_beg = (rsz_w - dst_w) // 2
+                return 0, col_beg, dst_h, dst_w
+
         else:
             assert 0, f"Wrong dataset to crop: {self.dataset}"
 
@@ -229,24 +239,76 @@ class ExampleMaker:
 # ======================================================================
 from config import opts
 from utils.util_funcs import print_progress_status
+import os.path as op
 
 
 # This test is FAILED !!!
 def test_static_frames():
-    data_keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR", "decode_type"]
-    shape_shwc = opts.get_img_shape("SHWC")
-    maker = ExampleMaker("driving_stereo", "train", shape_shwc, data_keys)
-    drive_path = "/media/ian/IanBook/datasets/raw_zips/driving_stereo/train-left-image/2018-07-16-15-18-53.zip"
+    # TODO : Test by changing variables below
+    # delete_static_sequence(image_seq, pixel_threshold, static_img_count)
+    count = 0
+    drive_ids = ["0001", "0002", "0005", "0009"]
+    # data_keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR", "decode_type"]
+    data_keys = ["image", "intrinsic", "depth_gt", "image_R", "intrinsic_R", "stereo_T_LR", "decode_type", "pose_gt"]
+    # change when testing : img shapes are different per datset. Try testing with different dataset
+    # kitti :
+    # shape_shwc = opts.get_img_shape("SHWC", "kitti_raw")
+    # maker = ExampleMaker("kitti_raw", "train", shape_shwc, data_keys, "/media/ian/IanBook2/datasets/kitti_raw_data")
+    # drive_path = "/media/ian/IanBook2/datasets/kitti_raw_data/2011_09_26.zip"
+    # maker.init_reader(("2011_09_26", "0087"))
+
+    # waymo
+    # shape_shwc = opts.get_img_shape()
+    shape_shwc = opts.get_img_shape("SHWC", "waymo")
+    #print(shape_shwc)
+    maker = ExampleMaker("waymo", "train", shape_shwc, data_keys)
+    drive_path = "/media/ian/IanBook2/datasets/waymo/training_0001"
     maker.init_reader(drive_path)
     frame_indices = maker.get_range()
+    print("len frame indices : ", len(frame_indices))
     for index in frame_indices:
         try:
             example = maker.get_example(index)
             print_progress_status(f"index: {index} / {frame_indices[-1]}")
-            check_static_snippet(example, shape_shwc)
+            # threshold ratio set
+            print(f"{index}=th example keys : ", example.keys())
+            if "image" not in list(example.keys()):
+                pass
+            else:
+                delete_static_sequence(example["image"], 10, count)
+            # check_static_snippet(example, shape_shwc)
+            # print(example)
         except ValueError as ve:
             print("\n[ValueError]", ve)
 
+
+def delete_static_sequence(image_seq, pixel_threshold, static_img_count):
+    dynamic_frames = list()
+    height, width, _ = image_seq.shape
+    height_single_frame = height // 5
+    for i in range(4):
+        target_frame = image_seq[(4 * height_single_frame):, :, :]
+        current_frame = image_seq[(i * height_single_frame): ((i+1) * height_single_frame), :, :]
+        img_differency = target_frame[: height_single_frame // 4, :, :] - current_frame[: height_single_frame // 4, :, :]
+        num_diff_pixels = np.cast['int'](np.absolute(img_differency) >= pixel_threshold)
+        different_pixels = np.sum(num_diff_pixels)
+
+        if (different_pixels // 3) > ((height_single_frame // 5) * (width // 10)):
+            print("\n The number of dynamic different pixel : ", different_pixels // 4)
+            dynamic_frames.append(current_frame)
+        else:
+            print("\n The number of static different pixel : ", different_pixels // 4)
+
+    if len(dynamic_frames) < 3:
+        static_img_count += 1
+        print("static image sequence detected !")
+        cv2.imshow("static image", image_seq)
+        cv2.waitKey(0)
+        return image_seq
+    else:
+        cv2.imshow("dynamic image", image_seq)
+        # print("dynamic image sequence")
+        return image_seq
 
 def check_static_snippet(example, shape_shwc):
     height = shape_shwc[1]

@@ -24,6 +24,7 @@ def convert_tar_to_vanilla_zip():
     tar_files = glob(tar_pattern)
     print("tar files:", tar_pattern, tar_files)
     tar_files = [file for file in tar_files if "frontcenter" not in file]
+
     for ti, tar_name in enumerate(tar_files):
         print("\n====== open tar file:", op.basename(tar_name))
         tfile = tarfile.open(tar_name, 'r')

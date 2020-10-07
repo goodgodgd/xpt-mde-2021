@@ -166,7 +166,7 @@ from config import opts
 
 def test_waymo_reader():
     for di in range(0, 28):
-        drive_path = f"/media/ian/IanBook/datasets/waymo/training_{di:04d}"
+        drive_path = f"/media/ian/IanBook2/datasets/waymo/training_{di:04d}"
         print("\n!!! New drive start !!!", drive_path)
         reader = WaymoReader("train")
         reader.init_drive(drive_path)

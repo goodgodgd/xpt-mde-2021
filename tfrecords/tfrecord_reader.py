@@ -76,6 +76,8 @@ class TfrecordReader:
         return self.dataset_process(dataset)
 
     def parse_example(self, example):
+        # print(self.features_dict.keys())
+        print("example : ", example)
         parsed = tf.io.parse_single_example(example, self.features_dict)
         decoded = {}
         for key, feat_conf in self.config.items():
