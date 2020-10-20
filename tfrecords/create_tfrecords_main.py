@@ -31,11 +31,10 @@ def convert_to_tfrecords_directly():
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
     dstshape = opts.get_img_shape("SHWC", dataset.split('__')[0])
-    crop = False if dataset not in opts.IMAGE_CROP else opts.IMAGE_CROP[dataset]
     if dataset == "kitti_raw":
-        return tm.KittiRawTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape, crop)
+        return tm.KittiRawTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset == "kitti_odom":
-        return tm.KittiOdomTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape, crop)
+        return tm.KittiOdomTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset.startswith("cityscapes"):
         return tm.CityscapesTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset is "waymo":

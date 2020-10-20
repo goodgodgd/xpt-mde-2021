@@ -46,7 +46,7 @@ class CityscapesReader(DataReaderBase):
             if sub_drive_indices:
                 self.target_indices.extend(sub_drive_indices)
 
-        print("[get_range_] target_indices:", self.target_indices[20:40], self.target_indices[50:70])
+        # print("[get_range_] target_indices:", self.target_indices[20:40], self.target_indices[50:70])
         return self.target_indices
 
     def get_image(self, index, right=False):

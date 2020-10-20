@@ -9,9 +9,8 @@ import copy
 import utils.util_funcs as uf
 import utils.util_class as uc
 from tfrecords.example_maker import ExampleMaker
-from tfrecords.tfr_util import Serializer, inspect_properties#, delete_static_sequence
+from tfrecords.tfr_util import Serializer, inspect_properties
 from utils.util_class import MyExceptionToCatch
-
 
 
 class TfrecordMakerBase:
@@ -34,7 +33,7 @@ class TfrecordMakerBase:
         self.serialize_example = Serializer()
         self.writer = None
         self.pm = uc.PathManager([""])
-
+        self.error_count = 0
 
     def list_drive_paths(self, srcpath, split):
         raise NotImplementedError()
@@ -64,8 +63,8 @@ class TfrecordMakerBase:
                 self.example_maker.init_reader(drive_path)
                 loop_range = self.example_maker.get_range()
                 num_frames = self.example_maker.num_frames()
-
                 first_example = dict()
+
                 for ii, index in enumerate(loop_range):
                     if (frame_per_drive > 0) and (self.example_count_in_drive >= frame_per_drive):
                         break
@@ -74,27 +73,18 @@ class TfrecordMakerBase:
 
                     try:
                         example = self.example_maker.get_example(index)
-                        # self.check_example(first_example, example)
-                    except StopIteration as si: # raised from xxx_reader._get_frame()
+                    except StopIteration as si:         # raised from xxx_reader._get_frame()
                         print("\n[StopIteration] stop this drive", si)
                         break
                     except MyExceptionToCatch as ve:    # raised from xxx_reader._get_frame()
                         uf.print_progress_status(f"==[making TFR] (Exception) frame: {ii}/{num_frames}, {ve}")
-                        # if ve.msg.startswith("None"):
-                        #     print("")
                         continue
-                        dynamic_example = copy.deepcopy(example["image"])
-                        print(dynamic_example)
-                        # print("example keys : ", example.keys())
-                        # dynamic_example = delete_static_sequence(example["image"])
-                        if dynamic_example is not None:
-                            example["image"] = dynamic_example
-                        else:
-                            example = dict()
 
                     if not example:             # when dict is empty, skip this index
                         uf.print_progress_status(f"==[making TFR] INVALID example, frame: {ii}/{num_frames}")
                         continue
+
+                    first_example = self.check_example_keys(first_example, example)
                     example_serial = self.serialize_example(example)
                     self.write_tfrecord(example_serial, di)
                     uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives} | "
@@ -102,20 +92,23 @@ class TfrecordMakerBase:
                                              f"total: {self.total_example_count} | "
                                              f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
                 print("")
-                self.write_tfrecord_config(example)
+                self.write_tfrecord_config(first_example)
             pm.set_ok()
         self.wrap_up()
 
     def init_drive_tfrecord(self, drive_index=0):
         raise NotImplementedError()
 
-    def check_example(self, first_example, example):
+    def check_example_keys(self, first_example, example):
         if not first_example:
             first_example = copy.deepcopy(example)
         first_keys = [key for key, val in first_example.items() if val is not None]
         curre_keys = [key for key, val in example.items() if val is not None]
-        if first_keys == curre_keys:
-            raise uc.MyExceptionToCatch(f"None different keys: {list(first_keys)} != {list(curre_keys)}")
+        if first_keys != curre_keys:
+            print(f"[WARNING] Count: {self.error_count}, Different keys: {list(first_keys)} != {list(curre_keys)}")
+            self.error_count += 1
+            assert self.error_count < 10
+        return first_example
 
     def write_tfrecord(self, example_serial, drive_index):
         self.writer.write(example_serial)
@@ -188,12 +181,11 @@ class TfrecordMakerSingleDir(TfrecordMakerBase):
 
 # For ONLY kitti dataset, tfrecords are generated from extracted files
 class KittiRawTfrecordMaker(TfrecordMakerSingleDir):
-    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape, crop=False):
-        self.crop = crop
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
 
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
-        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath, crop=self.crop)
+        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
 
     def list_drive_paths(self, srcpath, split):
         # create drive paths like : ("2011_09_26", "0001")
@@ -210,12 +202,11 @@ class KittiRawTfrecordMaker(TfrecordMakerSingleDir):
 
 # For ONLY kitti dataset, tfrecords are generated from extracted files
 class KittiOdomTfrecordMaker(TfrecordMakerSingleDir):
-    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape, crop=False):
-        self.crop = crop
+    def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):
         super().__init__(dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape)
 
     def get_example_maker(self, dataset, split, shwc_shape, data_keys):
-        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath, crop=self.crop)
+        return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
 
     def list_drive_paths(self, srcpath, split):
         # create drive paths like : "00"
