@@ -80,7 +80,7 @@ class TfrecordMakerBase:
                         uf.print_progress_status(f"==[making TFR] (Exception) frame: {ii}/{num_frames}, {ve}")
                         continue
 
-                    if not example:             # when dict is empty, skip this index
+                    if 'image' not in example:             # when dict is empty, skip this index
                         uf.print_progress_status(f"==[making TFR] INVALID example, frame: {ii}/{num_frames}")
                         continue
 
@@ -91,6 +91,7 @@ class TfrecordMakerBase:
                                              f"drive: {ii}/{num_frames}, count: {self.example_count_in_drive} | "
                                              f"total: {self.total_example_count} | "
                                              f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
+
                 print("")
                 self.write_tfrecord_config(first_example)
             pm.set_ok()
@@ -125,6 +126,8 @@ class TfrecordMakerBase:
         raise NotImplementedError()
 
     def write_tfrecord_config(self, example):
+        if ('image' not in example) or (example['image'] is None):
+            return
         config = inspect_properties(example)
         config["length"] = self.example_count_in_drive
         config["imshape"] = self.shwc_shape
