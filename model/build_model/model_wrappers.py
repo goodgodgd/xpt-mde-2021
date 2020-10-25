@@ -122,7 +122,7 @@ class StereoModelWrapper(ModelWrapper):
         predictions = self.predict_batch(features)
         preds_right = self.predict_batch(features, "_R")
         predictions.update(preds_right)
-        return
+        return predictions
 
 
 class StereoPoseModelWrapper(StereoModelWrapper):

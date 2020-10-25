@@ -1,9 +1,10 @@
 import tensorflow as tf
 import tensorflow_addons as tfa
 from tensorflow.keras import layers
-from model.synthesize.bilinear_interp import FlowBilinearInterpolation
 
+from model.synthesize.bilinear_interp import FlowBilinearInterpolation
 import settings
+# Ref: https://github.com/NVlabs/PWC-Net/blob/master/PyTorch/models/PWCNet.py
 
 
 class PWCNet:

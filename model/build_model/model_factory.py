@@ -24,7 +24,8 @@ class ModelFactory:
         self.global_batch = global_batch
         self.dataset_cfg = dataset_cfg
         self.bshwc_shape = [global_batch] + dataset_cfg["imshape"]
-        self.net_names = net_names
+        self.net_names = opts.NET_NAMES if net_names is None else net_names
+        print("[ModelFactory] net names:", self.net_names)
         self.activation = depth_activation
         self.pretrained_weight = pretrained_weight
         self.stereo = stereo
@@ -50,7 +51,7 @@ class ModelFactory:
             flownet = self.flow_net_factory(self.net_names["flow"], conv_flow)
             models["flownet"] = flownet
 
-        if "stereo_T_LR" in self.dataset_cfg:
+        if ("stereo_T_LR" in self.dataset_cfg) and ("depth" in self.net_names):
             model_wrapper = mw.StereoPoseModelWrapper(models)
         elif ("image_R" in self.dataset_cfg) and self.stereo:
             model_wrapper = mw.StereoModelWrapper(models)
