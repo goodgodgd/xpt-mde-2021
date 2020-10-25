@@ -97,7 +97,11 @@ class KittiRawReader(DataReaderBase):
     Private methods used inside this class
     """
     def _create_drive_loader(self, drive_key):
+        # print("confirm drive key : ", drive_key)
         date, drive_id = drive_key
+        print("base path : ", self.base_path)
+        print("date : ", date)
+        print("drive id : ", drive_id)
         return pykitti.raw(self.base_path, date, drive_id)
 
     def _list_nonstatic_frame_ids(self, drive_key):
@@ -472,8 +476,8 @@ def test_crop_image():
 
 
 if __name__ == "__main__":
-    # test_kitti_raw_reader()
+    test_kitti_raw_reader()
     # test_kitti_odom_reader()
     # test_kitti_raw_synthesis()
-    test_crop_image()
+    # test_crop_image()
 

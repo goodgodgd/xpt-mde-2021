@@ -95,6 +95,7 @@ def try_load_weights(model, weights_suffix='latest'):
 @StrategyDataset
 def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
     tfr_train_path = op.join(opts.DATAPATH_TFR, f"{dataset_name}_{split}")
+    print("tfr path : ", tfr_train_path)
     assert op.isdir(tfr_train_path)
     tfr_reader = TfrecordReader(tfr_train_path, shuffle=shuffle, batch_size=batch_size)
     dataset = tfr_reader.get_dataset()
@@ -187,6 +188,6 @@ def test_npz():
 
 
 if __name__ == "__main__":
-    # train_by_plan()
+    train_by_plan()
     predict_by_plan()
 

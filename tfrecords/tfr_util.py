@@ -145,4 +145,3 @@ def show_example(example, wait=0, print_param=False, max_height=1000, suffix="")
 
     cv2.waitKey(wait)
 
-

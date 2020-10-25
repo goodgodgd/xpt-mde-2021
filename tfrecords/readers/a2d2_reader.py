@@ -24,6 +24,7 @@ def convert_tar_to_vanilla_zip():
     tar_files = glob(tar_pattern)
     print("tar files:", tar_pattern, tar_files)
     tar_files = [file for file in tar_files if "frontcenter" not in file]
+
     for ti, tar_name in enumerate(tar_files):
         print("\n====== open tar file:", op.basename(tar_name))
         tfile = tarfile.open(tar_name, 'r')
@@ -157,6 +158,7 @@ class A2D2Reader(DataReaderBase):
         image_bytes = self.zip_files[zipkey].open(image_name)
         image = Image.open(image_bytes)
         image = np.array(image, np.uint8)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         # image = self.sensor_config.undistort_image(image, cam_dir)
         return image
 

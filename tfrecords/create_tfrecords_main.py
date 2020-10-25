@@ -12,6 +12,7 @@ def convert_to_tfrecords_directly():
     for dataset, splits in datasets.items():
         for split in splits:
             tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset.split('__')[0]}_{split}")
+
             if op.isdir(tfrpath):
                 print("[convert_to_tfrecords] tfrecord already created in", op.basename(tfrpath))
                 continue
@@ -24,17 +25,16 @@ def convert_to_tfrecords_directly():
         tfrpath = op.join(opts.DATAPATH_TFR, f"{dataset.split('__')[0]}_val")
         if op.isdir(tfrpath):
             print("[convert_to_tfrecords] tfrecord already created in", op.basename(tfrpath))
-            continue
-        generate_validation_tfrecords(tfrpath, opts.VALIDATION_FRAMES)
+        else:
+            generate_validation_tfrecords(tfrpath, opts.VALIDATION_FRAMES)
 
 
 def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
     dstshape = opts.get_img_shape("SHWC", dataset.split('__')[0])
-    crop = False if dataset not in opts.IMAGE_CROP else opts.IMAGE_CROP[dataset]
     if dataset == "kitti_raw":
-        return tm.KittiRawTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape, crop)
+        return tm.KittiRawTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset == "kitti_odom":
-        return tm.KittiOdomTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape, crop)
+        return tm.KittiOdomTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset.startswith("cityscapes"):
         return tm.CityscapesTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset is "waymo":

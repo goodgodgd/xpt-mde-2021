@@ -46,7 +46,7 @@ class CityscapesReader(DataReaderBase):
             if sub_drive_indices:
                 self.target_indices.extend(sub_drive_indices)
 
-        print("[get_range_] target_indices:", self.target_indices[20:40], self.target_indices[50:70])
+        # print("[get_range_] target_indices:", self.target_indices[20:40], self.target_indices[50:70])
         return self.target_indices
 
     def get_image(self, index, right=False):
@@ -57,6 +57,7 @@ class CityscapesReader(DataReaderBase):
             image_bytes = self.zip_files["leftImg"].open(self.frame_names[index])
         image = Image.open(image_bytes)
         image = np.array(image, np.uint8)
+        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         return image
 
     def get_pose(self, index, right=False):
@@ -70,14 +71,17 @@ class CityscapesReader(DataReaderBase):
 
         disp_name = self.frame_names[index].replace("leftImg8bit", "disparity")
         # disp_name = disp_name.replace("leftImg8bit", "disparity")
-        disp_bytes = self.zip_files["disparity"].open(disp_name)
-        disp = Image.open(disp_bytes)
-        disp = np.array(disp, np.uint16).astype(np.float32)
-        disp[disp > 0] = (disp[disp > 0] - 1) / 256.
-        depth = np.zeros(disp.shape, dtype=np.float32)
-        depth[disp > 0] = (fx * baseline) / disp[disp > 0]     # depth = baseline * focal length / disparity
-        depth = resize_depth_map(depth, srcshape_hw, dstshape_hw)
-        return depth.astype(np.float32)
+        if disp_name not in self.zip_files['disparity'].namelist():
+            pass
+        else:
+            disp_bytes = self.zip_files["disparity"].open(disp_name)
+            disp = Image.open(disp_bytes)
+            disp = np.array(disp, np.uint16).astype(np.float32)
+            disp[disp > 0] = (disp[disp > 0] - 1) / 256.
+            depth = np.zeros(disp.shape, dtype=np.float32)
+            depth[disp > 0] = (fx * baseline) / disp[disp > 0]     # depth = baseline * focal length / disparity
+            depth = resize_depth_map(depth, srcshape_hw, dstshape_hw)
+            return depth.astype(np.float32)
 
     def get_intrinsic(self, index=0, right=False):
         params = self._get_camera_param(index)
@@ -126,14 +130,15 @@ from tfrecords.tfr_util import apply_color_map
 
 
 def test_city_reader():
-    srcpath = "/media/ian/IanBook/datasets/raw_zips/cityscapes/leftImg8bit_sequence_trainvaltest.zip"
+    srcfile = op.join(opts.get_raw_data_path("cityscapes__sequence"), "leftImg8bit_sequence_trainvaltest.zip")
+    # srcfile = opts.get_raw_data_path("cityscapes__extra")
     zip_files = dict()
-    zip_files["leftImg"] = zipfile.ZipFile(srcpath, "r")
-    if srcpath.endswith("sequence_trainvaltest.zip"):
-        zip_files["camera"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_sequence_", "/camera_"), "r")
+    zip_files["leftImg"] = zipfile.ZipFile(srcfile, "r")
+    if srcfile.endswith("sequence_trainvaltest.zip"):
+        zip_files["camera"] = zipfile.ZipFile(srcfile.replace("/leftImg8bit_sequence_", "/camera_"), "r")
     else:
-        zip_files["camera"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/camera_"), "r")
-    zip_files["disparity"] = zipfile.ZipFile(srcpath.replace("/leftImg8bit_", "/disparity_"), "r")
+        zip_files["camera"] = zipfile.ZipFile(srcfile.replace("/leftImg8bit_", "/camera_"), "r")
+    zip_files["disparity"] = zipfile.ZipFile(srcfile.replace("/leftImg8bit_", "/disparity_"), "r")
     drive_paths = list_drive_paths(zip_files["leftImg"].namelist())
 
     for drive_path in drive_paths:
@@ -153,7 +158,7 @@ def test_city_reader():
             depth_view = apply_color_map(depth)
             cv2.imshow("image", view)
             cv2.imshow("dstdepth", depth_view)
-            key = cv2.waitKey(2000)
+            key = cv2.waitKey(500)
             if key == ord('q'):
                 break
 
