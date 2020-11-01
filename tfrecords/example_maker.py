@@ -7,6 +7,7 @@ from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.driving_reader import DrivingStereoReader
 from tfrecords.readers.a2d2_reader import A2D2Reader
 from tfrecords.tfr_util import show_example
+from utils.util_class import MyExceptionToCatch
 
 
 class ExampleMaker:
@@ -187,12 +188,14 @@ class ExampleMaker:
 
             min_dist = np.min(distances)
             if min_dist < 0.2:
-                return dict()   # empty dict means skip this frame
+                raise MyExceptionToCatch("[verify_snippet] poses is not moving")
 
             max_dist = np.max(distances)
             if max_dist > 10.:
                 print("\n  Change scene? distance=", max_dist)
-                return dict()   # empty dict means skip this frame
+                raise MyExceptionToCatch("[verify_snippet] scene is changing")
+
+        example = {key: val for key, val in example.items() if val is not None}
         return example
 
     def crop_example(self, example, rszshape_hw):

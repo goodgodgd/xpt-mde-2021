@@ -52,13 +52,15 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
     train_result = results_train.mean(axis=0).to_dict()
     val_result = results_val.mean(axis=0).to_dict()
 
-    epoch_result = {"epoch": f"{epoch:<5}", "dataset": f"{dataset_name[:7]:<7}"}
+    epoch_result = {"epoch": f"{epoch:>5}", "dataset": f"{dataset_name[:7]:<7}"}
     for colname in columns:
-        epoch_result[TRAIN_PREFIX + colname] = train_result[colname]
+        if colname in train_result:
+            epoch_result[TRAIN_PREFIX + colname] = train_result[colname]
     seperator = "  |   "
     epoch_result[seperator] = seperator
     for colname in columns:
-        epoch_result[VALID_PREFIX + colname] = val_result[colname]
+        if colname in val_result:
+            epoch_result[VALID_PREFIX + colname] = val_result[colname]
     epoch_result = to_fixed_width_column(epoch_result)
 
     # save "how-to-read-columns.json"
@@ -116,12 +118,13 @@ def draw_and_save_plot(results, filename):
     fig, axes = plt.subplots(3, 1)
     fig.set_size_inches(7, 7)
     for i, ax, colname, title in zip(range(3), axes, ['loss ', 'TE   ', 'RE   '], ['Loss', 'Trajectory Error', 'Rotation Error']):
-        ax.plot(results['epoch'].astype(int), results[TRAIN_PREFIX + colname], label='train_' + colname)
-        ax.plot(results['epoch'].astype(int), results[VALID_PREFIX + colname], label='val_' + colname)
-        ax.set_xlabel('epoch')
-        ax.set_ylabel(colname)
-        ax.set_title(title)
-        ax.legend()
+        if TRAIN_PREFIX + colname in results:
+            ax.plot(results['epoch'].astype(int), results[TRAIN_PREFIX + colname], label='train_' + colname)
+            ax.plot(results['epoch'].astype(int), results[VALID_PREFIX + colname], label='val_' + colname)
+            ax.set_xlabel('epoch')
+            ax.set_ylabel(colname)
+            ax.set_title(title)
+            ax.legend()
     fig.tight_layout()
     # save graph as a file
     filepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, filename)

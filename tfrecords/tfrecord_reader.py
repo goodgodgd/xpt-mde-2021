@@ -69,6 +69,7 @@ class TfrecordReader:
         """
         file_pattern = f"{self.tfrpath}/*.tfrecord"
         filenames = tf.io.gfile.glob(file_pattern)
+        filenames.sort()
         print("[tfrecord reader]", file_pattern, filenames)
         dataset = tf.data.TFRecordDataset(filenames)
 
@@ -115,16 +116,20 @@ class TfrecordReader:
 # --------------------------------------------------------------------------------
 # TESTS
 
+
 def test_read_dataset():
     """
     Test if TfrecordReader works fine and print keys and shapes of input tensors
     """
-    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "kitti_raw_val"))
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "cityscapes_train"))
     dataset = tfrgen.get_dataset()
     for i, x in enumerate(dataset):
-        if i == 100:
-            break
-        print("===== index:", i)
+        # if i == 100:
+        #     break
+        uf.print_progress_status(f"===== index: {i}, imshape: {x['image'].get_shape()}")
+        # print("===== index:", i)
+        continue
+
         for key, value in x.items():
             print(f"x shape and type: {key}={value.shape}, {value.dtype}")
 

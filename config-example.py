@@ -25,7 +25,7 @@ class FixedOptions:
 
     IMAGE_SIZES = {"kitti_raw": (128, 512),
                    "kitti_odom": (128, 512),
-                   "cityscapes": (192, 384),
+                   "cityscapes": (192, 448),
                    "waymo": (256, 384),
                    "a2d2": (256, 512),
                    "driving_stereo": (192, 384),
