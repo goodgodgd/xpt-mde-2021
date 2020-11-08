@@ -41,8 +41,8 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
     저장된 csv 파일에서 하나의 column 너비는 가급적 6 글자가 되도록 맞춘다.
     예시:
         epoch,dataset,:loss ,:TE   ,:RE   ,  |   ,!loss ,!TE   ,!RE
-        0    ,kitti_r,1.9476,1.3867,0.0130,  |   ,1.1700,0.2056,0.0065
-        1    ,kitti_r,1.8911,1.3442,0.0129,  |   ,1.1845,0.2120,0.0051
+            0,kitti_r,1.9476,1.3867,0.0130,  |   ,1.1700,0.2056,0.0065
+            1,kitti_r,1.8911,1.3442,0.0129,  |   ,1.1845,0.2120,0.0051
 
     - column 이름에서 ':'는 training 결과를 말하고 '!'는 validation 결과를 뜻한다.
     - 6글자에 맞추기 위해 단어들을 줄여서 썼는데 약자들은 상단의 RENAMER나
@@ -82,7 +82,10 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
         val_cols = [col for col in list(results) if col.startswith(VALID_PREFIX)]
         columns = ["epoch", "dataset"] + train_cols + [seperator] + val_cols
         results = results.loc[:, columns]
+        # reorder rows
+        results["epoch"] = results["epoch"].map(lambda x: int(x))
         results = results.sort_values(by=['epoch'])
+        results["epoch"] = results["epoch"].map(lambda x: f"{x:>5}")
     else:
         results = pd.DataFrame([epoch_result])
 
