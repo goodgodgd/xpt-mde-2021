@@ -153,13 +153,20 @@ class ModelValidaterDistrib(ModelValidater):
 
 
 def merge_results(features, preds, loss, loss_by_type, stereo):
-    trjerr, roterr = get_metric_pose(preds, features, stereo)
-    depths = get_center_depths(features, preds)
+    batch_result = {"loss": loss.numpy()}
+    log_msg = f"loss = {loss.numpy():1.4f}"
+    if "pose" in preds:
+        trjerr, roterr = get_metric_pose(preds, features, stereo)
+        batch_result["trjerr"] = trjerr
+        batch_result["roterr"] = roterr
+        log_msg += f", metric={trjerr:1.4f}, {roterr:1.4f}"
+    if "depth_ms" in preds:
+        depths = get_center_depths(features, preds)
+        batch_result["gtdepth"] = depths[0, 0]
+        batch_result["prdepth"] = depths[1, 0]
+        log_msg += f", prdepth={depths[1, 0]:1.4f}"
     loss_by_type = {key: loss.numpy() for key, loss in loss_by_type.items()}
-    batch_result = {"loss": loss.numpy(), "trjerr": trjerr, "roterr": roterr,
-                    "gtdepth": depths[0, 0], "prdepth": depths[1, 0]}
     batch_result.update(loss_by_type)
-    log_msg = f"loss = {loss.numpy():1.4f}, metric={trjerr:1.4f}, {roterr:1.4f}, prdepth={depths[1, 0]:1.4f}"
     return batch_result, log_msg
 
 
@@ -202,14 +209,18 @@ def inspect_model(preds, features, step, steps_per_epoch):
         return
 
     print("")
-    print("depth0 ", np.quantile(preds["depth_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
-    print("upconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
-    print("depth3 ", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
-    print("upconv3", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
+    if "depth_ms" in preds:
+        print("depth0 ", np.quantile(preds["depth_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
+        print("depth3 ", np.quantile(preds["depth_ms"][3].numpy(), np.arange(0.1, 1, 0.1)))
+    if "debug_out" in preds:
+        print("upconv0", np.quantile(preds["debug_out"][0].numpy(), np.arange(0.1, 1, 0.1)))
+        print("upconv3", np.quantile(preds["debug_out"][1].numpy(), np.arange(0.1, 1, 0.1)))
     # flow: [batch, numsrc, height/4, width/4, 2] (4, 4, 32, 96, 2)
-    print("flow0  ", np.quantile(preds["flow_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
+    if "flow_ms" in preds:
+        print("flow0  ", np.quantile(preds["flow_ms"][0].numpy(), np.arange(0.1, 1, 0.1)))
     # pose: [batch, numsrc, 6]
-    print("pose_pr", preds["pose"][0, 0, :3].numpy(), preds["pose"][0, 1, :3].numpy())
+    if "pose" in preds:
+        print("pose_pr", preds["pose"][0, 0, :3].numpy(), preds["pose"][0, 1, :3].numpy())
     # pose_gt: [batch, numsrc, 4, 4]
     if "pose_gt" in features:
         print("pose_gt", features["pose_gt"][0, 0, :3, 3].numpy(), features["pose_gt"][0, 1, :3, 3].numpy())

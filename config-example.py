@@ -96,7 +96,7 @@ class VodeOptions(FixedOptions):
     """
     training options
     """
-    CKPT_NAME = "vode2"
+    CKPT_NAME = "vode3"
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
@@ -121,6 +121,11 @@ class VodeOptions(FixedOptions):
         "flowL2": 1., "flowL2_R": 1.,
         "flow_reg": 4e-7
     }
+    LOSS_WEIGHTS_FLOW = {
+        "flowL2": 1., "flowL2_R": 1.,
+        "flow_reg": 4e-7
+    }
+
     TRAINING_PLAN = [
         # pretraining first round
         ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
@@ -136,6 +141,14 @@ class VodeOptions(FixedOptions):
         ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
         # fine tuning
         ("kitti_raw",       10, 0.0001, LOSS_WEIGHTS_T1),
+    ]
+    TRAINING_FLOW_PLAN = [
+        # pretraining first round
+        ("kitti_raw",       5, 0.0001, LOSS_WEIGHTS_FLOW),
+        ("kitti_odom",      5, 0.0001, LOSS_WEIGHTS_FLOW),
+        ("a2d2",            5, 0.0001, LOSS_WEIGHTS_FLOW),
+        ("waymo",           5, 0.0001, LOSS_WEIGHTS_FLOW),
+        ("cityscapes",      5, 0.0001, LOSS_WEIGHTS_FLOW),
     ]
     TEST_PLAN = [
         ("kitti_raw",       ["depth"]),

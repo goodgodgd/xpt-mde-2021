@@ -37,9 +37,8 @@ class TotalLoss:
         if self.stereo and ("image_R" in features):
             augm_data_rig = self.append_data(features, predictions, "_R")
             augm_data.update(augm_data_rig)
-            if self.stereo and ("stereo_T_LR" in features):
-                augm_data_stereo = self.synethesize_stereo(features, predictions, augm_data)
-                augm_data.update(augm_data_stereo)
+            augm_data_stereo = self.synethesize_stereo(features, predictions, augm_data)
+            augm_data.update(augm_data_stereo)
 
         losses = []
         loss_by_type = dict()
@@ -74,21 +73,22 @@ class TotalLoss:
                 warped_target_ms: multi scale flow warped target frames generated from each source image,
                                 list of [batch, numsrc, height/scale, width/scale, 3]
         """
-        augm_data = dict()
-        pred_depth_ms = predictions["depth_ms" + suffix]
-        pred_pose = predictions["pose" + suffix]
-
         image5d = features["image5d" + suffix]
         intrinsic = features["intrinsic" + suffix]
         source_image = image5d[:, :-1]
         target_image = image5d[:, -1]
-        target_ms = uf.multi_scale_like_depth(target_image, pred_depth_ms)
+        augm_data = dict()
         augm_data["source" + suffix] = source_image
         augm_data["target" + suffix] = target_image
-        augm_data["target_ms" + suffix] = target_ms
-        # synthesized image is used in both L1 and SSIM photometric losses
-        synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, pred_depth_ms, pred_pose)
-        augm_data["synth_target_ms" + suffix] = synth_target_ms
+
+        if ("depth_ms" + suffix in predictions) and ("pose" + suffix in predictions):
+            pred_depth_ms = predictions["depth_ms" + suffix]
+            pred_pose = predictions["pose" + suffix]
+            target_ms = uf.multi_scale_like_depth(target_image, pred_depth_ms)
+            augm_data["target_ms" + suffix] = target_ms
+            # synthesized image is used in both L1 and SSIM photometric losses
+            synth_target_ms = SynthesizeMultiScale()(source_image, intrinsic, pred_depth_ms, pred_pose)
+            augm_data["synth_target_ms" + suffix] = synth_target_ms
 
         # warped image is used in both L1 and SSIM photometric losses
         if "flow_ms" + suffix in predictions:
@@ -113,6 +113,9 @@ class TotalLoss:
                 target: target frame [batch, height, width, 3]
         """
         synth_stereo = dict()
+        if ("stereo_T_LR" not in features) or ("depth_ms" not in predictions):
+            return synth_stereo
+
         # synthesize left image from right image
         pose_T_RL = tf.linalg.inv(features["stereo_T_LR"])
         pose_T_RL = cp.pose_matr2rvec_batch(tf.expand_dims(pose_T_RL, 1))
@@ -183,6 +186,9 @@ class PhotometricLossMultiScale(PhotometricLoss):
 
 
 class MonoDepth2LossMultiScale(PhotometricLoss):
+    """
+    compare photo losses of source images and take only min of source losses for each pixel
+    """
     def __init__(self, method, key_suffix=""):
         super().__init__(method, key_suffix)
 
@@ -218,6 +224,9 @@ class MonoDepth2LossMultiScale(PhotometricLoss):
 
 
 class CombinedLossMultiScale(PhotometricLoss):
+    """
+    mask static flow loss where static flow < optical flow, and average masked static loss
+    """
     def __init__(self, method, key_suffix=""):
         super().__init__(method, key_suffix)
 

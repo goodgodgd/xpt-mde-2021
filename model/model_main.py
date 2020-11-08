@@ -23,7 +23,14 @@ def train_by_plan():
         train(dataset_name, target_epoch, learning_rate, loss_weights)
 
 
-def train(dataset_name, target_epoch, learning_rate, loss_weights):
+def train_flow_by_plan():
+    target_epoch = 0
+    for dataset_name, epoch, learning_rate, loss_weights in opts.TRAINING_FLOW_PLAN:
+        target_epoch += epoch
+        train(dataset_name, target_epoch, learning_rate, loss_weights, net_names={"flow": "PWCNet"})
+
+
+def train(dataset_name, target_epoch, learning_rate, loss_weights, net_names=None):
     initial_epoch = uf.read_previous_epoch(opts.CKPT_NAME)
     if target_epoch <= initial_epoch:
         print(f"!! target_epoch {target_epoch} <= initial_epoch {initial_epoch}, no need to train")
@@ -34,7 +41,7 @@ def train(dataset_name, target_epoch, learning_rate, loss_weights):
     dataset_train, tfr_config, train_steps = get_dataset(dataset_name, "train", True)
     dataset_val, _, val_steps = get_dataset(dataset_name, "val", False)
     model, augmenter, loss_object, optimizer = \
-        create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights)
+        create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights, net_names)
     trainer, validater = tv.train_val_factory(opts.TRAIN_MODE, model, loss_object,
                                               train_steps, opts.STEREO, augmenter, optimizer)
 
@@ -71,9 +78,9 @@ def set_configs():
 
 
 @StrategyScope
-def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights):
+def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights, net_names=None):
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
-    model = ModelFactory(tfr_config, global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
+    model = ModelFactory(tfr_config, net_names=net_names, global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
     # model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
@@ -188,6 +195,7 @@ def test_npz():
 
 
 if __name__ == "__main__":
+    train_flow_by_plan()
     train_by_plan()
     predict_by_plan()
 
