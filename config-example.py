@@ -4,11 +4,9 @@ import os.path as op
 RAW_DATA_PATHS = {
     "kitti_raw": "/media/ian/IanBook2/datasets/kitti_raw_data",
     "kitti_odom": "/media/ian/IanBook2/datasets/kitti_odometry",
-    "cityscapes__extra": "/media/ian/IanBook2/datasets/raw_zips/cityscapes",
     "cityscapes__sequence": "/media/ian/IanBook2/datasets/raw_zips/cityscapes",
     "waymo": "/media/ian/IanBook2/datasets/waymo",
     "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
-    # "driving_stereo": "/media/ian/IanBook2/datasets/raw_zips/driving_stereo",
 }
 RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_test_1113"
 
@@ -76,14 +74,11 @@ class VodeOptions(FixedOptions):
     """
     data options
     """
-    # cityscapes__sequence MUST be after cityscapes__extra
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
                            "a2d2": ["train"],
-                           # "cityscapes__extra": ["train"],
                            "cityscapes__sequence": ["train"],
                            "waymo": ["train"],
-                           # "driving_stereo": ["train", "test"],
                            }
     # only when making small tfrecords to test training
     FRAME_PER_DRIVE = 0
