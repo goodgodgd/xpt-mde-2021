@@ -2,16 +2,13 @@ import os.path as op
 
 # TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
 RAW_DATA_PATHS = {
-    "kitti_raw": "/media/ian/IanBook/datasets/kitti_raw_data",
-    "kitti_odom": "/media/ian/IanBook/datasets/kitti_odometry",
-    "cityscapes__extra": "/media/ian/IanBook/datasets/raw_zips/cityscapes",
-    "cityscapes__sequence": "/media/ian/IanBook/datasets/raw_zips/cityscapes",
-    "waymo": "/media/ian/IanBook/datasets/waymo",
-    "a2d2": "/media/ian/IanBook/datasets/raw_zips/a2d2/zips",
-    # "driving_stereo": "/media/ian/IanBook/datasets/raw_zips/driving_stereo",
+    "kitti_raw": "/media/ian/IanBook2/datasets/kitti_raw_data",
+    "kitti_odom": "/media/ian/IanBook2/datasets/kitti_odometry",
+    "cityscapes__sequence": "/media/ian/IanBook2/datasets/raw_zips/cityscapes",
+    "waymo": "/media/ian/IanBook2/datasets/waymo",
+    "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
 }
-# RESULT_DATAPATH = "/home/ian/workspace/vode/vode-data"
-RESULT_DATAPATH = "/media/ian/IanBook/vode_data/vode_stereo_0815"
+RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_test_1113"
 
 
 class FixedOptions:
@@ -25,7 +22,7 @@ class FixedOptions:
 
     IMAGE_SIZES = {"kitti_raw": (128, 512),
                    "kitti_odom": (128, 512),
-                   "cityscapes": (192, 384),
+                   "cityscapes": (192, 448),
                    "waymo": (256, 384),
                    "a2d2": (256, 512),
                    "driving_stereo": (192, 384),
@@ -61,32 +58,13 @@ class FixedOptions:
 
 class VodeOptions(FixedOptions):
     """
-    data options
-    """
-    # cityscapes__sequence MUST be after cityscapes__extra
-    DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
-                           "kitti_odom": ["train", "test"],
-                           "a2d2": ["train"],
-                           "cityscapes__extra": ["train"],
-                           "cityscapes__sequence": ["train"],
-                           "waymo": ["train"],
-                           # "driving_stereo": ["train", "test"],
-                           }
-    # only when making small tfrecords to test training
-    FRAME_PER_DRIVE = 100
-    TOTAL_FRAME_LIMIT = 500
-    VALIDATION_FRAMES = 300
-    AUGMENT_PROBS = {"CropAndResize": 0.2,
-                     "HorizontalFlip": 0.2,
-                     "ColorJitter": 0.2}
-
-    """
     path options
     """
+    CKPT_NAME = "vode_flow2"
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
-    DATAPATH_TFR = op.join(DATAPATH, "tfrecords_small")
+    DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
     DATAPATH_CKP = op.join(DATAPATH, "checkpts")
     DATAPATH_LOG = op.join(DATAPATH, "log")
     DATAPATH_PRD = op.join(DATAPATH, "prediction")
@@ -94,9 +72,25 @@ class VodeOptions(FixedOptions):
     PROJECT_ROOT = op.dirname(__file__)
 
     """
+    data options
+    """
+    DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
+                           "kitti_odom": ["train", "test"],
+                           "a2d2": ["train"],
+                           "cityscapes__sequence": ["train"],
+                           "waymo": ["train"],
+                           }
+    # only when making small tfrecords to test training
+    FRAME_PER_DRIVE = 0
+    TOTAL_FRAME_LIMIT = 0
+    VALIDATION_FRAMES = 300
+    AUGMENT_PROBS = {"CropAndResize": 0.2,
+                     "HorizontalFlip": 0.2,
+                     "ColorJitter": 0.2}
+
+    """
     training options
     """
-    CKPT_NAME = "vode3"
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
@@ -149,6 +143,12 @@ class VodeOptions(FixedOptions):
         ("a2d2",            5, 0.0001, LOSS_WEIGHTS_FLOW),
         ("waymo",           5, 0.0001, LOSS_WEIGHTS_FLOW),
         ("cityscapes",      5, 0.0001, LOSS_WEIGHTS_FLOW),
+        # pretraining second round
+        ("kitti_raw",       3, 0.00001, LOSS_WEIGHTS_FLOW),
+        ("kitti_odom",      3, 0.00001, LOSS_WEIGHTS_FLOW),
+        ("a2d2",            3, 0.00001, LOSS_WEIGHTS_FLOW),
+        ("waymo",           3, 0.00001, LOSS_WEIGHTS_FLOW),
+        ("cityscapes",      3, 0.00001, LOSS_WEIGHTS_FLOW),
     ]
     TEST_PLAN = [
         ("kitti_raw",       ["depth"]),

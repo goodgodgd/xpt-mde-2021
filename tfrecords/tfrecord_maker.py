@@ -73,23 +73,19 @@ class TfrecordMakerBase:
 
                     try:
                         example = self.example_maker.get_example(index)
+                        first_example = self.verify_example(first_example, example)
                     except StopIteration as si:         # raised from xxx_reader._get_frame()
                         print("\n[StopIteration] stop this drive", si)
                         break
                     except MyExceptionToCatch as ve:    # raised from xxx_reader._get_frame()
-                        uf.print_progress_status(f"==[making TFR] (Exception) frame: {ii}/{num_frames}, {ve}")
+                        uf.print_progress_status(f"==[making TFR] Exception frame: {ii}/{num_frames}, {ve}")
                         continue
 
-                    if 'image' not in example:             # when dict is empty, skip this index
-                        uf.print_progress_status(f"==[making TFR] INVALID example, frame: {ii}/{num_frames}")
-                        continue
-
-                    first_example = self.check_example_keys(first_example, example)
                     example_serial = self.serialize_example(example)
                     self.write_tfrecord(example_serial, di)
-                    uf.print_progress_status(f"==[making TFR] drive: {di}/{num_drives} | "
-                                             f"drive: {ii}/{num_frames}, count: {self.example_count_in_drive} | "
-                                             f"total: {self.total_example_count} | "
+                    uf.print_progress_status(f"==[making TFR] drives: {di}/{num_drives} | "
+                                             f"index,count: {ii}/{self.example_count_in_drive}/{num_frames} | "
+                                             f"total count: {self.total_example_count} | "
                                              f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
 
                 print("")
@@ -100,15 +96,29 @@ class TfrecordMakerBase:
     def init_drive_tfrecord(self, drive_index=0):
         raise NotImplementedError()
 
-    def check_example_keys(self, first_example, example):
+    def verify_example(self, first_example, example):
+        if (not example) or ("image" not in example):
+            raise MyExceptionToCatch(f"[verify_example] EMPTY example")
+
         if not first_example:
             first_example = copy.deepcopy(example)
-        first_keys = [key for key, val in first_example.items() if val is not None]
-        curre_keys = [key for key, val in example.items() if val is not None]
-        if first_keys != curre_keys:
-            print(f"[WARNING] Count: {self.error_count}, Different keys: {list(first_keys)} != {list(curre_keys)}")
-            self.error_count += 1
-            assert self.error_count < 10
+            print("[verify_example] Set first_example:", list(first_example.keys()))
+            return first_example
+
+        for key in first_example:
+            if key not in example:
+                print(f"[verify_example] (WARNING) error count: {self.error_count}, {key} is not in example")
+                self.error_count += 1
+                assert self.error_count < 10
+                raise MyExceptionToCatch(f"{key} is not in example")
+
+            if first_example[key].shape != example[key].shape:
+                print(f"[verify_example] (WARNING) error count: {self.error_count}, "
+                      f"different shape of {key}: {first_example[key].get_shape()} != {example[key].get_shape()}")
+                self.error_count += 1
+                assert self.error_count < 10
+                raise MyExceptionToCatch(f"{key} is not in example")
+
         return first_example
 
     def write_tfrecord(self, example_serial, drive_index):
@@ -394,6 +404,7 @@ def move_tfrecord_and_merge_configs(tfrpath__, tfrpath):
             config = json.load(fp)
             total_length += config["length"]
     config["length"] = total_length
+    print("[wrap_up] final config:", config)
     with open(op.join(tfrpath__, "tfr_config.txt"), "w") as fr:
         json.dump(config, fr)
 
