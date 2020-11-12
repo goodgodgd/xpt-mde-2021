@@ -404,6 +404,7 @@ def move_tfrecord_and_merge_configs(tfrpath__, tfrpath):
             config = json.load(fp)
             total_length += config["length"]
     config["length"] = total_length
+    print("[wrap_up] final config:", config)
     with open(op.join(tfrpath__, "tfr_config.txt"), "w") as fr:
         json.dump(config, fr)
 
