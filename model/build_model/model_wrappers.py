@@ -69,6 +69,9 @@ class ModelWrapper:
         for model in self.models.values():
             model.compile(optimizer=optimizer, loss=loss)
 
+    def set_trainable(self, name, trainable):
+        self.models[name].trainable = trainable
+
     def trainable_weights(self):
         train_weights = []
         for model in self.models.values():

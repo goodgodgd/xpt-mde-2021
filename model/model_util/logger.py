@@ -76,7 +76,7 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
         existing = pd.read_csv(filepath, encoding='utf-8', converters={'epoch': lambda c: f"{int(c):<5}"})
         results = existing.append(epoch_result, ignore_index=True)
         results = results.drop_duplicates(subset='epoch', keep='last')
-        results = results.fillna(0.)
+        results = results.fillna(0.0)
         # reorder columns
         train_cols = [col for col in list(results) if col.startswith(TRAIN_PREFIX)]
         val_cols = [col for col in list(results) if col.startswith(VALID_PREFIX)]

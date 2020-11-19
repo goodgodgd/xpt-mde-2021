@@ -60,7 +60,8 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode_flow2"
+    RIGID_CKPT_NAME = "vode_rigid1"
+    FLOW_CKPT_NAME = "vode_flow2"
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")

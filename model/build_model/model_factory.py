@@ -17,14 +17,14 @@ PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xce
 class ModelFactory:
     def __init__(self, dataset_cfg,
                  global_batch=opts.BATCH_SIZE,
-                 net_names=opts.NET_NAMES,
+                 net_names=opts.JOINT_NET,
                  depth_activation=opts.DEPTH_ACTIVATION,
                  pretrained_weight=opts.PRETRAINED_WEIGHT,
                  stereo=opts.STEREO):
         self.global_batch = global_batch
         self.dataset_cfg = dataset_cfg
         self.bshwc_shape = [global_batch] + dataset_cfg["imshape"]
-        self.net_names = opts.NET_NAMES if net_names is None else net_names
+        self.net_names = opts.JOINT_NET if net_names is None else net_names
         print("[ModelFactory] net names:", self.net_names)
         self.activation = depth_activation
         self.pretrained_weight = pretrained_weight
