@@ -8,7 +8,7 @@ RAW_DATA_PATHS = {
     "waymo": "/media/ian/IanBook2/datasets/waymo",
     "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
 }
-RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_test_1113"
+RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_stereo_0814"
 
 
 class FixedOptions:
@@ -59,7 +59,7 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode3"
+    CKPT_NAME = "vode1"
 
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
