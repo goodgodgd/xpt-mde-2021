@@ -71,6 +71,7 @@ class ModelWrapper:
 
     def set_trainable(self, name, trainable):
         self.models[name].trainable = trainable
+        print(f"[ModelWrapper] set {name} trainable {trainable}")
 
     def trainable_weights(self):
         train_weights = []

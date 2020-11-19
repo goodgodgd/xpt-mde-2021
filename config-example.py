@@ -27,9 +27,6 @@ class FixedOptions:
                    "a2d2": (256, 512),
                    "driving_stereo": (192, 384),
                    }
-    IMAGE_CROP = {"kitti_raw": True,
-                  "kitti_odom": True,
-                  }
 
     """
     training options
@@ -43,10 +40,12 @@ class FixedOptions:
     """
     network options: network architecture, convolution args, ... 
     """
-    NET_NAMES = {"depth": ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][1],
+    JOINT_NET = {"depth": ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][1],
                  "camera": "PoseNet",
                  "flow": "PWCNet"
                  }
+    RIGID_NET = {"depth": JOINT_NET["depth"], "camera": JOINT_NET["camera"]}
+    FLOW_NET = {"flow": JOINT_NET["flow"]}
     DEPTH_CONV_ARGS = {"activation": "leaky_relu", "activation_param": 0.1,
                        "kernel_initializer": "truncated_normal", "kernel_initializer_param": 0.025}
     DEPTH_UPSAMPLE_INTERP = "nearest"
@@ -60,8 +59,8 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    RIGID_CKPT_NAME = "vode_rigid1"
-    FLOW_CKPT_NAME = "vode_flow2"
+    CKPT_NAME = "vode3"
+
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
@@ -82,9 +81,9 @@ class VodeOptions(FixedOptions):
                            "waymo": ["train"],
                            }
     # only when making small tfrecords to test training
-    FRAME_PER_DRIVE = 0
-    TOTAL_FRAME_LIMIT = 0
-    VALIDATION_FRAMES = 300
+    FRAME_PER_DRIVE = 100
+    TOTAL_FRAME_LIMIT = 300
+    VALIDATION_FRAMES = 100
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}
@@ -96,16 +95,14 @@ class VodeOptions(FixedOptions):
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
     SSIM_RATIO = 0.8
-    LOSS_WEIGHTS_T1 = {
+    LOSS_RIGID_T1 = {
         "L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
         "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
         "smoothe": 1., "smoothe_R": 1.,
         "stereoL1": 0.01, "stereoSSIM": 0.01,
         "stereoPose": 1.,
-        "flowL2": 1., "flowL2_R": 1.,
-        "flow_reg": 4e-7
     }
-    LOSS_WEIGHTS_T2 = {
+    LOSS_RIGID_T2 = {
         "md2L1": (1. - SSIM_RATIO) * 1., "md2L1_R": (1. - SSIM_RATIO) * 1.,
         "md2SSIM": SSIM_RATIO * 0.5, "md2SSIM_R": SSIM_RATIO * 0.5,
         "cmbL1": (1. - SSIM_RATIO) * 1., "cmbL1_R": (1. - SSIM_RATIO) * 1.,
@@ -113,44 +110,62 @@ class VodeOptions(FixedOptions):
         "smoothe": 1., "smoothe_R": 1.,
         "stereoL1": 0.01, "stereoSSIM": 0.01,
         "stereoPose": 1.,
-        "flowL2": 1., "flowL2_R": 1.,
-        "flow_reg": 4e-7
     }
-    LOSS_WEIGHTS_FLOW = {
+    LOSS_FLOW = {
         "flowL2": 1., "flowL2_R": 1.,
         "flow_reg": 4e-7
     }
 
-    TRAINING_PLAN = [
-        # pretraining first round
-        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
-        ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
-        ("a2d2",            2, 0.0001, LOSS_WEIGHTS_T1),
-        ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
-        ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
-        # pretraining second round
-        ("kitti_raw",       2, 0.0001, LOSS_WEIGHTS_T1),
-        ("kitti_odom",      2, 0.0001, LOSS_WEIGHTS_T1),
-        ("a2d2",            2, 0.0001, LOSS_WEIGHTS_T1),
-        ("waymo",           2, 0.0001, LOSS_WEIGHTS_T1),
-        ("cityscapes",      2, 0.0001, LOSS_WEIGHTS_T1),
-        # fine tuning
-        ("kitti_raw",       10, 0.0001, LOSS_WEIGHTS_T1),
+    TEST_TRAINING_PLAN = [
+        # pretraining flow net first round
+        (FixedOptions.FLOW_NET, "kitti_raw",     2, 0.0001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "cityscapes",    2, 0.0001, LOSS_FLOW, True),
+        # pretraining flow net second round
+        (FixedOptions.FLOW_NET, "kitti_raw",     2, 0.00001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "cityscapes",    2, 0.00001, LOSS_FLOW, True),
+        # pretraining rigid net
+        (FixedOptions.RIGID_NET, "kitti_raw",    2, 0.0001, LOSS_RIGID_T1, False),
+        (FixedOptions.RIGID_NET, "cityscapes",   2, 0.0001, LOSS_RIGID_T1, True),
+        # train joint net
+        (FixedOptions.JOINT_NET, "kitti_odom",   2, 0.0001, LOSS_RIGID_T2, True),
     ]
-    TRAINING_FLOW_PLAN = [
-        # pretraining first round
-        ("kitti_raw",       5, 0.0001, LOSS_WEIGHTS_FLOW),
-        ("kitti_odom",      5, 0.0001, LOSS_WEIGHTS_FLOW),
-        ("a2d2",            5, 0.0001, LOSS_WEIGHTS_FLOW),
-        ("waymo",           5, 0.0001, LOSS_WEIGHTS_FLOW),
-        ("cityscapes",      5, 0.0001, LOSS_WEIGHTS_FLOW),
-        # pretraining second round
-        ("kitti_raw",       3, 0.00001, LOSS_WEIGHTS_FLOW),
-        ("kitti_odom",      3, 0.00001, LOSS_WEIGHTS_FLOW),
-        ("a2d2",            3, 0.00001, LOSS_WEIGHTS_FLOW),
-        ("waymo",           3, 0.00001, LOSS_WEIGHTS_FLOW),
-        ("cityscapes",      3, 0.00001, LOSS_WEIGHTS_FLOW),
+
+    PRE_TRAINING_PLAN = [
+        # pretraining flow net first round
+        (FixedOptions.FLOW_NET, "kitti_raw",     10, 0.0001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "kitti_odom",    10, 0.0001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "a2d2",          10, 0.0001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "waymo",         10, 0.0001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "cityscapes",    10, 0.0001, LOSS_FLOW, True),
+        # pretraining flow net second round
+        (FixedOptions.FLOW_NET, "kitti_raw",     5, 0.00001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "kitti_odom",    5, 0.00001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "a2d2",          5, 0.00001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "waymo",         5, 0.00001, LOSS_FLOW, False),
+        (FixedOptions.FLOW_NET, "cityscapes",    5, 0.00001, LOSS_FLOW, True),
+        # pretraining rigid net
+        (FixedOptions.RIGID_NET, "kitti_raw",   10, 0.0001, LOSS_RIGID_T1, False),
+        (FixedOptions.RIGID_NET, "kitti_odom",  10, 0.0001, LOSS_RIGID_T1, False),
+        (FixedOptions.RIGID_NET, "a2d2",        10, 0.0001, LOSS_RIGID_T1, False),
+        (FixedOptions.RIGID_NET, "waymo",       10, 0.0001, LOSS_RIGID_T1, False),
+        (FixedOptions.RIGID_NET, "cityscapes",  10, 0.0001, LOSS_RIGID_T1, True),
     ]
+
+    FINE_TRAINING_PLAN_KITTI_RAW = [
+        (FixedOptions.FLOW_NET, "kitti_raw",     5, 0.00001, LOSS_FLOW, True),
+        (FixedOptions.RIGID_NET, "kitti_raw",    5, 0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw",   10, 0.0001, LOSS_RIGID_T2, True),
+        (FixedOptions.JOINT_NET, "kitti_raw",   10, 0.00001, LOSS_RIGID_T2, True),
+    ]
+
+    FINE_TRAINING_PLAN_KITTI_ODOM = [
+        (FixedOptions.FLOW_NET, "kitti_odom",    5, 0.00001, LOSS_FLOW, True),
+        (FixedOptions.RIGID_NET, "kitti_odom",   5, 0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_odom",  10, 0.0001, LOSS_RIGID_T2, True),
+        (FixedOptions.JOINT_NET, "kitti_odom",  10, 0.00001, LOSS_RIGID_T2, True),
+    ]
+
+    FINE_TRAINING_PLAN = FINE_TRAINING_PLAN_KITTI_RAW
     TEST_PLAN = [
         ("kitti_raw",       ["depth"]),
         ("kitti_odom",      ["pose"]),
@@ -191,7 +206,7 @@ class VodeOptions(FixedOptions):
 
 
 opts = VodeOptions()
-print("ckpt path", opts.DATAPATH_CKP)
+print(f"[config] ckpt path: {opts.DATAPATH_CKP}, nets: {opts.JOINT_NET}")
 
 import numpy as np
 np.set_printoptions(precision=4, suppress=True, linewidth=100)
