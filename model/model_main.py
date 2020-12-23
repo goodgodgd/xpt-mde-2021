@@ -16,21 +16,14 @@ from model.model_util.distributer import StrategyScope, StrategyDataset
 import model.train_val as tv
 
 
-def train_by_plan():
+def train_by_plan(plan):
     target_epoch = 0
-    for dataset_name, epoch, learning_rate, loss_weights in opts.TRAINING_PLAN:
+    for net_names, dataset_name, epoch, learning_rate, loss_weights, save_ckpt in plan:
         target_epoch += epoch
-        train(dataset_name, target_epoch, learning_rate, loss_weights)
+        train(net_names, dataset_name, target_epoch, learning_rate, loss_weights, save_ckpt)
 
 
-def train_flow_by_plan():
-    target_epoch = 0
-    for dataset_name, epoch, learning_rate, loss_weights in opts.TRAINING_FLOW_PLAN:
-        target_epoch += epoch
-        train(dataset_name, target_epoch, learning_rate, loss_weights, net_names={"flow": "PWCNet"})
-
-
-def train(dataset_name, target_epoch, learning_rate, loss_weights, net_names=None):
+def train(net_names, dataset_name, target_epoch, learning_rate, loss_weights, save_ckpt):
     initial_epoch = uf.read_previous_epoch(opts.CKPT_NAME)
     if target_epoch <= initial_epoch:
         print(f"!! target_epoch {target_epoch} <= initial_epoch {initial_epoch}, no need to train")
@@ -53,8 +46,11 @@ def train(dataset_name, target_epoch, learning_rate, loss_weights, net_names=Non
 
         print("save intermediate results ...")
         log.save_reconstruction_samples(model, dataset_val, val_steps, epoch)
-        save_model(model, result_val)
         log.save_log(epoch, dataset_name, result_train, result_val)
+        save_model_weights(model, "latest")
+
+    if save_ckpt:
+        save_model_weights(model, f"ep{target_epoch:02}")
 
 
 def set_configs():
@@ -82,6 +78,10 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(tfr_config, net_names=net_names, global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
     model = try_load_weights(model)
+    # during joint training, flownet is frozen
+    if ("depth" in net_names) and ("flow" in net_names):
+        model.set_trainable("flownet", False)
+
     # model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
     loss_object = loss_factory(tfr_config, loss_weights, weights_to_regularize=model.weights_to_regularize())
@@ -91,11 +91,11 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
 
 def try_load_weights(model, weights_suffix='latest'):
     if opts.CKPT_NAME:
-        model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME)
+        model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "ckpt")
         if op.isdir(model_dir_path):
             model.load_weights(model_dir_path, weights_suffix)
         else:
-            print("===== train from scratch", model_dir_path)
+            print("===== train from scratch:", model_dir_path)
     return model
 
 
@@ -111,23 +111,12 @@ def get_dataset(dataset_name, split, shuffle, batch_size=opts.BATCH_SIZE):
     return dataset, tfr_config, steps_per_epoch
 
 
-def save_model(model, results_val):
-    """
-    :param model: nn model object
-    :param results_val: validatation results
-    """
-    val_loss = results_val['loss'].mean()
-    # save the latest model
-    save_model_weights(model, 'latest')
-    # save the best model (function static variable)
-    save_model.best = getattr(save_model, 'best', 10000)
-    if val_loss < save_model.best:
-        save_model_weights(model, 'best')
-        save_model.best = val_loss
-
-
 def save_model_weights(model, weights_suffix):
-    model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME)
+    """
+    :param model: model wrapper instance
+    :param weights_suffix: checkpoint name suffix
+    """
+    model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "ckpt")
     if not op.isdir(model_dir_path):
         os.makedirs(model_dir_path, exist_ok=True)
     model.save_weights(model_dir_path, weights_suffix)
@@ -195,7 +184,7 @@ def test_npz():
 
 
 if __name__ == "__main__":
-    train_flow_by_plan()
-    train_by_plan()
+    train_by_plan(opts.PRE_TRAINING_PLAN)
+    train_by_plan(opts.FINE_TRAINING_PLAN)
     predict_by_plan()
 

@@ -18,6 +18,7 @@ RENAMER = {"trjerr": "TE", "roterr": "RE", "depth": "de",
            "stereoPose": "stps", "_reg": "Rg", "_R": "R"}
 TRAIN_PREFIX = ":"
 VALID_PREFIX = "!"
+RECON_SAMPLES = 14
 
 
 def save_log(epoch, dataset_name, results_train, results_val):
@@ -76,7 +77,7 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
         existing = pd.read_csv(filepath, encoding='utf-8', converters={'epoch': lambda c: f"{int(c):<5}"})
         results = existing.append(epoch_result, ignore_index=True)
         results = results.drop_duplicates(subset='epoch', keep='last')
-        results = results.fillna(0.)
+        results = results.fillna(0.0)
         # reorder columns
         train_cols = [col for col in list(results) if col.startswith(TRAIN_PREFIX)]
         val_cols = [col for col in list(results) if col.startswith(VALID_PREFIX)]
@@ -163,8 +164,8 @@ def save_scales(epoch, results_train, results_val, filename):
 def make_reconstructed_views(model, dataset, total_steps):
     recon_views = []
     # 7 file are in a row in file explorer
-    stride = min(total_steps, 400) // 7
-    max_steps = stride * 7
+    stride = min(total_steps, RECON_SAMPLES*50) // RECON_SAMPLES
+    max_steps = stride * RECON_SAMPLES
     total_loss = lm.TotalLoss()
     scaleidx, batchidx, srcidx = 0, 0, 0
 

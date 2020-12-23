@@ -13,6 +13,7 @@ from waymo_open_dataset.utils import transform_utils
 from waymo_open_dataset.utils import frame_utils
 from waymo_open_dataset import dataset_pb2 as open_dataset
 
+from config import opts
 from model.synthesize.synthesize_base import SynthesizeSingleScale
 import utils.util_funcs as uf
 
@@ -35,7 +36,7 @@ def set_configs():
 
 def get_dataset():
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    file_pattern = f"/media/ian/IanBook/datasets/waymo/training_0005/*.tfrecord"
+    file_pattern = opts.get_raw_data_path("waymo") + "/training_0005/*.tfrecord"
     filenames = tf.io.gfile.glob(file_pattern)
     print("[tfrecord reader]", file_pattern, filenames)
     dataset = tf.data.TFRecordDataset(filenames, compression_type='')
@@ -59,7 +60,7 @@ def show_front_image_depth_pose():
         depth_map = get_depth_map(frame)
 
         dstshape = (front_image.shape[0] // 2, front_image.shape[1] // 2)
-        view = make_view("image", front_image, depth_map, dstshape)
+        view = make_view(front_image, depth_map, dstshape)
         cv2.imshow("image", view)
         key = cv2.waitKey()
         if key == ord("q"):
@@ -104,9 +105,9 @@ def get_depth_map(frame):
     print("extrinsic:\n", cam1_T_V2C)
     points_veh_homo = np.concatenate((points_veh, np.ones((points_veh.shape[0], 1))), axis=1)
     points_veh_homo = points_veh_homo.T
-    print("points_veh_homo minmax\n", points_veh_homo[:, 100:-1:2000])
+    print("points_veh:\n", points_veh_homo[:, 100:-1:2000])
     points_cam_homo = cam1_T_V2C @ points_veh_homo
-    print("points_cam_homo minmax\n", points_cam_homo[:, 100:-1:2000])
+    print("points_cam:\n", points_cam_homo[:, 100:-1:2000])
     points_depth = points_cam_homo[0]
 
     # project points into image
@@ -128,9 +129,9 @@ def get_depth_map(frame):
     distortion = np.array(intrin[4:])
     print("distortion", distortion)
     mapx, mapy = cv2.initUndistortRectifyMap(cam1_K, distortion, None, cam1_K, imsize, cv2.CV_32F)
-    print("map:", mapx.shape, mapy.shape)
-    print("mapx[100:-1:200, 100:-1:200]\n", mapx[100:-1:200, 100:-1:200])
-    print("mapy[100:-1:200, 100:-1:200]\n", mapy[100:-1:200, 100:-1:200])
+    print("map x, y shape:", mapx.shape, mapy.shape)
+    # print("mapx[100:-1:200, 100:-1:200]\n", mapx[100:-1:200, 100:-1:200])
+    # print("mapy[100:-1:200, 100:-1:200]\n", mapy[100:-1:200, 100:-1:200])
     image_y[(image_y < 0) | (image_y > imsize[1] - 1)] = 0
     image_x[(image_x < 0) | (image_x > imsize[0] - 1)] = 0
     image_y = (image_y + 0.5).astype(np.int32)
@@ -140,7 +141,7 @@ def get_depth_map(frame):
     undist_image_points = np.stack([undist_image_x, undist_image_y], axis=-1)
     print("conccat shapes:", cp_points.shape, image_points.shape, undist_image_points.shape)
     compare_points = np.concatenate([cp_points[:, 1:], image_points, undist_image_points], axis=1)
-    print("compare_points: cp_points, directly projected points, undistorted points\n",
+    print("compare_points: projected points from tfrecords, directly projected points, undistorted points\n",
           compare_points[0:-1:1000])
 
     col_ind = cp_points[:, 1]
@@ -651,9 +652,9 @@ def rgba(r):
 
 
 if __name__ == "__main__":
-    # show_front_image_depth_pose()
-    test_synthesize_image()
-    # show_frame_structure()
+    show_front_image_depth_pose()
+    # test_synthesize_image()
+    show_frame_structure()
     # visualize_range_images()
     # visualize_camera_projection()
 
