@@ -224,11 +224,11 @@ class KittiOdomTfrecordMaker(TfrecordMakerSingleDir):
     def list_drive_paths(self, srcpath, split):
         # create drive paths like : "00"
         if split is "train":
-            drives = [f"{i:02d}" for i in range(11, 22)]
+            drives = [f"{i:02d}" for i in range(0, 9)] + [f"{i:02d}" for i in range(11, 22)]
             # remove "12" sequence because color distribution is totally different between left and right
-            drives.pop(1)
+            drives.remove("12")
         else:
-            drives = [f"{i:02d}" for i in range(0, 11)]
+            drives = ["09", "10"]
         return drives
 
 
