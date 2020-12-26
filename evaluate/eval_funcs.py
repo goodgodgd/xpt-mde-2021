@@ -72,7 +72,7 @@ def relative_pose_from_first(poses_mat):
     return poses_mat_transformed
 
 
-def calc_trajectory_error(pose_pred_mat, pose_true_mat):
+def calc_trajectory_error(pose_pred_mat, pose_true_mat, abs_scale=False):
     """
     :param pose_pred_mat: predicted snippet pose matrices w.r.t the first frame, [snippet, 5, 4, 4]
     :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [snippet, 5, 4, 4]
@@ -81,9 +81,13 @@ def calc_trajectory_error(pose_pred_mat, pose_true_mat):
     xyz_pred = pose_pred_mat[:, :3, 3]
     xyz_true = pose_true_mat[:, :3, 3]
     # optimize the scaling factor
-    scale = np.sum(xyz_true * xyz_pred) / np.sum(xyz_pred ** 2)
-    traj_error = xyz_true - xyz_pred * scale
-    rmse = np.sqrt(np.sum(traj_error ** 2, axis=1)) / len(traj_error)
+    if abs_scale:
+        traj_error = xyz_true - xyz_pred
+    else:
+        scale = np.sum(xyz_true * xyz_pred) / np.sum(xyz_pred ** 2)
+        traj_error = xyz_true - xyz_pred * scale
+        # print(f"calc traj error (scale={scale:1.4f})\n", np.concatenate([xyz_true, xyz_pred, xyz_pred * scale], axis=1))
+    rmse = np.sqrt(np.sum(traj_error ** 2, axis=1))
     return rmse
 
 

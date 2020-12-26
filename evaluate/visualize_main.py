@@ -1,46 +1,85 @@
+import os
 import os.path as op
 import tensorflow as tf
 import cv2
+import open3d as o3d
 import numpy as np
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 
 import settings
-from config import opts
 from tfrecords.tfrecord_reader import TfrecordReader
-import utils.util_funcs as uf
+from config import opts
+import utils.convert_pose as cp
+import evaluate.eval_funcs as ef
 
 
-def visualize_by_user_interaction():
-    options = {"data_dir_name": "kitti_raw_test",
-               "model_name": "vode_model",
-               }
+def show_poses():
+    for dataset_name, outkey in opts.TEST_PLAN:
+        print(op.join(opts.DATAPATH_PRD, opts.CKPT_NAME, dataset_name + ".npz"))
+        results = np.load(op.join(opts.DATAPATH_PRD, opts.CKPT_NAME, dataset_name + ".npz"))
+        if "pose" in outkey:
+            print_odometry_results(results)
 
-    print("\n===== Select evaluation options")
 
-    print(f"Default options:")
-    for key, value in options.items():
-        print(f"\t{key} = {value}")
-    print("\nIf you are happy with default options, please press enter")
-    print("Otherwise, please press any other key")
-    select = input()
+def show_depths():
+    for dataset_name, outkey in opts.TEST_PLAN:
+        print(op.join(opts.DATAPATH_PRD, opts.CKPT_NAME, dataset_name + ".npz"))
+        results = np.load(op.join(opts.DATAPATH_PRD, opts.CKPT_NAME, dataset_name + ".npz"))
+        if "depth" in outkey:
+            visualize_point_cloud(results)
 
-    if select == "":
-        print(f"You selected default options.")
-    else:
-        message = "Type 1 or 2 to specify dataset: 1) kitti_raw_test, 2) kitti_odom_test"
-        ds_id = uf.input_integer(message, 1, 2)
-        if ds_id == 1:
-            options["data_dir_name"] = "kitti_raw_test"
-        if ds_id == 2:
-            options["data_dir_name"] = "kitti_odom_test"
 
-        print("Type model_name: dir name under opts.DATAPATH_CKP and opts.DATAPATH_PRD")
-        options["model_name"] = input()
+def print_odometry_results(results):
+    num_samples = 100
+    poses_pred = results["pose"]
+    poses_true = results["pose_gt"]
+    stride = max(poses_pred.shape[0] // num_samples, 1)
+    print("pose shape and stride:", poses_pred.shape, stride)
+    for index in np.arange(0, poses_pred.shape[0], stride):
+        pose_pr_tws = poses_pred[index]
+        pose_pr_mat = cp.pose_rvec2matr(pose_pr_tws)
+        pose_gt_mat = poses_true[index]
+        pose_gt_tws = cp.pose_matr2rvec(pose_gt_mat)
+        trjerr_rel = ef.calc_trajectory_error(pose_pr_mat, pose_gt_mat)[..., np.newaxis]
+        trjerr_abs = ef.calc_trajectory_error(pose_pr_mat, pose_gt_mat, True)[..., np.newaxis]
+        roterr = ef.calc_rotational_error(pose_pr_mat, pose_gt_mat)[..., np.newaxis]
+        view = np.concatenate([pose_gt_tws, pose_pr_tws, trjerr_rel, trjerr_abs, roterr], axis=1)
+        print(f"pose result at {index}: [pose_gt_tws, pose_pr_tws, trjerr_rel, trjerr_abs, roterr]\n{view}")
 
-    print("Prediction options:", options)
-    visualize(**options)
+
+def visualize_point_cloud(results):
+    num_samples = 100
+    depths_pred = results["depth"]
+    depths_true = results["depth_gt"]
+    Ks = results["intrinsic"]
+    stride = max(depths_pred.shape[0] // num_samples, 1)
+    print("depth shape and stride:", depths_pred.shape, depths_true.shape, stride)
+    for index in np.arange(0, depths_true.shape[0], stride):
+        K = Ks[index]
+        frame = o3d.geometry.TriangleMesh.create_coordinate_frame()
+        points_pr = to_point_cloud(depths_pred[index], K, [1, 0, 0])
+        points_gt = to_point_cloud(depths_true[index], K, [0, 1, 0])
+        o3d.visualization.draw_geometries([points_gt, points_pr, frame])
+        # o3d.visualization.draw_geometries([points_gt, points_pr])
+
+
+def to_point_cloud(depth, K, color):
+    H, W, _ = depth.shape
+    fx, fy, cx, cy = K[0, 0], K[1, 1], K[0, 2], K[1, 2]
+    u, v = np.meshgrid(np.arange(W), np.arange(H))
+    u = u.reshape(-1)
+    v = v.reshape(-1)
+    Z = depth.reshape(-1)
+    X = (u - cx)/fx * Z
+    Y = (v - cy)/fy * Z
+    points = np.stack([X, Y, Z], axis=1)
+    points = points[(Z > 0) & (Z < 40) & (Y > -2.5) & (Y < 1)]
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(points)
+    pcd.colors = o3d.utility.Vector3dVector(np.tile(color, (points.shape[0], 1)))
+    return pcd
 
 
 def visualize(data_dir_name, model_name):
@@ -69,4 +108,5 @@ def visualize(data_dir_name, model_name):
 
 
 if __name__ == "__main__":
-    visualize_by_user_interaction()
+    show_poses()
+    show_depths()
