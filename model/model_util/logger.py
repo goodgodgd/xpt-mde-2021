@@ -119,9 +119,12 @@ def to_fixed_width_column(srcdict):
 
 def draw_and_save_plot(results, filename):
     # plot graphs of loss and metrics
-    fig, axes = plt.subplots(3, 1)
-    fig.set_size_inches(7, 7)
-    for i, ax, colname, title in zip(range(3), axes, ['loss ', 'TE   ', 'RE   '], ['Loss', 'Trajectory Error', 'Rotation Error']):
+    sel_columns = ['loss ', 'TEA  ', 'TER  ', 'RE   ']
+    col_titles = ['Loss', 'Traj abs. Error', 'Traj rel. Error', 'Rotation Error']
+    numcols = len(col_titles)
+    fig, axes = plt.subplots(numcols, 1)
+    fig.set_size_inches(numcols*2, 7)
+    for i, ax, colname, title in zip(range(numcols), axes, sel_columns, col_titles):
         if TRAIN_PREFIX + colname in results:
             ax.plot(results['epoch'].astype(int), results[TRAIN_PREFIX + colname], label='train_' + colname)
             ax.plot(results['epoch'].astype(int), results[VALID_PREFIX + colname], label='val_' + colname)

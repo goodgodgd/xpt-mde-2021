@@ -162,7 +162,7 @@ def compute_depth_error(depth_pred, depth_true):
     depth_pred[mask] *= scaler
     # clip prediction and compute error metrics
     depth_pred = np.clip(depth_pred, opts.MIN_DEPTH, opts.MAX_DEPTH)
-    metrics = ef.compute_depth_metrics(depth_true[mask], depth_pred[mask])
+    metrics = ef.compute_depth_metrics(depth_pred[mask], depth_true[mask])
     # return only abs rel
     return metrics[0], scaler
 

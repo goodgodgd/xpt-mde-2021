@@ -65,15 +65,12 @@ class PoseMetricNumpy:
         :param pose_true_mat: ground truth snippet pose matrices w.r.t the first frame, [batch, snippet, 4, 4]
         :return: rotational error in rad [batch, snippet-1]
         """
-        print("===== calc_rotational_error")
         rot_pred = pose_pred_mat[:, :, :3, :3]
         rot_true = pose_true_mat[:, :, :3, :3]
         rot_rela = np.matmul(np.linalg.inv(rot_pred), rot_true)
-        print("shapes:", rot_pred.shape, rot_true.shape, rot_rela.shape)
         trace = np.trace(rot_rela, axis1=2, axis2=3)
         angle = np.clip((trace - 1.) / 2., -1., 1.)
         angle = np.arccos(angle)
-        print("shapes2:", trace.shape, angle.shape)
         angle = angle[:, 1:]
         return angle
 
@@ -115,6 +112,8 @@ def valid_depth_filter(depth_pred, depth_true):
     :param depth_true: [height, width]
     :return: depth_pred, depth_true: [N]
     """
+    depth_pred = np.squeeze(depth_pred)
+    depth_true = np.squeeze(depth_true)
     mask = np.logical_and(depth_true > opts.MIN_DEPTH, depth_true < opts.MAX_DEPTH)
     # crop used by Garg ECCV16 to reprocude Eigen NIPS14 results
     # if used on gt_size 370x1224 produces a crop of [-218, -3, 44, 1180]
@@ -132,10 +131,10 @@ def valid_depth_filter(depth_pred, depth_true):
     return depth_pred[mask], depth_true[mask]
 
 
-def compute_depth_metrics(gt, pred):
+def compute_depth_metrics(pred, gt):
     """
-    :param gt: [N]
     :param pred: [N]
+    :param gt: [N]
     """
     thresh = np.maximum((gt / pred), (pred / gt))
     a1 = (thresh < 1.25   ).mean()
