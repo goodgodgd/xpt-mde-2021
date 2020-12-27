@@ -91,7 +91,7 @@ def evaluate_batch(index, x, model):
     depth_err, scale = compute_depth_error(depth_pred_ms[0].numpy()[0], depth_true.numpy()[0])
     smooth_loss = compute_smooth_loss(disp_pred_ms[0], target_image)
 
-    pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
+    pose_pred_mat = cp.pose_rvec2matr_batch_tf(pose_pred)
     # pose error output: [batch, numsrc]
     trj_err, trj_len = compute_trajectory_error(pose_pred_mat, pose_true_mat, scale)
     rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)

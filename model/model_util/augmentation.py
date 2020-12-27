@@ -286,7 +286,7 @@ def test_flip_pose_tf():
     print("===== test test_flip_pose_tf")
     batch, numsrc = 2, 2
     pose_vec = tf.random.uniform((batch, numsrc, 6), -2, 2)
-    pose_mat = cp.pose_rvec2matr_batch(pose_vec)
+    pose_mat = cp.pose_rvec2matr_batch_tf(pose_vec)
     flipper = HorizontalFlip()
     pose_mat_flip = flipper.flip_gt_pose(pose_mat)
     pose_vec_flip = cp.pose_matr2rvec_batch(pose_mat_flip)

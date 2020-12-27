@@ -13,7 +13,7 @@ from config import opts
 import utils.util_funcs as uf
 import model.loss_and_metric.losses as lm
 
-RENAMER = {"trjerr": "TE", "roterr": "RE", "depth": "de",
+RENAMER = {"trjabs": "TEA", "trjrel": "TER", "roterr": "RE", "deprel": "DE",
            "SSIM": "SS", "smoothe": "sm", "pose": "ps", "stereo": "st", "flow": "fl",
            "stereoPose": "stps", "_reg": "Rg", "_R": "R"}
 TRAIN_PREFIX = ":"
@@ -28,7 +28,7 @@ def save_log(epoch, dataset_name, results_train, results_val):
     :param results_train: dict of losses, metrics and depths from training data
     :param results_val: dict of losses, metrics and depths from validation data
     """
-    summ_cols = ["loss", "trjerr", "roterr"]
+    summ_cols = ["loss", "trjabs", "trjrel", "roterr", "deprel"]
     summary = save_results(epoch, dataset_name, results_train, results_val, summ_cols, "history.csv")
     other_cols = [colname for colname in results_train.keys() if colname not in summ_cols]
     _ = save_results(epoch, dataset_name, results_train, results_val, other_cols, "mean_result.csv")

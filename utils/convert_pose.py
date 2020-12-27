@@ -29,14 +29,14 @@ def pose_matr2quat(pose):
     return pose_quat
 
 
-def pose_rvec2matr_batch(poses):
+def pose_rvec2matr_batch_tf(poses):
     """
     :param poses: poses with twist coordinates in tf.tensor, (tx, ty, tz, u1, u2, u3) [batch, N, 6]
     :return: poses in transformation matrix [batch, N, 4, 4]
     """
     # shape to [batch, N, 6, 1]
     poses = tf.expand_dims(poses, -1)
-    batch, numsrc, _, _ = poses.get_shape()
+    batch, snippet, _, _ = poses.get_shape()
     # split into translation and rotation [batch, N, 3]
     trans = poses[:, :, :3]
     uvec = poses[:, :, 3:]
@@ -47,7 +47,7 @@ def pose_rvec2matr_batch(poses):
     w1 = uvec[:, :, 0:1]
     w2 = uvec[:, :, 1:2]
     w3 = uvec[:, :, 2:3]
-    z = tf.zeros(shape=(batch, numsrc, 1, 1))
+    z = tf.zeros(shape=(batch, snippet, 1, 1))
 
     # w_hat.shape = [batch, N, 9, 1]
     # NOTE: 원래 책에는 이렇게 하라고 되어 있지만 이렇게 하면 반대 회전이 나옴
@@ -55,19 +55,59 @@ def pose_rvec2matr_batch(poses):
     # 회전 방향을 맞추기 위해 부호 반대로
     w_hat = tf.concat([z, w3, -w2, -w3, z, w1, w2, -w1, z], axis=2)
     # w_hat.shape = [batch, N, 3, 3]
-    w_hat = tf.reshape(w_hat, shape=(batch, numsrc, 3, 3))
+    w_hat = tf.reshape(w_hat, shape=(batch, snippet, 3, 3))
 
     # identity.shape = [1, 1, 3, 3]
     identity = tf.expand_dims(tf.expand_dims(tf.eye(3), axis=0), axis=0)
     # identity.shape = [batch, N, 3, 3]
-    identity = tf.tile(identity, (batch, numsrc, 1, 1))
+    identity = tf.tile(identity, (batch, snippet, 1, 1))
     tmpmat = identity + w_hat*tf.sin(unorm) + tf.matmul(w_hat, w_hat)*(1 - tf.cos(unorm))
     rotmat = tf.where(tf.abs(unorm) < 0.00001, identity, tmpmat)
 
     tmat = tf.concat([rotmat, trans], axis=3)
-    last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, numsrc, 1, 1))
+    last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, snippet, 1, 1))
     tmat = tf.concat([tmat, last_row], axis=2)
-    tmat = tf.reshape(tmat, (batch, numsrc, 4, 4))
+    tmat = tf.reshape(tmat, (batch, snippet, 4, 4))
+    return tmat
+
+
+def pose_rvec2matr_batch_np(poses):
+    """
+    :param poses: poses with twist coordinates in np.array, (tx, ty, tz, u1, u2, u3) [batch, N, 6]
+    :return: poses in transformation matrix [batch, N, 4, 4]
+    """
+    poses = np.copy(poses)
+    # shape to [batch, N, 6]
+    batch, snippet, _ = poses.shape
+    trans = poses[:, :, :3]
+    uvec = poses[:, :, 3:]
+    # unorm: [batch, N]
+    unorm = np.linalg.norm(uvec, axis=2)
+    unorm_mask = ~np.isclose(unorm, 0)
+    uvec[unorm_mask] = uvec[unorm_mask] / unorm[unorm_mask][..., np.newaxis]
+    # w1.shape = [batch, N, 1]
+    w1 = uvec[:, :, 0:1]
+    w2 = uvec[:, :, 1:2]
+    w3 = uvec[:, :, 2:3]
+    z = np.zeros(shape=(batch, snippet, 1))
+
+    # w_hat.shape = [batch, N, 9]
+    # NOTE: 원래 책에는 이렇게 하라고 되어 있지만 이렇게 하면 반대 회전이 나옴
+    # w_hat = np.concatenate([z, -w3, w2, w3, z, -w1, -w2, w1, z], axis=2)
+    # 회전 방향을 맞추기 위해 부호 반대로
+    w_hat = np.concatenate([z, w3, -w2, -w3, z, w1, w2, -w1, z], axis=2).reshape(batch, snippet, 3, 3)
+    # w_hat.shape = [batch, N, 3, 3]
+
+    identity = np.eye(3).reshape(1, 1, 3, 3)
+    identity = np.tile(identity, (batch, snippet, 1, 1))
+    # identity: [batch, N, 3, 3]
+    unorm = unorm.reshape(batch, snippet, 1, 1)
+    rotmat = identity + w_hat*np.sin(unorm) + np.matmul(w_hat, w_hat)*(1 - np.cos(unorm))
+
+    trans = trans.reshape(batch, snippet, 3, 1)
+    tmat = np.concatenate([rotmat, trans], axis=3)
+    last_row = np.tile(np.array([[[[0, 0, 0, 1]]]], dtype=np.float32), (batch, snippet, 1, 1))
+    tmat = np.concatenate([tmat, last_row], axis=2)
     return tmat
 
 
@@ -78,32 +118,32 @@ def pose_rvec2matr(poses):
     """
     poses = np.copy(poses)
     poses = np.expand_dims(poses, axis=-1)
-    trj_len, _, _ = poses.shape
+    trjlen, _, _ = poses.shape
     trans = poses[:, :3]
     uvec = poses[:, 3:]
     unorm = np.expand_dims(np.linalg.norm(uvec, axis=1), axis=1)
     # uvec [5, 3, 1], unorm [5, 1, 1]
-    unorm_mask = ~np.isclose(unorm, 0).reshape(trj_len)
+    unorm_mask = ~np.isclose(unorm, 0).reshape(trjlen)
     uvec[unorm_mask] = uvec[unorm_mask] / unorm[unorm_mask]
     w1 = uvec[:, 0:1]
     w2 = uvec[:, 1:2]
     w3 = uvec[:, 2:3]
-    z = np.zeros(shape=(trj_len, 1, 1))
+    z = np.zeros(shape=(trjlen, 1, 1))
 
     # w_hat.shape = [batch, N, 9, 1]
     # NOTE: 원래 책에는 이렇게 하라고 되어 있지만 이렇게 하면 반대 회전이 나옴
     # w_hat = np.concatenate([z, -w3, w2, w3, z, -w1, -w2, w1, z], axis=1)
     # 회전 방향을 맞추기 위해 부호 반대로
     w_hat = np.concatenate([z, w3, -w2, -w3, z, w1, w2, -w1, z], axis=1)
-    w_hat = np.reshape(w_hat, (trj_len, 3, 3))
+    w_hat = np.reshape(w_hat, (trjlen, 3, 3))
     identity = np.expand_dims(np.eye(3), axis=0)
-    identity = np.tile(identity, (trj_len, 1, 1))
+    identity = np.tile(identity, (trjlen, 1, 1))
     # unorm = np.expand_dims(unorm, axis=-1)
-    # identity: [trj_len, 3, 3], unorm: [trj_len, 1, 1], w_hat: [trj_len, 3, 3]
+    # identity: [trjlen, 3, 3], unorm: [trjlen, 1, 1], w_hat: [trjlen, 3, 3]
     rotmat = identity + w_hat*np.sin(unorm) + np.matmul(w_hat, w_hat)*(1 - np.cos(unorm))
 
     tmat = np.concatenate([rotmat, trans], axis=2)
-    last_row = np.tile(np.array([[[0, 0, 0, 1]]], dtype=np.float32), (trj_len, 1, 1))
+    last_row = np.tile(np.array([[[0, 0, 0, 1]]], dtype=np.float32), (trjlen, 1, 1))
     tmat = np.concatenate([tmat, last_row], axis=1)
     return tmat
 
@@ -186,7 +226,7 @@ def test_pose_rvec2matr_batch():
     print("input pose vector shape:", poses_rvec.get_shape())
 
     # TEST
-    poses_matr = pose_rvec2matr_batch(poses_rvec)
+    poses_matr = pose_rvec2matr_batch_tf(poses_rvec)
 
     print("output pose matrix shape:", poses_matr.get_shape())
     pose0 = poses_rvec[3, 2, :].numpy()
@@ -218,7 +258,7 @@ def test_pose_matr2rvec_batch():
     print("===== start test_pose_matr2rvec_batch")
     poses_twis = tf.random.uniform(shape=(8, 4, 6), minval=-1, maxval=1)
     print("input pose vector shape:", poses_twis.get_shape())
-    poses_matr = pose_rvec2matr_batch(poses_twis)
+    poses_matr = pose_rvec2matr_batch_tf(poses_twis)
 
     # TEST
     poses_twis_again = pose_matr2rvec_batch(poses_matr)

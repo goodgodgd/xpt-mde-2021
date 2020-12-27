@@ -5,7 +5,7 @@ import pandas as pd
 
 import settings
 from config import opts
-import evaluate.eval_funcs as ef
+import evaluate.eval_utils as eu
 import utils.util_funcs as uf
 
 
@@ -80,22 +80,7 @@ def evaluate_dataset_depth(results, ckpt_name, dataset_name):
 
 
 def evaluate_depth(depth_pred, depth_true):
-    mask = np.logical_and(depth_true > opts.MIN_DEPTH, depth_true < opts.MAX_DEPTH)
-    # crop used by Garg ECCV16 to reprocude Eigen NIPS14 results
-    # if used on gt_size 370x1224 produces a crop of [-218, -3, 44, 1180]
-    gt_height, gt_width, _ = depth_true.shape
-    crop = np.array([0.40810811 * gt_height, 0.99189189 * gt_height,
-                     0.03594771 * gt_width, 0.96405229 * gt_width]).astype(np.int32)
-    crop_mask = np.zeros(mask.shape)
-    crop_mask[crop[0]:crop[1], crop[2]:crop[3]] = 1
-    mask = np.logical_and(mask, crop_mask)
-    # scale matching
-    scaler = np.median(depth_true[mask]) / np.median(depth_pred[mask])
-    depth_pred[mask] *= scaler
-    # clip prediction and compute error metrics
-    depth_pred = np.clip(depth_pred, opts.MIN_DEPTH, opts.MAX_DEPTH)
-    metrics = ef.compute_depth_metrics(depth_true[mask], depth_pred[mask])
-    return metrics
+    eu.valid_depth_filter(depth_pred, depth_true)
 
 
 def evaluate_pose(pose_pred, pose_true, abs_scale):

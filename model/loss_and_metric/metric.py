@@ -1,16 +1,16 @@
 import tensorflow as tf
 import utils.convert_pose as cp
-import evaluate.eval_funcs as ef
+import evaluate.eval_utils as eu
 
 
-def compute_metric_pose(pose_pred, pose_true_mat, stereo=False):
+def compute_metric_pose(pose_pred, pose_true_mat, abs_scale=False):
     """
     :param pose_pred: 6-DoF poses [batch, numsrc, 6]
     :param pose_true_mat: 4x4 transformation matrix [batch, numsrc, 4, 4]
-    :param stereo: if stereo true, metric is evaluated in ABSOLUTE scale
+    :param abs_scale: if abs_scale true, metric is evaluated in ABSOLUTE scale
     """
-    pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
-    trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat, stereo)
+    pose_pred_mat = cp.pose_rvec2matr_batch_tf(pose_pred)
+    trj_err = ef.calc_trajectory_error_tensor(pose_pred_mat, pose_true_mat, abs_scale)
     rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
     if tf.reduce_mean(trj_err).numpy() > 10:
         print("\n===========")
