@@ -62,7 +62,7 @@ def pose_rvec2matr_batch_tf(poses):
     # identity.shape = [batch, N, 3, 3]
     identity = tf.tile(identity, (batch, snippet, 1, 1))
     tmpmat = identity + w_hat*tf.sin(unorm) + tf.matmul(w_hat, w_hat)*(1 - tf.cos(unorm))
-    rotmat = tf.where(tf.abs(unorm) < 0.00001, identity, tmpmat)
+    rotmat = tf.where(tf.abs(unorm) < 1e-8, identity, tmpmat)
 
     tmat = tf.concat([rotmat, trans], axis=3)
     last_row = tf.tile(tf.constant([[[[0, 0, 0, 1]]]], dtype=tf.float32), multiples=(batch, snippet, 1, 1))
