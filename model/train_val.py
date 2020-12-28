@@ -55,6 +55,7 @@ class TrainValBase:
         # list of dict -> dataframe -> mean: single row dataframe -> to_dict: dict of mean values
         results = pd.DataFrame(results)
         mean_results = results.mean(axis=0).to_dict()
+        print("results quantile:\n", results.loc[:, ["trjabs", "trjrel", "roterr", "deprel"]].quantile([0.5, 0.8, 0.9, 1.0]))
         message = f"[{self.train_val_name} Epoch MEAN], result: "
         for key, val in mean_results.items():
             message += f"{key}={val:1.4f}, "

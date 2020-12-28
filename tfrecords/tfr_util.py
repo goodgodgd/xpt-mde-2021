@@ -110,6 +110,60 @@ def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
     return dst_depth
 
 
+def point_cloud_to_depth_map(pcd, intrinsic, dephw, transform=np.eye(4)):
+    """
+    :param pcd: point cloud [N, 3]
+    :param intrinsic: [3, 3]
+    :param dephw: height and width of output depth map
+    :param transform: transformation matrix to camera frame
+    :return: depth map
+    """
+    rotat = transform[:3, :3]
+    trans = transform[:3, 2:3]
+    # points: [3, N]
+    points = np.matmul(rotat, pcd.T) + trans
+    # project to camera
+    pixels = np.matmul(intrinsic, points) / points[2:3, :]
+    assert np.isclose(pixels[3], 1.).all()
+    pixels = pixels[:, (pixels[0]>=0) & (pixels[0]<dephw[1]) & (pixels[1]>=0) & (pixels[1]<dephw[0])]
+    neipixels = np.stack([np.floor(pixels[0]), np.floor(pixels[1]), np.ceil(pixels[0]), np.ceil(pixels[1])], axis=0)
+    # neipixels: [(x1, y1), (x1, y2), (x2, y1), (x2, y2)] [4, 2, N]
+    neipixels = np.array([[neipixels[0], neipixels[1]], [neipixels[0], neipixels[3]],
+                          [neipixels[2], neipixels[1]], [neipixels[2], neipixels[3]]]).astype(np.int32)
+    pixels = pixels[np.newaxis, :2]
+    # diff = (1-abs(x-xn), 1-abs(y-yn)) [4, 2, N]
+    diff = 1 - np.abs(pixels - neipixels)
+    # weights = (1-abs(x-xn)) * (1-abs(y-yn))
+    weights = np.stack([quarter[0]*quarter[1] for quarter in diff], axis=0)
+    depthmap = np.zeros(dephw, dtype=np.float32)
+    weightmap = np.zeros(dephw, dtype=np.float32)
+
+    # qtpixels: [2, N]
+    for qtpixels, qtweights in zip(neipixels, weights):
+        strpixels = [f"{pixel[0],pixel[1]}" for pixel in qtpixels.T]
+        print("str pixels:", len(strpixels), strpixels[:5])
+        pixelset = set(strpixels)
+        strpixels = np.array(strpixels)
+        dupleinds = np.zeros(strpixels.shape[0])
+
+        for pixel in pixelset:
+            inds = np.argwhere(strpixels == pixel)
+            dupleinds[inds] = np.arange(len(inds))
+
+        priority = 0
+        while True:
+            curpixels = qtpixels[:, dupleinds == priority]
+            if curpixels.size == 0:
+                break
+            # accumulate weighted depth
+            depthmap[curpixels[1], curpixels[0]] += points[:, dupleinds == priority, 3] * qtweights[dupleinds == priority]
+            weightmap[curpixels[1], curpixels[0]] += qtweights[dupleinds == priority]
+            priority += 1
+
+    depthmap = depthmap / weightmap
+    return depthmap
+
+
 def apply_color_map(depth):
     if len(depth.shape) > 2:
         depth = depth[:, :, 0]
