@@ -16,8 +16,7 @@ class ModelWrapper:
         return predictions
 
     def predict_dataset(self, dataset, save_keys, total_steps):
-        outputs = {key: [] for key in save_keys}
-        outputs.update({key + "_gt": [] for key in save_keys})
+        outputs = self.init_output_structure(save_keys)
         for step, features in enumerate(dataset):
             predictions = self.predict_batch(features)
             outputs = self.append_outputs(features, predictions, outputs)
@@ -30,6 +29,13 @@ class ModelWrapper:
             if data:
                 results[key] = np.concatenate(data, axis=0)
         return results
+
+    def init_output_structure(self, keys):
+        outputs = {key: [] for key in keys}
+        outputs.update({key + "_gt": [] for key in keys})
+        if "depth" in keys:
+            outputs["intrinsic"] = []
+        return outputs
 
     def predict_batch(self, features, suffix=""):
         predictions = dict()
@@ -56,6 +62,8 @@ class ModelWrapper:
             outputs["depth_gt" + suffix].append(depth_gt)
             depth_ms = predictions["depth_ms" + suffix]
             outputs["depth" + suffix].append(depth_ms[0])
+            intrinsic = features["intrinsic" + suffix]
+            outputs["intrinsic" + suffix].append(intrinsic)
         if "flow" + suffix in outputs:
             # [batch, numsrc, height, width, 2]
             # TODO: add "flow_gt" to tfrecords

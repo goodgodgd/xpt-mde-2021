@@ -10,10 +10,67 @@ from config import opts
 from tfrecords.tfrecord_reader import TfrecordReader
 import utils.util_funcs as uf
 import utils.convert_pose as cp
-import evaluate.eval_funcs as ef
 from model.synthesize.synthesize_base import SynthesizeMultiScale
-from model.loss_and_metric import photometric_loss, smootheness_loss
-from model.model_main import set_configs, create_model, try_load_weights
+from model.train_val import ModelValidater, merge_results
+from model.model_main import set_configs, get_dataset, create_training_parts
+from model.model_util.logger import stack_reconstruction_images
+import model.loss_and_metric.losses as lm
+
+
+def inspect_results():
+    set_configs()
+    dataset_val, tfr_config, val_steps = get_dataset("kitti_raw", "val", False)
+    model, augmenter, loss_object, optimizer = \
+        create_training_parts(initial_epoch=1, tfr_config=tfr_config, learning_rate=0.001,
+                              loss_weights=opts.LOSS_RIGID_T1, net_names=opts.RIGID_NET, weight_suffix='ep15')
+
+    validater = ModelValidaterInspect(model, loss_object, val_steps, True)
+    validater.run_an_epoch(dataset_val)
+
+
+class ModelValidaterInspect(ModelValidater):
+    def run_an_epoch(self, dataset):
+        results = []
+        for step, features in enumerate(dataset):
+            preds, loss, loss_by_type = self.run_a_batch(features)
+            batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
+            self.print_result(batch_result, step, log_msg, features, preds)
+            results.append(batch_result)
+            self.show_images(features, preds)
+
+        results = pd.DataFrame(results)
+        return results
+
+    def print_result(self, batch_result, step, log_msg, features, predictions):
+        print(f"{step}/{self.steps_per_epoch} steps, {log_msg}")
+        msg = "  "
+        for i, (key, val) in enumerate(batch_result.items()):
+            msg += f"{key}={val:1.5f}, "
+        print(msg)
+        if "pose_gt" in features:
+            pose_gt_vec = cp.pose_matr2rvec_batch(features["pose_gt"]).numpy()
+            pose_pr_vec = predictions["pose"].numpy()
+            xyz_true = pose_gt_vec[:, :, :3]
+            xyz_pred = pose_pr_vec[:, :, :3]
+            scale = np.sum(xyz_true * xyz_pred, axis=2) / np.sum(xyz_pred ** 2, axis=2)
+            print("  pose gt:", pose_gt_vec[0, 0])
+            print("  pose pr:", pose_pr_vec[0, 0])
+            print(f"  pose scale, diff: {scale[0, 0]:1.4f}", np.abs(pose_gt_vec[0, 0] - pose_pr_vec[0, 0]))
+        if "depth_gt" in features:
+            print(f"  depth scale, gt depth, pr depth: {batch_result['gtdepth']/batch_result['prdepth']:1.4f}",
+                  batch_result["gtdepth"], batch_result["prdepth"])
+
+    def show_images(self, features, predictions):
+        total_loss = lm.TotalLoss()
+        scaleidx, batchidx, srcidx = 0, 0, 0
+        view1 = stack_reconstruction_images(total_loss, features, predictions, (scaleidx, batchidx, srcidx))
+        cv2.imshow("recon", view1)
+        if "pose_gt" in features:
+            pose_gt_vec = cp.pose_matr2rvec_batch(features["pose_gt"])
+            predictions["pose"] = pose_gt_vec
+            view2 = stack_reconstruction_images(total_loss, features, predictions, (scaleidx, batchidx, srcidx))
+            cv2.imshow("recon_by_gtpose", view2)
+        cv2.waitKey()
 
 
 def evaluate_for_debug(data_dir_name, model_name):
@@ -91,7 +148,7 @@ def evaluate_batch(index, x, model):
     depth_err, scale = compute_depth_error(depth_pred_ms[0].numpy()[0], depth_true.numpy()[0])
     smooth_loss = compute_smooth_loss(disp_pred_ms[0], target_image)
 
-    pose_pred_mat = cp.pose_rvec2matr_batch(pose_pred)
+    pose_pred_mat = cp.pose_rvec2matr_batch_tf(pose_pred)
     # pose error output: [batch, numsrc]
     trj_err, trj_len = compute_trajectory_error(pose_pred_mat, pose_true_mat, scale)
     rot_err = ef.calc_rotational_error_tensor(pose_pred_mat, pose_true_mat)
@@ -162,7 +219,7 @@ def compute_depth_error(depth_pred, depth_true):
     depth_pred[mask] *= scaler
     # clip prediction and compute error metrics
     depth_pred = np.clip(depth_pred, opts.MIN_DEPTH, opts.MAX_DEPTH)
-    metrics = ef.compute_depth_metrics(depth_true[mask], depth_pred[mask])
+    metrics = ef.compute_depth_metrics(depth_pred[mask], depth_true[mask])
     # return only abs rel
     return metrics[0], scaler
 
@@ -256,4 +313,5 @@ def save_worst_views(frame, x, model, sample_inds, save_path, scale=1):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=3, suppress=True, linewidth=100)
-    evaluate_for_debug('kitti_raw_test', 'vode1')
+    inspect_results()
+    # evaluate_for_debug('kitti_raw_test', 'vode1')

@@ -1,6 +1,7 @@
 import numpy as np
 import cv2
 import tensorflow as tf
+import pandas as pd
 from utils.convert_pose import pose_matr2rvec
 
 
@@ -110,6 +111,59 @@ def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
     return dst_depth
 
 
+def point_cloud_to_depth_map(src_pcd, intrinsic, imshape, T2cam=np.eye(4)):
+    """
+    :param src_pcd: source point cloud [N, 4]
+    :param intrinsic: [3, 3]
+    :param imshape: height and width of output depth map
+    :param T2cam: transformation matrix to camera frame
+    :return: depth map
+    """
+    if src_pcd.shape[1] == 3:
+        src_pcd = np.concatenate([src_pcd, np.ones((1, src_pcd.shape[1]))])
+    src_pcd = src_pcd.T    # (N, 4) => (4, N)
+    src_pcd[3, :] = 1
+    # points in camera frame (x:right, y:down, z:depth) (3, N)
+    points = np.dot(T2cam, src_pcd)[:3]
+    points = points[:, points[2] > 1.]
+    # project to camera, pixels: [3, N]
+    pixels = np.dot(intrinsic, points) / points[2:3]
+    assert np.isclose(pixels[2], 1.).all()
+    # remove pixels out of image plane
+    pixels = pixels[:, (pixels[0]>=0) & (pixels[0]<imshape[1]-1) & (pixels[1]>=0) & (pixels[1]<imshape[0]-1)]
+    # quarter pixels around `pixels`
+    data = np.stack([np.floor(pixels[0]), np.floor(pixels[1]), np.ceil(pixels[0]), np.ceil(pixels[1])], axis=1)
+    quart_pixels = pd.DataFrame(data, columns=['x1', 'y1', 'x2', 'y2'])
+    quart_pixels = quart_pixels.astype(int)
+    quarter_columns = [['x1', 'y1'], ['x1', 'y2'], ['x2', 'y1'], ['x2', 'y2']]
+    depthmap = np.zeros(imshape, dtype=np.float32)
+    weightmap = np.zeros(imshape, dtype=np.float32)
+    flpixels = pixels[:2]
+
+    for quarter_col in quarter_columns:
+        qtpixels = quart_pixels.loc[:, quarter_col]
+        qtpixels = qtpixels.rename(columns={quarter_col[0]: 'col', quarter_col[1]: 'row'})
+        # diff = (1-abs(x-xn), 1-abs(y-yn)) [N, 2]
+        diff = 1 - np.abs(flpixels.T - qtpixels.values)
+        # weights = (1-abs(x-xn)) * (1-abs(y-yn)) [N]
+        weights = diff[:, 0] * diff[:, 1]
+
+        step = 0
+        while len(qtpixels.index) > 0:
+            step += 1
+            step_pixels = qtpixels.drop_duplicates(keep='first')
+            rows = step_pixels['row'].values
+            cols = step_pixels['col'].values
+            inds = step_pixels.index.values
+            depthmap[rows, cols] += points[2, inds] * weights[inds]
+            weightmap[rows, cols] += weights[inds]
+            qtpixels = qtpixels[~qtpixels.index.isin(step_pixels.index)]
+
+    depthmap[depthmap > 0] = depthmap[depthmap > 0] / weightmap[depthmap > 0]
+    depthmap[weightmap < 0.5] = 0
+    return depthmap
+
+
 def apply_color_map(depth):
     if len(depth.shape) > 2:
         depth = depth[:, :, 0]
@@ -145,3 +199,30 @@ def show_example(example, wait=0, print_param=False, max_height=1000, suffix="")
 
     cv2.waitKey(wait)
 
+
+# ======================================================================
+import pykitti
+
+
+def test_point_cloud_to_depth_map():
+    print("\n===== start test_kitti_odom_reader")
+    scale = 2
+    drive_loader = pykitti.raw("/media/ian/IanBook2/datasets/kitti_raw_data", "2011_09_26", "0002")
+    intrinsic = drive_loader.calib.K_cam2
+    intrinsic[:2] = intrinsic[:2] / scale
+    for index in range(100):
+        velo_data = drive_loader.get_velo(index)
+        images = drive_loader.get_rgb(index)
+        image = np.array(images[0])
+        image = cv2.resize(image, (image.shape[1]//scale, image.shape[0]//scale))
+        depthmap = point_cloud_to_depth_map(velo_data, intrinsic,
+                                            image.shape[:2], drive_loader.calib.T_cam2_velo)
+        depthmap = apply_color_map(depthmap)
+        view = np.concatenate([image, depthmap], axis=0)
+        cv2.imshow("depth", view)
+        cv2.waitKey()
+    print("!!! test_point_cloud_to_depth_map passed")
+
+
+if __name__ == "__main__":
+    test_point_cloud_to_depth_map()

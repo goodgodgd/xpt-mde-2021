@@ -4,7 +4,7 @@ from tensorflow.keras import layers
 
 from utils.decorators import shape_check
 from model.synthesize.bilinear_interp import BilinearInterpolation
-from utils.convert_pose import pose_rvec2matr_batch
+from utils.convert_pose import pose_rvec2matr_batch_tf
 
 
 class SynthesizeMultiScale:
@@ -19,7 +19,7 @@ class SynthesizeMultiScale:
         :return: reconstructed target view in multi scale, list of [batch, numsrc, height/scale, width/scale, 3]}
         """
         # convert pose vector to transformation matrix
-        poses_matr = layers.Lambda(lambda pose: pose_rvec2matr_batch(pose),
+        poses_matr = layers.Lambda(lambda pose: pose_rvec2matr_batch_tf(pose),
                                    name="pose2matrix")(pred_pose)
         synth_targets = []
         for depth_sc in pred_depth_ms:

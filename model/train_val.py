@@ -5,7 +5,7 @@ import time
 
 import utils.util_funcs as uf
 import utils.util_class as uc
-from model.loss_and_metric.metric import compute_metric_pose
+import evaluate.eval_utils as eu
 from model.model_util.distributer import DistributionStrategy, ReplicaOutputIntegrator
 
 
@@ -55,6 +55,7 @@ class TrainValBase:
         # list of dict -> dataframe -> mean: single row dataframe -> to_dict: dict of mean values
         results = pd.DataFrame(results)
         mean_results = results.mean(axis=0).to_dict()
+        print("results quantile:\n", results.loc[:, ["trjabs", "trjrel", "roterr", "deprel"]].quantile([0.5, 0.8, 0.9, 1.0]))
         message = f"[{self.train_val_name} Epoch MEAN], result: "
         for key, val in mean_results.items():
             message += f"{key}={val:1.4f}, "
@@ -156,18 +157,55 @@ def merge_results(features, preds, loss, loss_by_type, stereo):
     batch_result = {"loss": loss.numpy()}
     log_msg = f"loss = {loss.numpy():1.4f}"
     if "pose" in preds:
-        trjerr, roterr = get_metric_pose(preds, features, stereo)
-        batch_result["trjerr"] = trjerr
-        batch_result["roterr"] = roterr
-        log_msg += f", metric={trjerr:1.4f}, {roterr:1.4f}"
+        trj_abs_err, trj_rel_err, rot_err = get_pose_metric(preds, features)
+        batch_result["trjabs"] = trj_abs_err
+        batch_result["trjrel"] = trj_rel_err
+        batch_result["roterr"] = rot_err
+        log_msg += f", pose_err={trj_abs_err:1.4f}, {trj_rel_err:1.4f}, {rot_err:1.4f}"
     if "depth_ms" in preds:
-        depths = get_center_depths(features, preds)
-        batch_result["gtdepth"] = depths[0, 0]
-        batch_result["prdepth"] = depths[1, 0]
-        log_msg += f", prdepth={depths[1, 0]:1.4f}"
+        depth_abs_rel = get_depth_metric(features, preds)
+        batch_result["deprel"] = depth_abs_rel
+        log_msg += f", depth_err={depth_abs_rel:1.4f}"
+        # compare center depths
+        gtdepth, prdepth = get_center_depths(features, preds)
+        batch_result["gtdepth"] = gtdepth[0]
+        batch_result["prdepth"] = prdepth[0]
+        # log_msg += f", gtdepth={gtdepth[0]:1.4f}, prdepth={prdepth[0]:1.4f}"
     loss_by_type = {key: loss.numpy() for key, loss in loss_by_type.items()}
     batch_result.update(loss_by_type)
     return batch_result, log_msg
+
+
+def get_depth_metric(features, preds):
+    pred_depth_ms = preds["depth_ms"]
+    depth_pred = pred_depth_ms[0].numpy()
+    batch, height, width, _ = depth_pred.shape
+    if "depth_gt" in features:
+        depth_true = features["depth_gt"].numpy()
+    else:
+        return 0
+
+    depth_pred = depth_pred[..., 0]
+    depth_true = depth_true[..., 0]
+    """
+    depth_pred, depth_true: [batch, height, width]
+    depth_pred_val, depth_true_val: [batch, N]
+    """
+    metrics = []
+    for depth_pr, depth_gt in zip(depth_pred, depth_true):
+        depth_pr_val, depth_gt_val = eu.valid_depth_filter(depth_pr, depth_gt)
+        abs_rel = np.mean(np.abs(depth_gt_val - depth_pr_val) / depth_gt_val)
+        metrics.append(abs_rel)
+    return np.mean(metrics)
+
+
+def get_pose_metric(preds, features):
+    if "pose_gt" in features:
+        pose_eval = eu.PoseMetricTf()
+        pose_eval.compute_pose_errors(preds['pose'], features['pose_gt'])
+        return pose_eval.get_mean_pose_error()
+    else:
+        return 0, 0, 0
 
 
 def get_center_depths(features, preds):
@@ -188,19 +226,10 @@ def get_center_depths(features, preds):
         mean_true.append(mean_d)
     mean_true = np.array(mean_true)
     mean_pred = np.mean(depth_pred[:, ys:ye, xs:xe, :], axis=(1, 2, 3))
-    mean_depths = np.stack([mean_true, mean_pred], axis=0)
     """
-    mean_depths: [2, batch] mean of true depths (row0) and predicted depths (row1)
+    mean of true depths and predicted depths [batch]
     """
-    return mean_depths
-
-
-def get_metric_pose(preds, features, stereo):
-    if "pose_gt" in features:
-        trjerr, roterr = compute_metric_pose(preds['pose'], features['pose_gt'], stereo)
-        return trjerr.numpy(), roterr.numpy()
-    else:
-        return 0, 0
+    return mean_true, mean_pred
 
 
 def inspect_model(preds, features, step, steps_per_epoch):
