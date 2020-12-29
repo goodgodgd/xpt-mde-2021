@@ -8,7 +8,7 @@ RAW_DATA_PATHS = {
     "waymo": "/media/ian/IanBook2/datasets/waymo",
     "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
 }
-RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_stereo_0814"
+RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_stereo_1227"
 
 
 class FixedOptions:
@@ -40,7 +40,8 @@ class FixedOptions:
     """
     network options: network architecture, convolution args, ... 
     """
-    JOINT_NET = {"depth": ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][1],
+    JOINT_NET = {"depth": ["DepthNetBasic", "DepthNetNoResize", "MobileNetV2", "NASNetMobile",
+                           "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][3],
                  "camera": "PoseNet",
                  "flow": "PWCNet"
                  }
@@ -59,7 +60,7 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode1"
+    CKPT_NAME = "vode7"
 
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
@@ -81,9 +82,9 @@ class VodeOptions(FixedOptions):
                            "waymo": ["train"],
                            }
     # only when making small tfrecords to test training
-    FRAME_PER_DRIVE = 100
-    TOTAL_FRAME_LIMIT = 300
-    VALIDATION_FRAMES = 100
+    FRAME_PER_DRIVE = 0
+    TOTAL_FRAME_LIMIT = 0
+    VALIDATION_FRAMES = 500
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}
@@ -103,6 +104,13 @@ class VodeOptions(FixedOptions):
         "stereoPose": 1.,
     }
     LOSS_RIGID_T2 = {
+        "L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
+        "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
+        "smoothe": 1., "smoothe_R": 1.,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_T3 = {
         "md2L1": (1. - SSIM_RATIO) * 1., "md2L1_R": (1. - SSIM_RATIO) * 1.,
         "md2SSIM": SSIM_RATIO * 0.5, "md2SSIM_R": SSIM_RATIO * 0.5,
         "cmbL1": (1. - SSIM_RATIO) * 1., "cmbL1_R": (1. - SSIM_RATIO) * 1.,
@@ -116,50 +124,23 @@ class VodeOptions(FixedOptions):
         "flow_reg": 4e-7
     }
 
-    TEST_TRAINING_PLAN = [
-        # pretraining flow net first round
-        (FixedOptions.FLOW_NET, "kitti_raw",     2, 0.0001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "cityscapes",    2, 0.0001, LOSS_FLOW, True),
-        # pretraining flow net second round
-        (FixedOptions.FLOW_NET, "kitti_raw",     2, 0.00001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "cityscapes",    2, 0.00001, LOSS_FLOW, True),
-        # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw",    2, 0.0001, LOSS_RIGID_T1, False),
-        (FixedOptions.RIGID_NET, "cityscapes",   2, 0.0001, LOSS_RIGID_T1, True),
-        # train joint net
-        (FixedOptions.JOINT_NET, "kitti_odom",   2, 0.0001, LOSS_RIGID_T2, True),
-    ]
-
     PRE_TRAINING_PLAN = [
-        # pretraining flow net first round
-        (FixedOptions.FLOW_NET, "kitti_raw",     10, 0.0001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "kitti_odom",    10, 0.0001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "a2d2",          10, 0.0001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "waymo",         10, 0.0001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "cityscapes",    10, 0.0001, LOSS_FLOW, True),
-        # pretraining flow net second round
-        (FixedOptions.FLOW_NET, "kitti_raw",     5, 0.00001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "kitti_odom",    5, 0.00001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "a2d2",          5, 0.00001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "waymo",         5, 0.00001, LOSS_FLOW, False),
-        (FixedOptions.FLOW_NET, "cityscapes",    5, 0.00001, LOSS_FLOW, True),
         # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw",   10, 0.0001, LOSS_RIGID_T1, False),
-        (FixedOptions.RIGID_NET, "kitti_odom",  10, 0.0001, LOSS_RIGID_T1, False),
-        (FixedOptions.RIGID_NET, "a2d2",        10, 0.0001, LOSS_RIGID_T1, False),
-        (FixedOptions.RIGID_NET, "waymo",       10, 0.0001, LOSS_RIGID_T1, False),
-        (FixedOptions.RIGID_NET, "cityscapes",  10, 0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T2, True),
+        (FixedOptions.RIGID_NET, "kitti_odom",  5, 0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_odom",  5, 0.0001, LOSS_RIGID_T2, True),
     ]
 
     FINE_TRAINING_PLAN_KITTI_RAW = [
-        (FixedOptions.FLOW_NET, "kitti_raw",     5, 0.00001, LOSS_FLOW, True),
+        (FixedOptions.FLOW_NET, "kitti_raw",    10, 0.00001, LOSS_FLOW, True),
         (FixedOptions.RIGID_NET, "kitti_raw",    5, 0.0001, LOSS_RIGID_T1, True),
         (FixedOptions.JOINT_NET, "kitti_raw",   10, 0.0001, LOSS_RIGID_T2, True),
         (FixedOptions.JOINT_NET, "kitti_raw",   10, 0.00001, LOSS_RIGID_T2, True),
     ]
 
     FINE_TRAINING_PLAN_KITTI_ODOM = [
-        (FixedOptions.FLOW_NET, "kitti_odom",    5, 0.00001, LOSS_FLOW, True),
+        (FixedOptions.FLOW_NET, "kitti_odom",   10, 0.00001, LOSS_FLOW, True),
         (FixedOptions.RIGID_NET, "kitti_odom",   5, 0.0001, LOSS_RIGID_T1, True),
         (FixedOptions.JOINT_NET, "kitti_odom",  10, 0.0001, LOSS_RIGID_T2, True),
         (FixedOptions.JOINT_NET, "kitti_odom",  10, 0.00001, LOSS_RIGID_T2, True),
@@ -167,8 +148,8 @@ class VodeOptions(FixedOptions):
 
     FINE_TRAINING_PLAN = FINE_TRAINING_PLAN_KITTI_RAW
     TEST_PLAN = [
-        ("kitti_raw",       ["depth"]),
-        ("kitti_odom",      ["pose"]),
+        (FixedOptions.RIGID_NET, "kitti_raw",  ["depth"], "ep15"),
+        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"],  "ep15"),
     ]
 
     @classmethod
@@ -209,4 +190,4 @@ opts = VodeOptions()
 print(f"[config] ckpt path: {opts.DATAPATH_CKP}, nets: {opts.JOINT_NET}")
 
 import numpy as np
-np.set_printoptions(precision=4, suppress=True, linewidth=100)
+np.set_printoptions(precision=4, suppress=True, linewidth=150)

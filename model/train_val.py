@@ -166,6 +166,11 @@ def merge_results(features, preds, loss, loss_by_type, stereo):
         depth_abs_rel = get_depth_metric(features, preds)
         batch_result["deprel"] = depth_abs_rel
         log_msg += f", depth_err={depth_abs_rel:1.4f}"
+        # compare center depths
+        gtdepth, prdepth = get_center_depths(features, preds)
+        batch_result["gtdepth"] = gtdepth[0]
+        batch_result["prdepth"] = prdepth[0]
+        # log_msg += f", gtdepth={gtdepth[0]:1.4f}, prdepth={prdepth[0]:1.4f}"
     loss_by_type = {key: loss.numpy() for key, loss in loss_by_type.items()}
     batch_result.update(loss_by_type)
     return batch_result, log_msg
@@ -201,6 +206,30 @@ def get_pose_metric(preds, features):
         return pose_eval.get_mean_pose_error()
     else:
         return 0, 0, 0
+
+
+def get_center_depths(features, preds):
+    pred_depth_ms = preds["depth_ms"]
+    depth_pred = pred_depth_ms[0].numpy()
+    batch, height, width, _ = depth_pred.shape
+    if "depth_gt" in features:
+        depth_true = features["depth_gt"].numpy()
+    else:
+        depth_true = np.ones((batch, height, width, 1), np.float)
+    xs, xe = width // 2 - 10, width // 2 + 10
+    ys, ye = height // 4 * 3 - 10, height // 4 * 3 + 10
+
+    depth_true = depth_true[:, ys:ye, xs:xe, :]
+    mean_true = []
+    for depth in depth_true:
+        mean_d = depth[depth > 0].mean()
+        mean_true.append(mean_d)
+    mean_true = np.array(mean_true)
+    mean_pred = np.mean(depth_pred[:, ys:ye, xs:xe, :], axis=(1, 2, 3))
+    """
+    mean of true depths and predicted depths [batch]
+    """
+    return mean_true, mean_pred
 
 
 def inspect_model(preds, features, step, steps_per_epoch):

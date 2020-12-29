@@ -13,7 +13,7 @@ from config import opts
 import utils.util_funcs as uf
 import model.loss_and_metric.losses as lm
 
-RENAMER = {"trjabs": "TEA", "trjrel": "TER", "roterr": "RE", "deprel": "DE",
+RENAMER = {"trjabs": "TEA", "trjrel": "TER", "roterr": "RE", "deprel": "DE", "depth": "dp",
            "SSIM": "SS", "smoothe": "sm", "pose": "ps", "stereo": "st", "flow": "fl",
            "stereoPose": "stps", "_reg": "Rg", "_R": "R"}
 TRAIN_PREFIX = ":"
@@ -180,39 +180,44 @@ def make_reconstructed_views(model, dataset, total_steps):
 
         # predict by model
         predictions = model(features)
-
-        # create intermediate data
-        augm_data = total_loss.append_data(features, predictions)
-        if opts.STEREO and ("image_R" in features):
-            augm_data_rig = total_loss.append_data(features, predictions, "_R")
-            augm_data.update(augm_data_rig)
-            augm_data_stereo = total_loss.synethesize_stereo(features, predictions, augm_data)
-            augm_data.update(augm_data_stereo)
-
-        view_imgs = {"left_target": augm_data["target"][0]}
-
-        if "depth_ms" in predictions:
-            target_depth = predictions["depth_ms"][0][batchidx]
-            target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
-            view_imgs["target_depth"] = target_depth
-
-        view_imgs[f"source_{srcidx}"] = augm_data["source"][batchidx, srcidx]
-
-        if "synth_target_ms" in augm_data:
-            view_imgs[f"synthesized_from_src{srcidx}"] = augm_data["synth_target_ms"][scaleidx][batchidx, srcidx]
-        # view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
-
-        if "warped_target_ms" in augm_data:
-            view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
-
-        if opts.STEREO and ("stereo_synth_ms" in augm_data):
-            view_imgs["right_source"] = augm_data["target_R"][batchidx]
-            view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
-            # view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
-
-        view1 = uf.stack_titled_images(view_imgs)
+        view1 = stack_reconstruction_images(total_loss, features, predictions, (scaleidx, batchidx, srcidx))
         recon_views.append(view1)
     return recon_views
+
+
+def stack_reconstruction_images(total_loss, features, predictions, indices):
+    scaleidx, batchidx, srcidx = indices
+    # create intermediate data
+    augm_data = total_loss.append_data(features, predictions)
+    if opts.STEREO and ("image_R" in features):
+        augm_data_rig = total_loss.append_data(features, predictions, "_R")
+        augm_data.update(augm_data_rig)
+        augm_data_stereo = total_loss.synethesize_stereo(features, predictions, augm_data)
+        augm_data.update(augm_data_stereo)
+
+    view_imgs = {"left_target": augm_data["target"][0]}
+
+    if "depth_ms" in predictions:
+        target_depth = predictions["depth_ms"][0][batchidx]
+        target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
+        view_imgs["target_depth"] = target_depth
+
+    view_imgs[f"source_{srcidx}"] = augm_data["source"][batchidx, srcidx]
+
+    if "synth_target_ms" in augm_data:
+        view_imgs[f"synthesized_from_src{srcidx}"] = augm_data["synth_target_ms"][scaleidx][batchidx, srcidx]
+        # view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
+
+    if "warped_target_ms" in augm_data:
+        view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
+
+    if opts.STEREO and ("stereo_synth_ms" in augm_data):
+        view_imgs["right_source"] = augm_data["target_R"][batchidx]
+        view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
+        # view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
+
+    view1 = uf.stack_titled_images(view_imgs)
+    return view1
 
 
 def copy_or_check_same():

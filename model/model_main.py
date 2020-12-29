@@ -74,10 +74,10 @@ def set_configs():
 
 
 @StrategyScope
-def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights, net_names=None):
+def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights, net_names=None, weight_suffix='latest'):
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(tfr_config, net_names=net_names, global_batch=opts.BATCH_SIZE, pretrained_weight=pretrained_weight).get_model()
-    model = try_load_weights(model)
+    model = try_load_weights(model, weight_suffix)
     # during joint training, flownet is frozen
     if ("depth" in net_names) and ("flow" in net_names):
         model.set_trainable("flownet", False)
@@ -184,7 +184,7 @@ def test_npz():
 
 
 if __name__ == "__main__":
-    # train_by_plan(opts.PRE_TRAINING_PLAN)
+    train_by_plan(opts.PRE_TRAINING_PLAN)
     # train_by_plan(opts.FINE_TRAINING_PLAN)
     predict_by_plan()
 
