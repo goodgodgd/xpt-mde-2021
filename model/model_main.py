@@ -89,11 +89,11 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
     return model, augmenter, loss_object, optimizer
 
 
-def try_load_weights(model, weights_suffix='latest'):
+def try_load_weights(model, weight_suffix='latest'):
     if opts.CKPT_NAME:
         model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "ckpt")
         if op.isdir(model_dir_path):
-            model.load_weights(model_dir_path, weights_suffix)
+            model.load_weights(model_dir_path, weight_suffix)
         else:
             print("===== train from scratch:", model_dir_path)
     return model
@@ -123,29 +123,29 @@ def save_model_weights(model, weights_suffix):
 
 
 def predict_by_plan():
-    for dataset_name, save_keys in opts.TEST_PLAN:
-        predict(dataset_name, save_keys)
+    for net_names, dataset_name, save_keys, weight_suffix in opts.TEST_PLAN:
+        predict(net_names, dataset_name, save_keys, weight_suffix)
 
 
-def predict(dataset_name, save_keys, weights_suffix="latest"):
+def predict(net_names, dataset_name, save_keys, weight_suffix):
     set_configs()
     dataset, tfr_config, steps = get_dataset(dataset_name, "test", True)
-    model = ModelFactory(tfr_config).get_model()
-    model = try_load_weights(model, weights_suffix)
+    model = ModelFactory(tfr_config, net_names=net_names).get_model()
+    model = try_load_weights(model, weight_suffix)
     results = model.predict_dataset(dataset, save_keys, steps)
     # {pose: [N, numsrc, 6], depth: [N, height, width, 1]}
     for key, pred in results.items():
         print(f"[predict] key={key}, shape={pred.shape}")
 
-    save_predictions(opts.CKPT_NAME, dataset_name, results)
+    save_predictions(results, opts.CKPT_NAME, dataset_name, weight_suffix)
 
 
-def save_predictions(ckpt_name, dataset_name, results):
+def save_predictions(results, ckpt_name, dataset_name, weight_suffix):
     pred_dir_path = op.join(opts.DATAPATH_PRD, ckpt_name)
     print(f"save predictions in {pred_dir_path})")
     os.makedirs(pred_dir_path, exist_ok=True)
     print(f"\tsave {dataset_name}.npy")
-    np.savez(op.join(pred_dir_path, f"{dataset_name}.npz"), **results)
+    np.savez(op.join(pred_dir_path, f"{dataset_name}_{weight_suffix}.npz"), **results)
 
 
 # ==================== tests ====================
