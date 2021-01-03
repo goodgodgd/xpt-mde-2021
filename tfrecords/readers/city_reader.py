@@ -7,6 +7,9 @@ from utils.util_class import MyExceptionToCatch
 from tfrecords.readers.reader_base import DataReaderBase
 from tfrecords.tfr_util import resize_depth_map, depth_map_to_point_cloud
 
+# pre-crop range to remove vehicle and blurred region in images [sy, ey, sx, ex]
+CITY_CROP = [0, 750, 48, 2048]
+
 
 class CityscapesReader(DataReaderBase):
     def __init__(self, split="", reader_arg=None):
@@ -58,6 +61,8 @@ class CityscapesReader(DataReaderBase):
         image = Image.open(image_bytes)
         image = np.array(image, np.uint8)
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        image = image[CITY_CROP[0]:CITY_CROP[1], CITY_CROP[2]:CITY_CROP[3]]
+        assert image.shape[:2] == (CITY_CROP[1] - CITY_CROP[0], CITY_CROP[3] - CITY_CROP[2])
         return image
 
     def get_pose(self, index, right=False):
@@ -79,10 +84,13 @@ class CityscapesReader(DataReaderBase):
             disp[disp > 0] = (disp[disp > 0] - 1) / 256.
             depth = np.zeros(disp.shape, dtype=np.float32)
             depth[disp > 0] = (fx * baseline) / disp[disp > 0]     # depth = baseline * focal length / disparity
+            depth = depth[CITY_CROP[0]:CITY_CROP[1], CITY_CROP[2]:CITY_CROP[3]]
+            assert depth.shape[:2] == (CITY_CROP[1] - CITY_CROP[0], CITY_CROP[3] - CITY_CROP[2])
             point_cloud = depth_map_to_point_cloud(depth, intrinsic)
             return point_cloud
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
+        # DEPRECATED!
         if right: return None
         params = self._get_camera_param(index)
         baseline = params["extrinsic"]["baseline"]
@@ -105,8 +113,8 @@ class CityscapesReader(DataReaderBase):
         params = self._get_camera_param(index)
         fx = params["intrinsic"]["fx"]
         fy = params["intrinsic"]["fy"]
-        cx = params["intrinsic"]["u0"]
-        cy = params["intrinsic"]["v0"]
+        cx = params["intrinsic"]["u0"] - CITY_CROP[2]
+        cy = params["intrinsic"]["v0"] - CITY_CROP[0]
         intrinsic = np.array([[fx, 0, cx], [0, fy, cy], [0, 0, 1]])
         return intrinsic.astype(np.float32)
 

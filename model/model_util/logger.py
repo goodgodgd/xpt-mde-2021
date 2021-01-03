@@ -199,7 +199,7 @@ def stack_reconstruction_images(total_loss, features, predictions, indices):
 
     if "depth_ms" in predictions:
         target_depth = predictions["depth_ms"][0][batchidx]
-        target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
+        # target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
         view_imgs["target_depth"] = target_depth
 
     view_imgs[f"source_{srcidx}"] = augm_data["source"][batchidx, srcidx]

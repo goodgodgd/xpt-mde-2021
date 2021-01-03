@@ -150,9 +150,10 @@ class ExampleMaker:
             return False
 
     def load_intrinsic(self, index, rawshape_hw, rszshape_hw, right=False):
-        intrinsic = self.data_reader.get_intrinsic(index, right=right)
-        if intrinsic is None:
+        intrinsic_raw = self.data_reader.get_intrinsic(index, right=right)
+        if intrinsic_raw is None:
             return None
+        intrinsic = intrinsic_raw.copy()
         # scale fx, cx
         intrinsic[0] = intrinsic[0] * rszshape_hw[1] / rawshape_hw[1]
         # scale fy, cy
@@ -178,9 +179,9 @@ class ExampleMaker:
         if intrinsic is None: return None
         intrinsic_rsz = self.rescale_intrinsic(intrinsic, rawshape_hw, rszshape_hw)
         point_cloud = self.data_reader.get_point_cloud(index, right)
+        if point_cloud is None: return None
         depth_map = point_cloud_to_depth_map(point_cloud, intrinsic_rsz, rszshape_hw)
         # depth_map = self.data_reader.get_depth(index, rawshape_hw, rszshape_hw, intrinsic, right)
-        if depth_map is None: return None
         return depth_map.astype(np.float32)
 
     def rescale_intrinsic(self, intrinsic, rawshape_hw, rszshape_hw):

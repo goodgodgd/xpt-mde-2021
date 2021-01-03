@@ -113,15 +113,20 @@ def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
 
 def depth_map_to_point_cloud(depth_map, intrinsic):
     # make sure center point is in depth center area, in order to check image scale
-    assert np.abs(depth_map.shape[0] - intrinsic[1, 2] * 2) / depth_map.shape[0] < 0.1, \
+    assert np.abs(depth_map.shape[0] - intrinsic[1, 2] * 2) / depth_map.shape[0] < 0.5, \
         f"depth height={depth_map.shape[0]}, cy={intrinsic[1, 2]}"
-    u_grid, v_grid = np.meshgrid(np.arange(depth_map.shape[1], depth_map.shape[0]))
+    u_grid, v_grid = np.meshgrid(np.arange(depth_map.shape[1]), np.arange(depth_map.shape[0]))
+    if depth_map.size > 1e6:
+        # if point cloud is too lage, use only quarter of depths
+        depth_map[0:-1:2, :] = 0.
+        depth_map[:, 0:-1:2] = 0.
     Z = depth_map.reshape(-1)
     # X = (u - cx) / fx * Z
     X = (u_grid.reshape(-1) - intrinsic[0, 2]) / intrinsic[0, 0] * Z
     # Y = (v - cy) / fy * Z
     Y = (v_grid.reshape(-1) - intrinsic[1, 2]) / intrinsic[1, 1] * Z
     points = np.stack([X, Y, Z], axis=1)
+    points = points[Z > 0.1]
     return points
 
 
@@ -142,10 +147,10 @@ def point_cloud_to_depth_map(src_pcd, intrinsic, imshape):
     pixels = pixels[:, valid_mask]
     points = points[:, valid_mask]
     # verify pixel-point relationship
-    leftup = np.mean(points[:, (pixels[1] > imshape[0]/2-20) & (pixels[1] < imshape[0]/2-10) & (pixels[0] < 50)], axis=1)
-    righdw = np.mean(points[:, (pixels[1] > imshape[0]/2+30) & (pixels[1] < imshape[0]/2+40) & (pixels[0] > imshape[1]-50)], axis=1)
-    assert (leftup[0] < 0) and (leftup[1] < 0), f"{leftup}"
-    assert (righdw[0] > 0) and (righdw[1] > 0), f"{righdw}"
+    leftup = points[:, (pixels[1] > intrinsic[1, 2]-20) & (pixels[1] < intrinsic[1, 2]-10) & (pixels[0] < 50)]
+    righdw = points[:, (pixels[1] > intrinsic[1, 2]+30) & (pixels[1] < intrinsic[1, 2]+40) & (pixels[0] > imshape[1]-50)]
+    if leftup.size > 0: assert (np.mean(leftup[:2], axis=1) < 0).all(), f"{leftup}"
+    if righdw.size > 0: assert (np.mean(righdw[:2], axis=1) > 0).all(), f"{righdw}"
     # quarter pixels around `pixels`
     data = np.stack([np.floor(pixels[0]), np.floor(pixels[1]), np.ceil(pixels[0]), np.ceil(pixels[1])], axis=1)
     quart_pixels = pd.DataFrame(data, columns=['x1', 'y1', 'x2', 'y2'])
@@ -156,6 +161,7 @@ def point_cloud_to_depth_map(src_pcd, intrinsic, imshape):
     flpixels = pixels[:2]
 
     for quarter_col in quarter_columns:
+
         qtpixels = quart_pixels.loc[:, quarter_col]
         qtpixels = qtpixels.rename(columns={quarter_col[0]: 'col', quarter_col[1]: 'row'})
         # diff = (1-abs(x-xn), 1-abs(y-yn)) [N, 2]
@@ -164,7 +170,7 @@ def point_cloud_to_depth_map(src_pcd, intrinsic, imshape):
         weights = diff[:, 0] * diff[:, 1]
 
         step = 0
-        while len(qtpixels.index) > 0:
+        while (len(qtpixels.index) > 0) and (step < 5):
             step += 1
             step_pixels = qtpixels.drop_duplicates(keep='first')
             rows = step_pixels['row'].values
@@ -183,7 +189,7 @@ def apply_color_map(depth):
     if len(depth.shape) > 2:
         depth = depth[:, :, 0]
     depth_view = (np.clip(depth, 0, 50.) / 50. * 255).astype(np.uint8)
-    depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+    depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_VIRIDIS)
     depth_view[depth == 0, :] = (0, 0, 0)
     return depth_view
 
@@ -204,7 +210,7 @@ def show_example(example, wait=0, print_param=False, max_height=1000, suffix="")
     if "depth_gt" in example and example["depth_gt"] is not None:
         depth = example["depth_gt"]
         depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
-        depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+        depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_VIRIDIS)
         cv2.imshow("depth" + suffix, depth_view)
 
     if print_param:

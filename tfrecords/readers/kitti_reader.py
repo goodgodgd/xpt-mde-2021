@@ -306,6 +306,9 @@ class KittiOdomReader(DataReaderBase):
         else:
             return T_w_cam2.astype(np.float32)
 
+    def get_point_cloud(self, index, right=False):
+        return None
+
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         return None
 

@@ -5,6 +5,7 @@ import tensorflow as tf
 import shutil
 import json
 import copy
+from timeit import default_timer as timer
 
 import utils.util_funcs as uf
 import utils.util_class as uc
@@ -66,6 +67,7 @@ class TfrecordMakerBase:
                 first_example = dict()
 
                 for ii, index in enumerate(loop_range):
+                    time1 = timer()
                     if (frame_per_drive > 0) and (self.example_count_in_drive >= frame_per_drive):
                         break
                     if (total_frame_limit > 0) and (self.total_example_count >= total_frame_limit):
@@ -86,7 +88,8 @@ class TfrecordMakerBase:
                     uf.print_progress_status(f"==[making TFR] drives: {di}/{num_drives} | "
                                              f"index,count: {ii}/{self.example_count_in_drive}/{num_frames} | "
                                              f"total count: {self.total_example_count} | "
-                                             f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size}")
+                                             f"shard({self.shard_count}): {self.example_count_in_shard}/{self.shard_size} | "
+                                             f"time: {timer() - time1:1.4f}")
 
                 print("")
                 self.write_tfrecord_config(first_example)
