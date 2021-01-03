@@ -9,7 +9,7 @@ import json
 import cv2
 
 from tfrecords.readers.reader_base import DataReaderBase
-from tfrecords.tfr_util import resize_depth_map
+from tfrecords.tfr_util import resize_depth_map, depth_map_to_point_cloud
 from utils.util_funcs import print_progress_status
 
 
@@ -97,6 +97,14 @@ class A2D2Reader(DataReaderBase):
 
     def get_pose(self, index, right=False):
         return None
+
+    def get_point_cloud(self, index, right=False):
+        intrinsic = self.get_intrinsic(index, right)
+        key = "depth_gt_R" if right else "depth_gt"
+        depth_map = self.get_frame_data(index, key)
+        assert (intrinsic.shape == (3, 3)) and (depth_map.ndim == 2)
+        point_cloud = depth_map_to_point_cloud(depth_map, intrinsic)
+        return point_cloud
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         key = "depth_gt_R" if right else "depth_gt"

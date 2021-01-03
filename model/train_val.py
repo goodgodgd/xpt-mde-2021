@@ -43,6 +43,9 @@ class TrainValBase:
     def run_an_epoch(self, dataset):
         results = []
         for step, features in enumerate(dataset):
+            if step >= 25000:
+                print("! ! ! stop training at 25000 ! ! !")
+                break
             start = time.time()
             preds, loss, loss_by_type = self.run_a_batch(features)
             batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)

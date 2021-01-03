@@ -5,7 +5,7 @@ import json
 from utils.util_class import MyExceptionToCatch
 
 from tfrecords.readers.reader_base import DataReaderBase
-from tfrecords.tfr_util import resize_depth_map
+from tfrecords.tfr_util import resize_depth_map, depth_map_to_point_cloud
 
 
 class CityscapesReader(DataReaderBase):
@@ -63,6 +63,25 @@ class CityscapesReader(DataReaderBase):
     def get_pose(self, index, right=False):
         return None
 
+    def get_point_cloud(self, index, right=False):
+        if right: return None
+        params = self._get_camera_param(index)
+        baseline = params["extrinsic"]["baseline"]
+        fx = params["intrinsic"]["fx"]
+        intrinsic = self.get_intrinsic(index, right)
+        disp_name = self.frame_names[index].replace("leftImg8bit", "disparity")
+        if disp_name not in self.zip_files['disparity'].namelist():
+            return None
+        else:
+            disp_bytes = self.zip_files["disparity"].open(disp_name)
+            disp = Image.open(disp_bytes)
+            disp = np.array(disp, np.uint16).astype(np.float32)
+            disp[disp > 0] = (disp[disp > 0] - 1) / 256.
+            depth = np.zeros(disp.shape, dtype=np.float32)
+            depth[disp > 0] = (fx * baseline) / disp[disp > 0]     # depth = baseline * focal length / disparity
+            point_cloud = depth_map_to_point_cloud(depth, intrinsic)
+            return point_cloud
+
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         if right: return None
         params = self._get_camera_param(index)
@@ -70,9 +89,8 @@ class CityscapesReader(DataReaderBase):
         fx = params["intrinsic"]["fx"]
 
         disp_name = self.frame_names[index].replace("leftImg8bit", "disparity")
-        # disp_name = disp_name.replace("leftImg8bit", "disparity")
         if disp_name not in self.zip_files['disparity'].namelist():
-            pass
+            return None
         else:
             disp_bytes = self.zip_files["disparity"].open(disp_name)
             disp = Image.open(disp_bytes)

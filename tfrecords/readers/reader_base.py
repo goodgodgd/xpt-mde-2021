@@ -43,6 +43,12 @@ class DataReaderBase:
         """
         raise NotImplementedError()
 
+    def get_point_cloud(self, index, right=False):
+        """
+        :return: point cloud in standard camera frame (X=right, Y=down, Z=front)
+        """
+        raise NotImplementedError()
+
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         """
         :return: indexed pose in a vector [position, quaternion] in the current sequence

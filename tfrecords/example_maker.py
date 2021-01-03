@@ -6,7 +6,7 @@ from tfrecords.readers.city_reader import CityscapesReader
 from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.driving_reader import DrivingStereoReader
 from tfrecords.readers.a2d2_reader import A2D2Reader
-from tfrecords.tfr_util import show_example
+from tfrecords.tfr_util import show_example, point_cloud_to_depth_map
 from utils.util_class import MyExceptionToCatch
 
 
@@ -70,9 +70,9 @@ class ExampleMaker:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic(frame_id)
 
         # if index % 500 == 10:
-        #     show_example(example, 200, print_param=True, max_height=0)
+        #     show_example(example, 0, print_param=True, max_height=0)
         # elif index % 100 == 10:
-        #     show_example(example, 200)
+        #     show_example(example, 0)
 
         example = self.crop_example(example, rszshape_hw)
 
@@ -174,11 +174,22 @@ class ExampleMaker:
         return pose_seq.astype(np.float32)
 
     def load_depth_map(self, index, rawshape_hw, rszshape_hw, right=False):
-        intrinsic = self.data_reader.get_intrinsic(index)
+        intrinsic = self.data_reader.get_intrinsic(index, right)
         if intrinsic is None: return None
-        depth_map = self.data_reader.get_depth(index, rawshape_hw, rszshape_hw, intrinsic, right)
+        intrinsic_rsz = self.rescale_intrinsic(intrinsic, rawshape_hw, rszshape_hw)
+        point_cloud = self.data_reader.get_point_cloud(index, right)
+        depth_map = point_cloud_to_depth_map(point_cloud, intrinsic_rsz, rszshape_hw)
+        # depth_map = self.data_reader.get_depth(index, rawshape_hw, rszshape_hw, intrinsic, right)
         if depth_map is None: return None
         return depth_map.astype(np.float32)
+
+    def rescale_intrinsic(self, intrinsic, rawshape_hw, rszshape_hw):
+        intrinsic_rsz = intrinsic.copy()
+        # rescale fx, cx
+        intrinsic_rsz[0] *= (rszshape_hw[1] / rawshape_hw[1])
+        # rescale fy, cy
+        intrinsic_rsz[1] *= (rszshape_hw[0] / rawshape_hw[0])
+        return intrinsic_rsz
 
     def verify_snippet(self, example):
         if self.dataset is "waymo":

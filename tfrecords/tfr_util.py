@@ -111,26 +111,41 @@ def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
     return dst_depth
 
 
-def point_cloud_to_depth_map(src_pcd, intrinsic, imshape, T2cam=np.eye(4)):
+def depth_map_to_point_cloud(depth_map, intrinsic):
+    # make sure center point is in depth center area, in order to check image scale
+    assert np.abs(depth_map.shape[0] - intrinsic[1, 2] * 2) / depth_map.shape[0] < 0.1, \
+        f"depth height={depth_map.shape[0]}, cy={intrinsic[1, 2]}"
+    u_grid, v_grid = np.meshgrid(np.arange(depth_map.shape[1], depth_map.shape[0]))
+    Z = depth_map.reshape(-1)
+    # X = (u - cx) / fx * Z
+    X = (u_grid.reshape(-1) - intrinsic[0, 2]) / intrinsic[0, 0] * Z
+    # Y = (v - cy) / fy * Z
+    Y = (v_grid.reshape(-1) - intrinsic[1, 2]) / intrinsic[1, 1] * Z
+    points = np.stack([X, Y, Z], axis=1)
+    return points
+
+
+def point_cloud_to_depth_map(src_pcd, intrinsic, imshape):
     """
-    :param src_pcd: source point cloud [N, 4]
+    :param src_pcd: source point cloud [N, 3] (X=right, Y=down, Z=front)
     :param intrinsic: [3, 3]
     :param imshape: height and width of output depth map
-    :param T2cam: transformation matrix to camera frame
     :return: depth map
     """
-    if src_pcd.shape[1] == 3:
-        src_pcd = np.concatenate([src_pcd, np.ones((1, src_pcd.shape[1]))])
-    src_pcd = src_pcd.T    # (N, 4) => (4, N)
-    src_pcd[3, :] = 1
-    # points in camera frame (x:right, y:down, z:depth) (3, N)
-    points = np.dot(T2cam, src_pcd)[:3]
-    points = points[:, points[2] > 1.]
+    # print("[pcd2depth]", src_pcd.shape, intrinsic.shape, imshape)
+    points = src_pcd[src_pcd[:, 2] > 1.].T  # [3, N]
     # project to camera, pixels: [3, N]
     pixels = np.dot(intrinsic, points) / points[2:3]
     assert np.isclose(pixels[2], 1.).all()
     # remove pixels out of image plane
-    pixels = pixels[:, (pixels[0]>=0) & (pixels[0]<imshape[1]-1) & (pixels[1]>=0) & (pixels[1]<imshape[0]-1)]
+    valid_mask = (pixels[0]>=0) & (pixels[0]<imshape[1]-1) & (pixels[1]>=0) & (pixels[1]<imshape[0]-1)
+    pixels = pixels[:, valid_mask]
+    points = points[:, valid_mask]
+    # verify pixel-point relationship
+    leftup = np.mean(points[:, (pixels[1] > imshape[0]/2-20) & (pixels[1] < imshape[0]/2-10) & (pixels[0] < 50)], axis=1)
+    righdw = np.mean(points[:, (pixels[1] > imshape[0]/2+30) & (pixels[1] < imshape[0]/2+40) & (pixels[0] > imshape[1]-50)], axis=1)
+    assert (leftup[0] < 0) and (leftup[1] < 0), f"{leftup}"
+    assert (righdw[0] > 0) and (righdw[1] > 0), f"{righdw}"
     # quarter pixels around `pixels`
     data = np.stack([np.floor(pixels[0]), np.floor(pixels[1]), np.ceil(pixels[0]), np.ceil(pixels[1])], axis=1)
     quart_pixels = pd.DataFrame(data, columns=['x1', 'y1', 'x2', 'y2'])

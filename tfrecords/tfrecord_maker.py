@@ -243,9 +243,6 @@ class DrivingStereoTfrecordMaker(TfrecordMakerSingleDir):
         drive_paths.sort()
         return drive_paths
 
-# TODO ======================================================================
-# TfrecordMakers which make tfrecords in drive sub-dir under tfrpath and move them to tfrpath when finished
-
 
 class WaymoTfrecordMaker(TfrecordMakerBase):
     def __init__(self, dataset, split, srcpath, tfrpath, shard_size, stereo, shwc_shape):

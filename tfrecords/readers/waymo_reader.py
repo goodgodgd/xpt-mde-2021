@@ -6,6 +6,7 @@ from waymo_open_dataset.utils import frame_utils
 from waymo_open_dataset import dataset_pb2 as open_dataset
 
 from tfrecords.readers.reader_base import DataReaderBase
+from tfrecords.tfr_util import depth_map_to_point_cloud
 from utils.util_class import MyExceptionToCatch
 
 T_C2V = tf.constant([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=tf.float32)
@@ -52,6 +53,34 @@ class WaymoReader(DataReaderBase):
         pose_c2w = tf.reshape(frame.images[0].pose.transform, (4, 4)) @ T_C2V
         pose_c2w = pose_c2w.numpy()
         return pose_c2w.astype(np.float32)
+
+    def get_point_cloud(self, index, right=False):
+        if right: return None
+        frame = self._get_frame(index)
+        (range_images, camera_projections, range_image_top_pose) = \
+            frame_utils.parse_range_image_and_camera_projection(frame)
+        frame = self._get_frame(index)
+        points, cp_points = frame_utils.convert_range_image_to_point_cloud(
+            frame, range_images, camera_projections, range_image_top_pose)
+
+        # xyz points in vehicle frame
+        points_veh = np.concatenate(points, axis=0)
+        # cp_points: (Nx6) [cam_id, ix, iy, cam_id, ix, iy]
+        cp_points = np.concatenate(cp_points, axis=0)[:, :3]
+        # extract LiDAR points projected to camera[FRONT_IND]
+        camera_mask = np.equal(cp_points[:, 0], frame.images[FRONT_IND].name)
+        points_veh = points_veh[camera_mask]
+        # transform points from vehicle to camera1
+        cam1_T_C2V = tf.reshape(frame.context.camera_calibrations[0].extrinsic.transform, (4, 4)).numpy()
+        cam1_T_V2C = np.linalg.inv(cam1_T_C2V)
+        points_veh_homo = np.concatenate((points_veh, np.ones((points_veh.shape[0], 1))), axis=1)
+        points_veh_homo = points_veh_homo.T
+        # point_cam_homo [N, 4] (front, left, up, 1)
+        points_cam_homo = cam1_T_V2C @ points_veh_homo
+        # rotation: (front, left, up, 1) -> (right, down, front)
+        R = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0]], dtype=np.float32)
+        points_cam_standard = (R @ points_cam_homo.T).T
+        return points_cam_standard
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         if right: return None
