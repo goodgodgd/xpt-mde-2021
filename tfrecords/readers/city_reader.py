@@ -45,7 +45,7 @@ class CityscapesReader(DataReaderBase):
             sub_drive_indices = [fi for fi, frame in enumerate(self.frame_names) if frame.startswith(sub_drive)]
             sub_drive_indices.sort()
             # remove first and last two frames in sub-drives
-            sub_drive_indices = sub_drive_indices[2:-2]
+            sub_drive_indices = sub_drive_indices[4:-4]
             if sub_drive_indices:
                 self.target_indices.extend(sub_drive_indices)
 

@@ -49,10 +49,6 @@ class ExampleMaker:
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
         example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
-        # skip static sequence
-        if self.check_static_sequence(example["image"], self.shwc_shape[0], 10):
-            return dict()
-
         example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:
             example["depth_gt"] = self.load_depth_map(frame_id, rawshape_hw, rszshape_hw)
@@ -81,13 +77,17 @@ class ExampleMaker:
         elif index % 100 == 10:
             show_example(example, 200, suffix="_crop")
         example = self.verify_snippet(example)
+        self.check_static_sequence(example)
         return example
 
     def make_snippet_ids(self, frame_index):
         frame_id = self.data_reader.index_to_id(frame_index)
         halflen = self.shwc_shape[0] // 2
         max_frame_id = list(self.get_range())[-1]
-        frame_seq_ids = np.arange(frame_id-halflen, frame_id+halflen+1)
+        if (self.dataset == "a2d2") or (self.dataset.startswith("cityscapes")):
+            frame_seq_ids = np.arange(frame_id-halflen*2, frame_id+halflen*2+1, 2)
+        else:
+            frame_seq_ids = np.arange(frame_id - halflen, frame_id + halflen + 1)
         frame_seq_ids = np.clip(frame_seq_ids, 0, max_frame_id).tolist()
         return frame_id, frame_seq_ids
 
@@ -121,33 +121,57 @@ class ExampleMaker:
         else:                           # if dst is taller
             return dstshape_hw[0], int(rawshape_hw[1] * dstshape_hw[0] / rawshape_hw[0] + 0.5)
 
-    def check_static_sequence(self, image_seq, seq_len, pixel_threshold):
+    def check_static_sequence(self, example):
+        image_seq = example["image"]
+        snippet, height, width, _ = self.shwc_shape
+        num_src = snippet - 1
         dynamic_frames = 0
-        height, width, _ = image_seq.shape
-        height_single = height // 5
-        num_src = seq_len - 1
-        target_frame = image_seq[(num_src * height_single):]
+        target_frame = image_seq[(num_src * height):]
+        y_border = height // 3
+        diff_thresh = height * width // 50
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.7
+        color = (0, 0, 255)
+        view = image_seq.copy()
 
-        for i in range(num_src):
-            current_frame = image_seq[(i * height_single):((i + 1) * height_single)]
-            img_difference = target_frame[: height_single // 4] - current_frame[:height_single // 4]
-            different_pixels = np.sum(np.absolute(img_difference) >= pixel_threshold)
-
-            if (different_pixels // 3) > ((height_single // 5) * (width // 10)):
-                # print("\n The number of dynamic different pixel : ", different_pixels // 4)
+        # create blurred diff images
+        img_diffs = []
+        target_smooth = cv2.GaussianBlur(cv2.GaussianBlur(target_frame, (3, 3), 0), (3, 3), 0).astype(np.int32)
+        for i in range(snippet):
+            src_frame = image_seq[(i * height):(i * height + height)]
+            src_smooth = cv2.GaussianBlur(cv2.GaussianBlur(src_frame, (3, 3), 0), (3, 3), 0).astype(np.int32)
+            imdiff = np.absolute(target_smooth - src_smooth)
+            img_diffs.append(imdiff)
+            diffmap = np.sum(imdiff[:y_border], axis=2)
+            diff_pixels = np.sum(diffmap > 20).astype(int)
+            cv2.putText(view, f"{diff_pixels}, {diff_thresh}, {y_border * width}", (40, i * height + 20), font, font_scale, color, 1)
+            if diff_pixels > diff_thresh:
                 dynamic_frames += 1
-            # else:
-            # print("\n The number of static different pixel : ", different_pixels // 4)
+            # print("\n[check_static] different pixels:", diff_pixels)
 
-        if dynamic_frames == 0:
-            print("!! static image sequence detected !!")
-            cv2.imshow("static image", image_seq)
-            cv2.waitKey(10)
-            return True
-        else:
-            # cv2.imshow("dynamic image", image_seq)
-            # cv2.waitKey(10)
-            return False
+        img_diffs = np.clip(np.concatenate(img_diffs, axis=0), 0, 255).astype(np.uint8)
+        view = np.concatenate([view, img_diffs], axis=1)
+        stride = width // 4
+        view[:, stride:-1:stride] = (0, 0, 255)
+        view[y_border:-1:height, :] = (0, 0, 255)
+
+        # create saliency map
+        sali_imgs = []
+        # saliency = cv2.saliency.StaticSaliencySpectralResidual_create()
+        saliency = cv2.saliency.StaticSaliencyFineGrained_create()
+        for i in range(snippet):
+            src_frame = image_seq[(i * height):(i * height + height)]
+            (success, saliency_map) = saliency.computeSaliency(src_frame)
+            saliency_map = np.clip(saliency_map * 255, 0, 255).astype(np.uint8)
+            binary_map = cv2.threshold(saliency_map, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
+            binary_map = cv2.cvtColor(binary_map, cv2.COLOR_GRAY2BGR)
+            saliency_map = cv2.cvtColor(saliency_map, cv2.COLOR_GRAY2BGR)
+            sali_imgs.append(saliency_map)
+
+        sali_imgs = np.concatenate(sali_imgs, axis=0)
+        view = np.concatenate([view, sali_imgs], axis=1)
+        cv2.imshow("image_diff", view)
+        cv2.waitKey()
 
     def load_intrinsic(self, index, rawshape_hw, rszshape_hw, right=False):
         intrinsic_raw = self.data_reader.get_intrinsic(index, right=right)

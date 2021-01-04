@@ -121,7 +121,7 @@ def test_read_dataset():
     """
     Test if TfrecordReader works fine and print keys and shapes of input tensors
     """
-    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "cityscapes_train"))
+    tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, "a2d2_train"))
     dataset = tfrgen.get_dataset()
     for i, x in enumerate(dataset):
         # if i == 100:
@@ -134,9 +134,7 @@ def test_read_dataset():
         # print("stereo pose\n", x["stereo_T_LR"][0].numpy())
         # print("gt poses:\n", x['pose_gt'].numpy()[0])
         image = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8).numpy()
-        image5d = tf.image.convert_image_dtype((x["image5d"] + 1.) / 2., dtype=tf.uint8).numpy()
         cv2.imshow("image", image[0])
-        cv2.imshow("target", image5d[0, -1])
         cv2.waitKey()
 
 
