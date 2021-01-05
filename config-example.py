@@ -1,4 +1,5 @@
 import os.path as op
+import numpy as np
 
 # TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
 RAW_DATA_PATHS = {
@@ -8,7 +9,7 @@ RAW_DATA_PATHS = {
     "waymo": "/media/ian/IanBook2/datasets/waymo",
     "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
 }
-RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_stereo_1227"
+RESULT_DATAPATH = "/media/ian/2BD062D9593700DF/vode_data/vode_0103"
 
 
 class FixedOptions:
@@ -19,13 +20,12 @@ class FixedOptions:
     SNIPPET_LEN = 5
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
-
-    IMAGE_SIZES = {"kitti_raw": (128, 512),
+    IMAGE_SIZES = {"kitti_raw": (128, 512),     # 2:8 65536
                    "kitti_odom": (128, 512),
-                   "cityscapes": (192, 448),
-                   "waymo": (256, 384),
-                   "a2d2": (256, 512),
-                   "driving_stereo": (192, 384),
+                   "cityscapes": (192, 512),    # 3:8
+                   "waymo": (256, 384),         # 4:6 98304
+                   "a2d2": (192, 384),          # 3:6 73728
+                   "driving_stereo": (192, 384),     # 3:6 73728
                    }
 
     """
@@ -60,7 +60,7 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode7"
+    CKPT_NAME = "vode12"
 
     DATAPATH = RESULT_DATAPATH
     assert(op.isdir(DATAPATH))
@@ -77,7 +77,6 @@ class VodeOptions(FixedOptions):
     """
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
-                           "a2d2": ["train"],
                            "cityscapes__sequence": ["train"],
                            "waymo": ["train"],
                            }
@@ -95,26 +94,35 @@ class VodeOptions(FixedOptions):
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
-    SSIM_RATIO = 0.8
+    SSIM_RATIO = 0.5
+    SCALE_WEIGHT_T1 = np.array([0.25, 0.25, 0.25, 0.25]) * 4.
+    SCALE_WEIGHT_T2 = np.array([0.1, 0.2, 0.3, 0.4]) * 4.
     LOSS_RIGID_T1 = {
-        "L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
-        "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
+        "L1": (1. - SSIM_RATIO), "L1_R": (1. - SSIM_RATIO),
+        "SSIM": SSIM_RATIO, "SSIM_R": SSIM_RATIO,
         "smoothe": 1., "smoothe_R": 1.,
         "stereoL1": 0.01, "stereoSSIM": 0.01,
         "stereoPose": 1.,
     }
     LOSS_RIGID_T2 = {
-        "L1": (1. - SSIM_RATIO) * 1., "L1_R": (1. - SSIM_RATIO) * 1.,
-        "SSIM": SSIM_RATIO * 0.5, "SSIM_R": SSIM_RATIO * 0.5,
+        "L1": (1. - SSIM_RATIO), "L1_R": (1. - SSIM_RATIO),
+        "SSIM": SSIM_RATIO, "SSIM_R": SSIM_RATIO,
         "smoothe": 1., "smoothe_R": 1.,
         "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
         "stereoPose": 1.,
     }
     LOSS_RIGID_T3 = {
-        "md2L1": (1. - SSIM_RATIO) * 1., "md2L1_R": (1. - SSIM_RATIO) * 1.,
-        "md2SSIM": SSIM_RATIO * 0.5, "md2SSIM_R": SSIM_RATIO * 0.5,
-        "cmbL1": (1. - SSIM_RATIO) * 1., "cmbL1_R": (1. - SSIM_RATIO) * 1.,
-        "cmbSSIM": SSIM_RATIO * 0.5, "cmbSSIM_R": SSIM_RATIO * 0.5,
+        "md2L1": (1. - SSIM_RATIO), "md2L1_R": (1. - SSIM_RATIO),
+        "md2SSIM": SSIM_RATIO, "md2SSIM_R": SSIM_RATIO,
+        "smoothe": 1., "smoothe_R": 1.,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_COMB = {
+        "md2L1": (1. - SSIM_RATIO), "md2L1_R": (1. - SSIM_RATIO),
+        "md2SSIM": SSIM_RATIO, "md2SSIM_R": SSIM_RATIO,
+        "cmbL1": (1. - SSIM_RATIO), "cmbL1_R": (1. - SSIM_RATIO),
+        "cmbSSIM": SSIM_RATIO, "cmbSSIM_R": SSIM_RATIO,
         "smoothe": 1., "smoothe_R": 1.,
         "stereoL1": 0.01, "stereoSSIM": 0.01,
         "stereoPose": 1.,
@@ -124,18 +132,20 @@ class VodeOptions(FixedOptions):
         "flow_reg": 4e-7
     }
 
-    PRE_TRAINING_PLAN = [
+    PRE_TRAINING_PLAN_12 = [
         # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T2, True),
-        (FixedOptions.RIGID_NET, "kitti_odom",  5, 0.0001, LOSS_RIGID_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_odom",  5, 0.0001, LOSS_RIGID_T2, True),
+        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T2, True),
+        (FixedOptions.RIGID_NET, "a2d2",  5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "a2d2",  5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T2, True),
     ]
+
+    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_12
 
     FINE_TRAINING_PLAN_KITTI_RAW = [
         (FixedOptions.FLOW_NET, "kitti_raw",    10, 0.00001, LOSS_FLOW, True),
-        (FixedOptions.RIGID_NET, "kitti_raw",    5, 0.0001, LOSS_RIGID_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw",   10, 0.0001, LOSS_RIGID_T2, True),
+        (FixedOptions.RIGID_NET, "kitti_raw",    5,  0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw",   10,  0.0001, LOSS_RIGID_T2, True),
         (FixedOptions.JOINT_NET, "kitti_raw",   10, 0.00001, LOSS_RIGID_T2, True),
     ]
 
@@ -148,8 +158,10 @@ class VodeOptions(FixedOptions):
 
     FINE_TRAINING_PLAN = FINE_TRAINING_PLAN_KITTI_RAW
     TEST_PLAN = [
-        (FixedOptions.RIGID_NET, "kitti_raw",  ["depth"], "ep15"),
-        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"],  "ep15"),
+        (FixedOptions.RIGID_NET, "kitti_raw",  ["depth"], "ep10"),
+        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"],  "ep10"),
+        (FixedOptions.RIGID_NET, "kitti_raw",  ["depth"], "ep20"),
+        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"],  "ep20"),
     ]
 
     @classmethod
@@ -189,5 +201,4 @@ class VodeOptions(FixedOptions):
 opts = VodeOptions()
 print(f"[config] ckpt path: {opts.DATAPATH_CKP}, nets: {opts.JOINT_NET}")
 
-import numpy as np
 np.set_printoptions(precision=4, suppress=True, linewidth=150)
