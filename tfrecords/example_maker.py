@@ -1,5 +1,6 @@
 import numpy as np
 import cv2
+from timeit import default_timer as timer
 
 from tfrecords.readers.kitti_reader import KittiRawReader, KittiOdomReader
 from tfrecords.readers.city_reader import CityscapesReader
@@ -18,10 +19,13 @@ class ExampleMaker:
         self.data_keys = data_keys
         self.data_reader = WaymoReader()
         self.reader_args = reader_args
+        self.max_frame_id = 0
 
     def init_reader(self, drive_path):
         self.data_reader = self.data_reader_factory()
         self.data_reader.init_drive(drive_path)
+        if len(self.get_range()) > 0:
+            self.max_frame_id = self.get_range()[-1]
 
     def data_reader_factory(self):
         if self.dataset == "kitti_raw":
@@ -49,6 +53,8 @@ class ExampleMaker:
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
         example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
+        if self.check_static_sequence(example):
+            return dict()
         example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:
             example["depth_gt"] = self.load_depth_map(frame_id, rawshape_hw, rszshape_hw)
@@ -73,22 +79,21 @@ class ExampleMaker:
         example = self.crop_example(example, rszshape_hw)
 
         if index % 500 == 10:
-            show_example(example, 200, print_param=True, suffix="_crop")
+            show_example(example, 200, print_param=True, max_height=0, suffix="_crop")
         elif index % 100 == 10:
-            show_example(example, 200, suffix="_crop")
+            show_example(example, 200, max_height=0, suffix="_crop")
         example = self.verify_snippet(example)
-        self.check_static_sequence(example)
         return example
 
     def make_snippet_ids(self, frame_index):
         frame_id = self.data_reader.index_to_id(frame_index)
         halflen = self.shwc_shape[0] // 2
-        max_frame_id = list(self.get_range())[-1]
+        # max_frame_id = list(self.get_range())[-1]
         if (self.dataset == "a2d2") or (self.dataset.startswith("cityscapes")):
             frame_seq_ids = np.arange(frame_id-halflen*2, frame_id+halflen*2+1, 2)
         else:
             frame_seq_ids = np.arange(frame_id - halflen, frame_id + halflen + 1)
-        frame_seq_ids = np.clip(frame_seq_ids, 0, max_frame_id).tolist()
+        frame_seq_ids = np.clip(frame_seq_ids, 0, self.max_frame_id).tolist()
         return frame_id, frame_seq_ids
 
     def load_snippet_images(self, frame_ids, right=False):
@@ -124,60 +129,27 @@ class ExampleMaker:
     def check_static_sequence(self, example):
         image_seq = example["image"]
         snippet, height, width, _ = self.shwc_shape
+        height = image_seq.shape[0] // snippet
         num_src = snippet - 1
         dynamic_frames = 0
         target_frame = image_seq[(num_src * height):]
         y_border = height // 3
         diff_thresh = height * width // 50
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        font_scale = 0.7
-        color = (0, 0, 255)
-        view = image_seq.copy()
 
         # create blurred diff images
-        img_diffs = []
         target_smooth = cv2.GaussianBlur(cv2.GaussianBlur(target_frame, (3, 3), 0), (3, 3), 0).astype(np.int32)
         for i in range(snippet):
             src_frame = image_seq[(i * height):(i * height + height)]
             src_smooth = cv2.GaussianBlur(cv2.GaussianBlur(src_frame, (3, 3), 0), (3, 3), 0).astype(np.int32)
             imdiff = np.absolute(target_smooth - src_smooth)
-            img_diffs.append(imdiff)
             diffmap = np.sum(imdiff[:y_border], axis=2)
             diff_pixels = np.sum(diffmap > 20).astype(int)
-            cv2.putText(view, f"{diff_pixels}, {diff_thresh}, {y_border * width}", (40, i * height + 20), font, font_scale, color, 1)
             if diff_pixels > diff_thresh:
                 dynamic_frames += 1
-            # print("\n[check_static] different pixels:", diff_pixels)
-
-        img_diffs = np.clip(np.concatenate(img_diffs, axis=0), 0, 255).astype(np.uint8)
-        view = np.concatenate([view, img_diffs], axis=1)
-
-        # create saliency map
-        sali_imgs = []
-        for i in range(snippet):
-            src_frame = image_seq[(i * height):(i * height + height)]
-            laplace = cv2.Laplacian(src_frame, ddepth=cv2.CV_16U, ksize=5)
-            laplace = np.max(laplace, axis=2)
-
-            sobel_dx = cv2.Sobel(src_frame, ddepth=cv2.CV_16U, dx=1, dy=0, ksize=5)
-            sobel_dy = cv2.Sobel(src_frame, ddepth=cv2.CV_16U, dx=0, dy=1, ksize=5)
-            # print("laplace scale:", np.quantile(laplace, np.linspace(0, 1, 11)))
-            # print("sobel scale:", np.quantile(sobel_dx, np.linspace(0, 1, 11)))
-            sobel = cv2.add(sobel_dx, sobel_dy)
-            sobel = np.max(sobel, axis=2)
-            saliency = cv2.subtract(laplace, sobel)
-            # saliency = np.log(saliency + 1) * 20
-            print("saliency scale:", np.quantile(saliency, np.linspace(0, 1, 11)))
-            saliency = cv2.cvtColor(np.clip(saliency / 20, 0, 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
-            sali_imgs.append(saliency)
-
-        sali_imgs = np.concatenate(sali_imgs, axis=0)
-        view = np.concatenate([view, sali_imgs], axis=1)
-        stride = width // 4
-        view[:, stride:-1:stride] = (0, 0, 255)
-        view[y_border:-1:height, :] = (0, 0, 255)
-        cv2.imshow("image_diff", view)
-        cv2.waitKey()
+        if dynamic_frames > 1:
+            return False
+        else:
+            return True
 
     def load_intrinsic(self, index, rawshape_hw, rszshape_hw, right=False):
         intrinsic_raw = self.data_reader.get_intrinsic(index, right=right)

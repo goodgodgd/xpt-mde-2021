@@ -75,11 +75,11 @@ class WaymoReader(DataReaderBase):
         cam1_T_V2C = np.linalg.inv(cam1_T_C2V)
         points_veh_homo = np.concatenate((points_veh, np.ones((points_veh.shape[0], 1))), axis=1)
         points_veh_homo = points_veh_homo.T
-        # point_cam_homo [N, 4] (front, left, up, 1)
+        # point_cam_homo [4, N] (front, left, up, 1)
         points_cam_homo = cam1_T_V2C @ points_veh_homo
         # rotation: (front, left, up, 1) -> (right, down, front)
         R = np.array([[0, -1, 0, 0], [0, 0, -1, 0], [1, 0, 0, 0]], dtype=np.float32)
-        points_cam_standard = (R @ points_cam_homo.T).T
+        points_cam_standard = (R @ points_cam_homo).T
         return points_cam_standard
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):

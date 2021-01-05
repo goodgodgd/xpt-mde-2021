@@ -6,8 +6,6 @@ import shutil
 import json
 import copy
 from timeit import default_timer as timer
-import numpy as np
-import cv2
 
 import utils.util_funcs as uf
 import utils.util_class as uc
@@ -69,8 +67,6 @@ class TfrecordMakerBase:
                 first_example = dict()
 
                 for ii, index in enumerate(loop_range):
-                    if ii % 10 != 0:
-                        continue
                     time1 = timer()
                     if (frame_per_drive > 0) and (self.example_count_in_drive >= frame_per_drive):
                         break
