@@ -65,6 +65,25 @@ class KittiRawReader(DataReaderBase):
         else:
             return T_w_cam2.astype(np.float32)
 
+    def get_point_cloud(self, index, right=False):
+        if index >= len(self.drive_loader.velo_files):
+            raise StopIteration("[get_point_cloud] index out of velo_files")
+        velo_file = self.drive_loader.velo_files[index]
+        velo_index = int(op.basename(velo_file)[:-4])
+        if index != velo_index:
+            raise StopIteration(f"[get_point_cloud] index does NOT match velo file ID {index} != {velo_index}")
+
+        velo_in_lidar = self.drive_loader.get_velo(index)
+        T2cam = self.drive_loader.calib.T_cam3_velo if right else self.drive_loader.calib.T_cam2_velo
+        # velodyne raw data [N, 4] is (forward, left, up, reflectance(0)->1)
+        velo_in_lidar[:, 3] = 1
+        # points in camera frame [N, 3] (right, down, forward)
+        velo_in_camera = np.dot(T2cam, velo_in_lidar.T)
+        velo_in_camera = velo_in_camera[:3].T
+        # remove all velodyne points behind image plane
+        velo_in_camera = velo_in_camera[velo_in_camera[:, 2] > 0]
+        return velo_in_camera
+
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         if index >= len(self.drive_loader.velo_files):
             raise StopIteration("[get_depth] index out of velo_files")
@@ -219,7 +238,7 @@ def sub2ind(matrixSize, rowSub, colSub):
     m, n = matrixSize
     return rowSub * (n - 1) + colSub - 1
 
-# TODO ======================================================================
+# ======================================================================
 
 
 class KittiOdomReader(DataReaderBase):
@@ -286,6 +305,9 @@ class KittiOdomReader(DataReaderBase):
             return T_w_cam3.astype(np.float32)
         else:
             return T_w_cam2.astype(np.float32)
+
+    def get_point_cloud(self, index, right=False):
+        return None
 
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         return None

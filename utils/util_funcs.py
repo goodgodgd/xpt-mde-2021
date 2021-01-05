@@ -202,9 +202,13 @@ def stack_titled_images(view_imgs, guide_lines=True):
 
     for name, flimage in view_imgs.items():
         flimage_rsz = tf.image.resize(flimage, size=hw_size, method="nearest")
-        u8image = to_uint8_image(flimage_rsz).numpy()
-        if u8image.shape[-1] == 1:
+        if "depth" in name:
+            u8image = ((np.clip(flimage_rsz, 10, 50) - 10.) / 40. * 256.).astype(np.uint8)
             u8image = cv2.cvtColor(u8image, cv2.COLOR_GRAY2BGR)
+        else:
+            u8image = to_uint8_image(flimage_rsz).numpy()
+            if u8image.shape[-1] == 1:
+                u8image = cv2.cvtColor(u8image, cv2.COLOR_GRAY2BGR)
         cv2.putText(u8image, name, location, font, font_scale, color, thickness)
         view.append(u8image)
 

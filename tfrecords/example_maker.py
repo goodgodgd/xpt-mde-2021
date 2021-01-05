@@ -1,12 +1,13 @@
 import numpy as np
 import cv2
+from timeit import default_timer as timer
 
 from tfrecords.readers.kitti_reader import KittiRawReader, KittiOdomReader
 from tfrecords.readers.city_reader import CityscapesReader
 from tfrecords.readers.waymo_reader import WaymoReader
 from tfrecords.readers.driving_reader import DrivingStereoReader
 from tfrecords.readers.a2d2_reader import A2D2Reader
-from tfrecords.tfr_util import show_example
+from tfrecords.tfr_util import show_example, point_cloud_to_depth_map
 from utils.util_class import MyExceptionToCatch
 
 
@@ -18,10 +19,13 @@ class ExampleMaker:
         self.data_keys = data_keys
         self.data_reader = WaymoReader()
         self.reader_args = reader_args
+        self.max_frame_id = 0
 
     def init_reader(self, drive_path):
         self.data_reader = self.data_reader_factory()
         self.data_reader.init_drive(drive_path)
+        if len(self.get_range()) > 0:
+            self.max_frame_id = self.get_range()[-1]
 
     def data_reader_factory(self):
         if self.dataset == "kitti_raw":
@@ -49,10 +53,8 @@ class ExampleMaker:
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
         example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
-        # skip static sequence
-        if self.check_static_sequence(example["image"], self.shwc_shape[0], 10):
+        if self.check_static_sequence(example):
             return dict()
-
         example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:
             example["depth_gt"] = self.load_depth_map(frame_id, rawshape_hw, rszshape_hw)
@@ -70,25 +72,28 @@ class ExampleMaker:
             example["stereo_T_LR"] = self.data_reader.get_stereo_extrinsic(frame_id)
 
         # if index % 500 == 10:
-        #     show_example(example, 200, print_param=True, max_height=0)
+        #     show_example(example, 0, print_param=True, max_height=0)
         # elif index % 100 == 10:
-        #     show_example(example, 200)
+        #     show_example(example, 0)
 
         example = self.crop_example(example, rszshape_hw)
 
         if index % 500 == 10:
-            show_example(example, 200, print_param=True, suffix="_crop")
+            show_example(example, 200, print_param=True, max_height=0, suffix="_crop")
         elif index % 100 == 10:
-            show_example(example, 200, suffix="_crop")
+            show_example(example, 200, max_height=0, suffix="_crop")
         example = self.verify_snippet(example)
         return example
 
     def make_snippet_ids(self, frame_index):
         frame_id = self.data_reader.index_to_id(frame_index)
         halflen = self.shwc_shape[0] // 2
-        max_frame_id = list(self.get_range())[-1]
-        frame_seq_ids = np.arange(frame_id-halflen, frame_id+halflen+1)
-        frame_seq_ids = np.clip(frame_seq_ids, 0, max_frame_id).tolist()
+        # max_frame_id = list(self.get_range())[-1]
+        if (self.dataset == "a2d2") or (self.dataset.startswith("cityscapes")):
+            frame_seq_ids = np.arange(frame_id-halflen*2, frame_id+halflen*2+1, 2)
+        else:
+            frame_seq_ids = np.arange(frame_id - halflen, frame_id + halflen + 1)
+        frame_seq_ids = np.clip(frame_seq_ids, 0, self.max_frame_id).tolist()
         return frame_id, frame_seq_ids
 
     def load_snippet_images(self, frame_ids, right=False):
@@ -121,38 +126,36 @@ class ExampleMaker:
         else:                           # if dst is taller
             return dstshape_hw[0], int(rawshape_hw[1] * dstshape_hw[0] / rawshape_hw[0] + 0.5)
 
-    def check_static_sequence(self, image_seq, seq_len, pixel_threshold):
+    def check_static_sequence(self, example):
+        image_seq = example["image"]
+        snippet, height, width, _ = self.shwc_shape
+        height = image_seq.shape[0] // snippet
+        num_src = snippet - 1
         dynamic_frames = 0
-        height, width, _ = image_seq.shape
-        height_single = height // 5
-        num_src = seq_len - 1
-        target_frame = image_seq[(num_src * height_single):]
+        target_frame = image_seq[(num_src * height):]
+        y_border = height // 3
+        diff_thresh = height * width // 50
 
-        for i in range(num_src):
-            current_frame = image_seq[(i * height_single):((i + 1) * height_single)]
-            img_difference = target_frame[: height_single // 4] - current_frame[:height_single // 4]
-            different_pixels = np.sum(np.absolute(img_difference) >= pixel_threshold)
-
-            if (different_pixels // 3) > ((height_single // 5) * (width // 10)):
-                # print("\n The number of dynamic different pixel : ", different_pixels // 4)
+        # create blurred diff images
+        target_smooth = cv2.GaussianBlur(cv2.GaussianBlur(target_frame, (3, 3), 0), (3, 3), 0).astype(np.int32)
+        for i in range(snippet):
+            src_frame = image_seq[(i * height):(i * height + height)]
+            src_smooth = cv2.GaussianBlur(cv2.GaussianBlur(src_frame, (3, 3), 0), (3, 3), 0).astype(np.int32)
+            imdiff = np.absolute(target_smooth - src_smooth)
+            diffmap = np.sum(imdiff[:y_border], axis=2)
+            diff_pixels = np.sum(diffmap > 20).astype(int)
+            if diff_pixels > diff_thresh:
                 dynamic_frames += 1
-            # else:
-            # print("\n The number of static different pixel : ", different_pixels // 4)
-
-        if dynamic_frames == 0:
-            print("!! static image sequence detected !!")
-            cv2.imshow("static image", image_seq)
-            cv2.waitKey(10)
-            return True
-        else:
-            # cv2.imshow("dynamic image", image_seq)
-            # cv2.waitKey(10)
+        if dynamic_frames > 1:
             return False
+        else:
+            return True
 
     def load_intrinsic(self, index, rawshape_hw, rszshape_hw, right=False):
-        intrinsic = self.data_reader.get_intrinsic(index, right=right)
-        if intrinsic is None:
+        intrinsic_raw = self.data_reader.get_intrinsic(index, right=right)
+        if intrinsic_raw is None:
             return None
+        intrinsic = intrinsic_raw.copy()
         # scale fx, cx
         intrinsic[0] = intrinsic[0] * rszshape_hw[1] / rawshape_hw[1]
         # scale fy, cy
@@ -174,11 +177,22 @@ class ExampleMaker:
         return pose_seq.astype(np.float32)
 
     def load_depth_map(self, index, rawshape_hw, rszshape_hw, right=False):
-        intrinsic = self.data_reader.get_intrinsic(index)
+        intrinsic = self.data_reader.get_intrinsic(index, right)
         if intrinsic is None: return None
-        depth_map = self.data_reader.get_depth(index, rawshape_hw, rszshape_hw, intrinsic, right)
-        if depth_map is None: return None
+        intrinsic_rsz = self.rescale_intrinsic(intrinsic, rawshape_hw, rszshape_hw)
+        point_cloud = self.data_reader.get_point_cloud(index, right)
+        if point_cloud is None: return None
+        depth_map = point_cloud_to_depth_map(point_cloud, intrinsic_rsz, rszshape_hw)
+        # depth_map = self.data_reader.get_depth(index, rawshape_hw, rszshape_hw, intrinsic, right)
         return depth_map.astype(np.float32)
+
+    def rescale_intrinsic(self, intrinsic, rawshape_hw, rszshape_hw):
+        intrinsic_rsz = intrinsic.copy()
+        # rescale fx, cx
+        intrinsic_rsz[0] *= (rszshape_hw[1] / rawshape_hw[1])
+        # rescale fy, cy
+        intrinsic_rsz[1] *= (rszshape_hw[0] / rawshape_hw[0])
+        return intrinsic_rsz
 
     def verify_snippet(self, example):
         if self.dataset is "waymo":

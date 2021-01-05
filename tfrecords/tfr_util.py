@@ -111,26 +111,46 @@ def resize_depth_map(depth_map, srcshape_hw, dstshape_hw):
     return dst_depth
 
 
-def point_cloud_to_depth_map(src_pcd, intrinsic, imshape, T2cam=np.eye(4)):
+def depth_map_to_point_cloud(depth_map, intrinsic):
+    # make sure center point is in depth center area, in order to check image scale
+    assert np.abs(depth_map.shape[0] - intrinsic[1, 2] * 2) / depth_map.shape[0] < 0.5, \
+        f"depth height={depth_map.shape[0]}, cy={intrinsic[1, 2]}"
+    u_grid, v_grid = np.meshgrid(np.arange(depth_map.shape[1]), np.arange(depth_map.shape[0]))
+    if depth_map.size > 1e6:
+        # if point cloud is too lage, use only quarter of depths
+        depth_map[0:-1:2, :] = 0.
+        depth_map[:, 0:-1:2] = 0.
+    Z = depth_map.reshape(-1)
+    # X = (u - cx) / fx * Z
+    X = (u_grid.reshape(-1) - intrinsic[0, 2]) / intrinsic[0, 0] * Z
+    # Y = (v - cy) / fy * Z
+    Y = (v_grid.reshape(-1) - intrinsic[1, 2]) / intrinsic[1, 1] * Z
+    points = np.stack([X, Y, Z], axis=1)
+    points = points[Z > 0.1]
+    return points
+
+
+def point_cloud_to_depth_map(src_pcd, intrinsic, imshape):
     """
-    :param src_pcd: source point cloud [N, 4]
+    :param src_pcd: source point cloud [N, 3] (X=right, Y=down, Z=front)
     :param intrinsic: [3, 3]
     :param imshape: height and width of output depth map
-    :param T2cam: transformation matrix to camera frame
     :return: depth map
     """
-    if src_pcd.shape[1] == 3:
-        src_pcd = np.concatenate([src_pcd, np.ones((1, src_pcd.shape[1]))])
-    src_pcd = src_pcd.T    # (N, 4) => (4, N)
-    src_pcd[3, :] = 1
-    # points in camera frame (x:right, y:down, z:depth) (3, N)
-    points = np.dot(T2cam, src_pcd)[:3]
-    points = points[:, points[2] > 1.]
+    # print("[pcd2depth]", src_pcd.shape, intrinsic.shape, imshape)
+    points = src_pcd[src_pcd[:, 2] > 1.].T  # [3, N]
     # project to camera, pixels: [3, N]
     pixels = np.dot(intrinsic, points) / points[2:3]
     assert np.isclose(pixels[2], 1.).all()
     # remove pixels out of image plane
-    pixels = pixels[:, (pixels[0]>=0) & (pixels[0]<imshape[1]-1) & (pixels[1]>=0) & (pixels[1]<imshape[0]-1)]
+    valid_mask = (pixels[0]>=0) & (pixels[0]<imshape[1]-1) & (pixels[1]>=0) & (pixels[1]<imshape[0]-1)
+    pixels = pixels[:, valid_mask]
+    points = points[:, valid_mask]
+    # verify pixel-point relationship
+    leftup = points[:, (pixels[1] > intrinsic[1, 2]-20) & (pixels[1] < intrinsic[1, 2]-10) & (pixels[0] < 50)]
+    righdw = points[:, (pixels[1] > intrinsic[1, 2]+30) & (pixels[1] < intrinsic[1, 2]+40) & (pixels[0] > imshape[1]-50)]
+    if leftup.size > 0: assert (np.mean(leftup[:2], axis=1) < 0).all(), f"{leftup}"
+    if righdw.size > 0: assert (np.mean(righdw[:2], axis=1) > 0).all(), f"{righdw}"
     # quarter pixels around `pixels`
     data = np.stack([np.floor(pixels[0]), np.floor(pixels[1]), np.ceil(pixels[0]), np.ceil(pixels[1])], axis=1)
     quart_pixels = pd.DataFrame(data, columns=['x1', 'y1', 'x2', 'y2'])
@@ -141,6 +161,7 @@ def point_cloud_to_depth_map(src_pcd, intrinsic, imshape, T2cam=np.eye(4)):
     flpixels = pixels[:2]
 
     for quarter_col in quarter_columns:
+
         qtpixels = quart_pixels.loc[:, quarter_col]
         qtpixels = qtpixels.rename(columns={quarter_col[0]: 'col', quarter_col[1]: 'row'})
         # diff = (1-abs(x-xn), 1-abs(y-yn)) [N, 2]
@@ -149,7 +170,7 @@ def point_cloud_to_depth_map(src_pcd, intrinsic, imshape, T2cam=np.eye(4)):
         weights = diff[:, 0] * diff[:, 1]
 
         step = 0
-        while len(qtpixels.index) > 0:
+        while (len(qtpixels.index) > 0) and (step < 5):
             step += 1
             step_pixels = qtpixels.drop_duplicates(keep='first')
             rows = step_pixels['row'].values
@@ -168,7 +189,7 @@ def apply_color_map(depth):
     if len(depth.shape) > 2:
         depth = depth[:, :, 0]
     depth_view = (np.clip(depth, 0, 50.) / 50. * 255).astype(np.uint8)
-    depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+    depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_VIRIDIS)
     depth_view[depth == 0, :] = (0, 0, 0)
     return depth_view
 
@@ -189,7 +210,7 @@ def show_example(example, wait=0, print_param=False, max_height=1000, suffix="")
     if "depth_gt" in example and example["depth_gt"] is not None:
         depth = example["depth_gt"]
         depth_view = (np.clip(depth, 0, 50.) / 50. * 256).astype(np.uint8)
-        depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_SUMMER)
+        depth_view = cv2.applyColorMap(depth_view, cv2.COLORMAP_VIRIDIS)
         cv2.imshow("depth" + suffix, depth_view)
 
     if print_param:

@@ -9,7 +9,7 @@ import json
 import cv2
 
 from tfrecords.readers.reader_base import DataReaderBase
-from tfrecords.tfr_util import resize_depth_map
+from tfrecords.tfr_util import resize_depth_map, depth_map_to_point_cloud
 from utils.util_funcs import print_progress_status
 
 
@@ -98,6 +98,14 @@ class A2D2Reader(DataReaderBase):
     def get_pose(self, index, right=False):
         return None
 
+    def get_point_cloud(self, index, right=False):
+        intrinsic = self.get_intrinsic(index, right)
+        key = "depth_gt_R" if right else "depth_gt"
+        depth_map = self.get_frame_data(index, key)
+        assert (intrinsic.shape == (3, 3)) and (depth_map.ndim == 2), f"[A2D2.get_point_cloud] {intrinsic}, {depth_map.shape}"
+        point_cloud = depth_map_to_point_cloud(depth_map, intrinsic)
+        return point_cloud
+
     def get_depth(self, index, srcshape_hw, dstshape_hw, intrinsic, right=False):
         key = "depth_gt_R" if right else "depth_gt"
         depth_map = self.get_frame_data(index, key)
@@ -183,8 +191,8 @@ class A2D2Reader(DataReaderBase):
 
         depth_map = np.zeros(imsize_hw, dtype=np.float32)
         depth_map[lidar_row, lidar_col] = lidar_depth
-        # depth is supposed to have shape [H, W, 1]
-        return depth_map[:, :, np.newaxis]
+        # depth is supposed to have shape [H, W]
+        return depth_map
 
 
 class SensorConfig:

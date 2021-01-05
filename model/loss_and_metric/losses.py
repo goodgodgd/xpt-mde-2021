@@ -43,12 +43,12 @@ class TotalLoss:
         losses = []
         loss_by_type = dict()
         for loss_name in self.loss_objects:
-            loss = self.loss_objects[loss_name](features, predictions, augm_data)
+            loss_batch = self.loss_objects[loss_name](features, predictions, augm_data)
             # [batch] -> scalar
-            loss = tf.nn.compute_average_loss(loss, global_batch_size=self.batch_size)
-            weighted_loss = loss * self.loss_weights[loss_name]
+            loss_mean = tf.nn.compute_average_loss(loss_batch, global_batch_size=self.batch_size)
+            weighted_loss = loss_mean * self.loss_weights[loss_name]
             losses.append(weighted_loss)
-            loss_by_type[loss_name] = weighted_loss
+            loss_by_type[loss_name] = loss_mean
 
         total_loss = layers.Lambda(lambda x: tf.reduce_sum(x), name="total_loss")(losses)
         return total_loss, loss_by_type
@@ -143,9 +143,18 @@ class LossBase:
     def __call__(self, features, predictions, augm_data):
         raise NotImplementedError()
 
+    def merge_multi_scale_losses(self, losses, name):
+        """
+        :param losses: list of tensors [scales, batch]
+        :return: [batch]
+        """
+        # [scales, batch] -> transpose: [batch, scales] -> matmul: [batch]
+        loss_batch = layers.Lambda(lambda x: tf.matmul(tf.transpose(x), self.scale_weights), name=name)(losses)
+        return loss_batch
+
 
 class PhotometricLoss(LossBase):
-    def __init__(self, method, key_suffix=""):
+    def __init__(self, method, scale_weights, key_suffix=""):
         if method == "L1":
             self.photometric_loss = lsu.photometric_loss_l1
         elif method == "L2":
@@ -156,14 +165,15 @@ class PhotometricLoss(LossBase):
             raise WrongInputException("Wrong photometric loss name: " + method)
 
         self.key_suffix = key_suffix
+        self.scale_weights = scale_weights
 
     def __call__(self, features, predictions, augm_data):
         raise NotImplementedError()
 
 
 class PhotometricLossMultiScale(PhotometricLoss):
-    def __init__(self, method, key_suffix=""):
-        super().__init__(method, key_suffix)
+    def __init__(self, method, scale_weights, key_suffix=""):
+        super().__init__(method, scale_weights, key_suffix)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -180,17 +190,16 @@ class PhotometricLossMultiScale(PhotometricLoss):
             losses.append(loss)
 
         name = "photo_loss_sum" + self.key_suffix
-        # loss sum: [scales, batch] -> [batch]
-        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=name)(losses)
-        return loss_batch
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, name)
 
 
 class MonoDepth2LossMultiScale(PhotometricLoss):
     """
     compare photo losses of source images and take only min of source losses for each pixel
     """
-    def __init__(self, method, key_suffix=""):
-        super().__init__(method, key_suffix)
+    def __init__(self, method, scale_weights, key_suffix=""):
+        super().__init__(method, scale_weights, key_suffix)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -217,18 +226,17 @@ class MonoDepth2LossMultiScale(PhotometricLoss):
         # average over image [scales, batch, height, width, channel] -> [scales, batch]
         op_name = "mono2_loss_mean" + self.key_suffix
         losses = layers.Lambda(lambda x: tf.reduce_mean(x, axis=[2, 3, 4]), name=op_name)(losses)
-        # average over scales [scales, batch] -> [batch]
         op_name = "mono2_loss_sum" + self.key_suffix
-        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=op_name)(losses)
-        return loss_batch
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, op_name)
 
 
 class CombinedLossMultiScale(PhotometricLoss):
     """
     mask static flow loss where static flow < optical flow, and average masked static loss
     """
-    def __init__(self, method, key_suffix=""):
-        super().__init__(method, key_suffix)
+    def __init__(self, method, scale_weights, key_suffix=""):
+        super().__init__(method, scale_weights, key_suffix)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -265,10 +273,9 @@ class CombinedLossMultiScale(PhotometricLoss):
             loss = layers.Lambda(lambda x: tf.reduce_mean(x, axis=[1, 2, 3, 4]), name=op_name)(static_loss)
             losses.append(loss)
 
-        # sum losses: [scales, batch] -> [batch]
         op_name = f"comb_photo_sum" + self.key_suffix
-        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=op_name)(losses)
-        return loss_batch
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, op_name)
 
 
 def resize_bilinear(srcimg, dst_hw):
@@ -281,8 +288,9 @@ def resize_bilinear(srcimg, dst_hw):
 
 
 class SmoothenessLossMultiScale(LossBase):
-    def __init__(self, key_suffix=""):
+    def __init__(self, scale_weights, key_suffix=""):
         self.key_suffix = key_suffix
+        self.scale_weights = scale_weights
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -299,8 +307,8 @@ class SmoothenessLossMultiScale(LossBase):
                                  name=f"smooth_loss_{i}")([disp, image])
             losses.append(loss)
 
-        loss = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name="smooth_loss_sum")(losses)
-        return loss
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, "smooth_loss_sum")
 
     def smootheness_loss(self, disp, image):
         """
@@ -336,8 +344,8 @@ class SmoothenessLossMultiScale(LossBase):
 
 
 class StereoDepthLoss(PhotometricLoss):
-    def __init__(self, method):
-        super().__init__(method)
+    def __init__(self, method, scale_weights):
+        super().__init__(method, scale_weights)
 
     def __call__(self, features, predictions, augm_data):
         """
@@ -351,11 +359,11 @@ class StereoDepthLoss(PhotometricLoss):
         loss_right = self.stereo_photometric_loss(synth_target_ms=augm_data["stereo_synth_ms_R"],
                                                   target_ms=augm_data["target_ms_R"],
                                                   suffix="_R")
-        # list concatenation, not summation
-        losses = loss_left + loss_right
-        # losses: [scales, batch] -> sum -> [batch]
-        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name="photo_loss_sum")(losses)
-        return loss_batch
+        # [2, scales, batch] -> [scales, batch]
+        losses = [loss_left, loss_right]
+        losses = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name="st.photo_LR_sum")(losses)
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, "st.photo_loss_sum")
 
     def stereo_photometric_loss(self, synth_target_ms, target_ms, suffix=""):
         """
@@ -363,7 +371,7 @@ class StereoDepthLoss(PhotometricLoss):
         :param synth_target_ms: list of [batch, height/scale, width/scale, 1]
         :param target_ms: list of [batch, height/scale, width/scale, 3]
         :param suffix: "" if right to left, else "_R"
-        :return losses [scales]
+        :return losses [scales, batch]
         """
         losses = []
         for i, (synth_img_sc, target_img_sc) in enumerate(zip(synth_target_ms, target_ms)):
@@ -390,8 +398,8 @@ class StereoPoseLoss(LossBase):
 
 
 class FlowWarpLossMultiScale(PhotometricLoss):
-    def __init__(self, method, key_suffix=""):
-        super().__init__(method, key_suffix)
+    def __init__(self, method, scale_weights, key_suffix=""):
+        super().__init__(method, scale_weights, key_suffix)
         self.scale_wegihts = ()
 
     def __call__(self, features, predictions, augm_data):
@@ -410,9 +418,8 @@ class FlowWarpLossMultiScale(PhotometricLoss):
             losses.append(loss)
         # losses: [loss at each scale] -> sum: scalar
         name = "flow_warp_loss_sum" + self.key_suffix
-        # losses: [scales, batch] -> sum -> [batch]
-        loss_batch = layers.Lambda(lambda x: tf.reduce_sum(x, axis=0), name=name)(losses)
-        return loss_batch
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, name)
 
 
 class L2Regularizer(LossBase):
