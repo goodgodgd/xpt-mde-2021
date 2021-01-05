@@ -151,25 +151,31 @@ class ExampleMaker:
 
         img_diffs = np.clip(np.concatenate(img_diffs, axis=0), 0, 255).astype(np.uint8)
         view = np.concatenate([view, img_diffs], axis=1)
-        stride = width // 4
-        view[:, stride:-1:stride] = (0, 0, 255)
-        view[y_border:-1:height, :] = (0, 0, 255)
 
         # create saliency map
         sali_imgs = []
-        # saliency = cv2.saliency.StaticSaliencySpectralResidual_create()
-        saliency = cv2.saliency.StaticSaliencyFineGrained_create()
         for i in range(snippet):
             src_frame = image_seq[(i * height):(i * height + height)]
-            (success, saliency_map) = saliency.computeSaliency(src_frame)
-            saliency_map = np.clip(saliency_map * 255, 0, 255).astype(np.uint8)
-            binary_map = cv2.threshold(saliency_map, 0, 255, cv2.THRESH_BINARY | cv2.THRESH_OTSU)[1]
-            binary_map = cv2.cvtColor(binary_map, cv2.COLOR_GRAY2BGR)
-            saliency_map = cv2.cvtColor(saliency_map, cv2.COLOR_GRAY2BGR)
-            sali_imgs.append(saliency_map)
+            laplace = cv2.Laplacian(src_frame, ddepth=cv2.CV_16U, ksize=5)
+            laplace = np.max(laplace, axis=2)
+
+            sobel_dx = cv2.Sobel(src_frame, ddepth=cv2.CV_16U, dx=1, dy=0, ksize=5)
+            sobel_dy = cv2.Sobel(src_frame, ddepth=cv2.CV_16U, dx=0, dy=1, ksize=5)
+            # print("laplace scale:", np.quantile(laplace, np.linspace(0, 1, 11)))
+            # print("sobel scale:", np.quantile(sobel_dx, np.linspace(0, 1, 11)))
+            sobel = cv2.add(sobel_dx, sobel_dy)
+            sobel = np.max(sobel, axis=2)
+            saliency = cv2.subtract(laplace, sobel)
+            # saliency = np.log(saliency + 1) * 20
+            print("saliency scale:", np.quantile(saliency, np.linspace(0, 1, 11)))
+            saliency = cv2.cvtColor(np.clip(saliency / 20, 0, 255).astype(np.uint8), cv2.COLOR_GRAY2BGR)
+            sali_imgs.append(saliency)
 
         sali_imgs = np.concatenate(sali_imgs, axis=0)
         view = np.concatenate([view, sali_imgs], axis=1)
+        stride = width // 4
+        view[:, stride:-1:stride] = (0, 0, 255)
+        view[y_border:-1:height, :] = (0, 0, 255)
         cv2.imshow("image_diff", view)
         cv2.waitKey()
 
