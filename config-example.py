@@ -9,7 +9,10 @@ RAW_DATA_PATHS = {
     "waymo": "/media/ian/IanBook2/datasets/waymo",
     "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
 }
-RESULT_DATAPATH = "/media/ian/2BD062D9593700DF/vode_data/vode_0103"
+# RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_stereo_1227"
+# make tfrecords
+RESULT_DATAPATH_LOW = "/media/ian/2BD062D9593700DF/vode_data/vode_0103"
+RESULT_DATAPATH_HIGH = "/media/ian/IanBook2/vode_data/vode_0106_high"
 
 
 class FixedOptions:
@@ -17,16 +20,32 @@ class FixedOptions:
     data options
     """
     STEREO = True
+    HIGH_RES = False
     SNIPPET_LEN = 5
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
-    IMAGE_SIZES = {"kitti_raw": (128, 512),     # 2:8 65536
-                   "kitti_odom": (128, 512),
-                   "cityscapes": (192, 512),    # 3:8
-                   "waymo": (256, 384),         # 4:6 98304
-                   "a2d2": (192, 384),          # 3:6 73728
-                   "driving_stereo": (192, 384),     # 3:6 73728
-                   }
+    #
+    # IMAGE_SIZES = {"kitti_raw": (128, 512),     # 2:8 65536
+    #                "kitti_odom": (128, 512),
+    #                "cityscapes": (192, 448),    # 3:7
+    #                "waymo": (256, 384),         # 4:6 98304
+    #                "a2d2": (192, 384),          # 3:6 73728
+    #                "driving_stereo": (192, 384),     # 3:6 73728
+    #                }
+    # make tfrecords
+    IMAGE_SIZES_SMALL = {"kitti_raw": (128, 512),       # 2:8 65536
+                         "kitti_odom": (128, 512),
+                         "cityscapes": (192, 512),      # 3:8
+                         "waymo": (256, 384),           # 4:6 98304
+                         "a2d2": (192, 384),            # 3:6 73728
+                         }
+    IMAGE_SIZES_LARGE = {"kitti_raw": (256, 1024),      # 2:8
+                         "kitti_odom": (256, 1024),
+                         "cityscapes": (384, 1024),     # 3:8
+                         "waymo": (512, 768),           # 4:6
+                         "a2d2": (384, 768),            # 3:6
+                         }
+    IMAGE_SIZES = IMAGE_SIZES_LARGE if HIGH_RES else IMAGE_SIZES_SMALL
 
     """
     training options
@@ -42,7 +61,8 @@ class FixedOptions:
     """
     JOINT_NET = {"depth": ["DepthNetBasic", "DepthNetNoResize", "MobileNetV2", "NASNetMobile",
                            "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][3],
-                 "camera": "PoseNet",
+                 "camera": ["PoseNetBasic", "PoseNetImproved", "PoseNetDeep", "MobileNetV2", "NASNetMobile",
+                            "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][0],
                  "flow": "PWCNet"
                  }
     RIGID_NET = {"depth": JOINT_NET["depth"], "camera": JOINT_NET["camera"]}
@@ -60,9 +80,12 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode12"
+    CKPT_NAME = "vode05_1"
+    DEVICE = "/GPU:0"
+    IMAGE_GRADIENT_FACTOR = 4
+    SMOOTHNESS_FACTOR = 5
 
-    DATAPATH = RESULT_DATAPATH
+    DATAPATH = RESULT_DATAPATH_HIGH if FixedOptions.HIGH_RES else RESULT_DATAPATH_LOW
     assert(op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
     DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
@@ -78,6 +101,7 @@ class VodeOptions(FixedOptions):
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
                            "cityscapes__sequence": ["train"],
+                           "a2d2": ["train"],
                            "waymo": ["train"],
                            }
     # only when making small tfrecords to test training
@@ -112,6 +136,27 @@ class VodeOptions(FixedOptions):
         "stereoPose": 1.,
     }
     LOSS_RIGID_T3 = {
+        "L1": (1. - SSIM_RATIO)*0.1, "L1_R": (1. - SSIM_RATIO)*0.1,
+        "SSIM": SSIM_RATIO*0.1, "SSIM_R": SSIM_RATIO*0.1,
+        "smoothe": 1., "smoothe_R": 1.,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_T2_sm = {
+        "L1": (1. - SSIM_RATIO), "L1_R": (1. - SSIM_RATIO),
+        "SSIM": SSIM_RATIO, "SSIM_R": SSIM_RATIO,
+        "smoothe": SMOOTHNESS_FACTOR, "smoothe_R": SMOOTHNESS_FACTOR,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_T3_sm = {
+        "L1": (1. - SSIM_RATIO)*0.1, "L1_R": (1. - SSIM_RATIO)*0.1,
+        "SSIM": SSIM_RATIO*0.1, "SSIM_R": SSIM_RATIO*0.1,
+        "smoothe": SMOOTHNESS_FACTOR, "smoothe_R": SMOOTHNESS_FACTOR,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_MD2 = {
         "md2L1": (1. - SSIM_RATIO), "md2L1_R": (1. - SSIM_RATIO),
         "md2SSIM": SSIM_RATIO, "md2SSIM_R": SSIM_RATIO,
         "smoothe": 1., "smoothe_R": 1.,
@@ -132,15 +177,14 @@ class VodeOptions(FixedOptions):
         "flow_reg": 4e-7
     }
 
-    PRE_TRAINING_PLAN_12 = [
-        # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T2, True),
-        (FixedOptions.RIGID_NET, "a2d2",  5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "a2d2",  5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T2, True),
+    PRE_TRAINING_PLAN_15 = [
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
     ]
 
-    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_12
+    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_15
+
 
     FINE_TRAINING_PLAN_KITTI_RAW = [
         (FixedOptions.FLOW_NET, "kitti_raw",    10, 0.00001, LOSS_FLOW, True),
@@ -202,3 +246,4 @@ opts = VodeOptions()
 print(f"[config] ckpt path: {opts.DATAPATH_CKP}, nets: {opts.JOINT_NET}")
 
 np.set_printoptions(precision=4, suppress=True, linewidth=150)
+
