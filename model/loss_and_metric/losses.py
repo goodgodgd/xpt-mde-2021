@@ -8,6 +8,7 @@ from utils.util_class import WrongInputException
 import utils.convert_pose as cp
 from utils.decorators import shape_check
 import model.loss_and_metric.loss_util as lsu
+from config import opts
 
 
 class TotalLoss:
@@ -108,7 +109,7 @@ class TotalLoss:
                 intrinsic: camera projection matrix [batch, 3, 3]
         :param predictions: {depth_ms, stereo_T_LR}
                 depth_ms: multi scale disparities, list of [batch, height/scale, width/scale, 1]
-                stereo_T_LR: poses that transform points from target to source [batch, numsrc, 6]
+                stereo_T_LR: poses that transform points from right to left [batch, numsrc, 6]
         :param augm_data: {source, target, target_ms, synth_target_ms}
                 target: target frame [batch, height, width, 3]
         """
@@ -330,8 +331,9 @@ class SmoothenessLossMultiScale(LossBase):
         image_gradients_x = gradient_x(image)
         image_gradients_y = gradient_y(image)
 
-        weights_x = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_x), 3, keepdims=True))
-        weights_y = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_y), 3, keepdims=True))
+        grad_factor = opts.IMAGE_GRADIENT_FACTOR
+        weights_x = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_x * grad_factor), 3, keepdims=True))
+        weights_y = tf.exp(-tf.reduce_mean(tf.abs(image_gradients_y * grad_factor), 3, keepdims=True))
 
         # [batch, height/scale, width/scale, 1]
         smoothness_x = disp_gradients_x * weights_x

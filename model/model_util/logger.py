@@ -101,7 +101,7 @@ def to_fixed_width_column(srcdict):
     middict = copy.deepcopy(srcdict)
     for key, val in srcdict.items():
         if "smooth" in key.lower() or "reg" in key.lower():
-            middict[key] = val * 1000.
+            middict[key] = val * 100.
 
     # rename keys to shorter strings
     dstdict = dict()

@@ -261,27 +261,32 @@ class SensorConfig:
         return remapper
 
     def get_stereo_extrinsic(self):
+        # extrinsic pose: transform points from right frame to left frame
         left_view = self.sensor_config["cameras"]["front_left"]["view"]
         right_view = self.sensor_config["cameras"]["front_right"]["view"]
-        return self._transform_from_to(right_view, left_view).astype(np.float32)
+        return self._transform_right_to_left(left_view, right_view).astype(np.float32)
 
-    def _transform_from_to(self, source, target):
-        transform = np.dot(np.linalg.inv(self._get_transform_to_global(target)),
-                           self._get_transform_to_global(source))
+    def _transform_right_to_left(self, left_view, right_view):
+        vehicle_to_left = np.linalg.inv(self._get_transform_to_vehicle(left_view))
+        right_to_vehicle = self._get_transform_to_vehicle(right_view)
+        transform = np.dot(vehicle_to_left, right_to_vehicle)
         return transform
 
-    def _get_transform_to_global(self, view):
-        # get axes
-        x_axis, y_axis, z_axis = self._get_axes_of_a_view(view)
+    def _get_transform_to_vehicle(self, view):
+        # get axes (XYZ in sensor config)
+        front, left, up = self._get_axes_of_a_view(view)
+        # change camera axes from (X:front Y:left) frame to (X:right Y:down) frame
+        x_axis, y_axis, z_axis = -left, -up, front
         # get origin
         origin = view['origin']
         transform_to_global = np.eye(4)
         # rotation
-        transform_to_global[0:3, 0] = x_axis
-        transform_to_global[0:3, 1] = y_axis
-        transform_to_global[0:3, 2] = z_axis
+        transform_to_global[:3, 0] = x_axis
+        transform_to_global[:3, 1] = y_axis
+        transform_to_global[:3, 2] = z_axis
         # origin
-        transform_to_global[0:3, 3] = origin
+        transform_to_global[:3, 3] = origin
+        # print("transform\n", transform_to_global)
         return transform_to_global
 
     def _get_axes_of_a_view(self, view):
@@ -312,6 +317,7 @@ class SensorConfig:
 
 # ======================================================================
 from tfrecords.tfr_util import apply_color_map
+from config import opts
 
 
 def test_read_npz():
@@ -383,14 +389,8 @@ def test_a2d2_reader():
     datapath = opts.get_raw_data_path("a2d2")
     imshape_hw = opts.get_img_shape("HW", "a2d2")
     imshape_wh = opts.get_img_shape("WH", "a2d2")
-    zip_names = {"camera_left": op.join(datapath, "camera_lidar-20180810150607_camera_frontleft.zip"),
-                 "camera_right": op.join(datapath, "camera_lidar-20180810150607_camera_frontright.zip"),
-                 "lidar_left": op.join(datapath, "camera_lidar-20180810150607_lidar_frontleft.zip"),
-                 "lidar_right": op.join(datapath, "camera_lidar-20180810150607_lidar_frontright.zip"),
-                 }
-    zip_files = {key: zipfile.ZipFile(name, "r") for key, name in zip_names.items()}
-    reader = A2D2Reader("train", zip_files)
-    reader.init_drive("")
+    reader = A2D2Reader("train")
+    reader.init_drive(op.join(datapath, "camera_lidar-20180810150607_camera_frontleft.zip"))
     frame_indices = reader.get_range_()
     for index in frame_indices:
         image = reader.get_image(index)
@@ -398,9 +398,13 @@ def test_a2d2_reader():
         intrinsic = reader.get_intrinsic(index)
         extrinsic = reader.get_stereo_extrinsic(index)
         depth = reader.get_depth(index, (0, 0), imshape_hw, intrinsic)
+        depth_center = depth[130:140, 200:210]
+        depth_center = np.mean(depth_center[depth_center > 0])
+        depth[(depth > 20.) & (depth < 23.)] = 0
 
         print("intrinsic:\n", intrinsic)
         print("extrinsic:\n", extrinsic)
+        print("depth center (130:140, 200:210)", depth_center)
         image_view = cv2.resize(image, imshape_wh)
         cv2.imshow("image", image_view)
         image_R_view = cv2.resize(image_R, imshape_wh)
@@ -429,10 +433,10 @@ def test_remap():
 
 
 if __name__ == "__main__":
-    convert_tar_to_vanilla_zip()
+    # convert_tar_to_vanilla_zip()
     # test_read_npz()
     # visualize_depth_map()
-    # test_a2d2_reader()
+    test_a2d2_reader()
     # test_remap()
 
 
