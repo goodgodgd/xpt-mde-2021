@@ -80,10 +80,10 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode05_1"
-    DEVICE = "/GPU:0"
+    CKPT_NAME = "vode15"
+    DEVICE = "/GPU:1"
     IMAGE_GRADIENT_FACTOR = 4
-    SMOOTHNESS_FACTOR = 5
+    SMOOTHNESS_FACTOR = 20
 
     DATAPATH = RESULT_DATAPATH_HIGH if FixedOptions.HIGH_RES else RESULT_DATAPATH_LOW
     assert(op.isdir(DATAPATH))
@@ -181,6 +181,9 @@ class VodeOptions(FixedOptions):
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
     ]
 
     PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_15
