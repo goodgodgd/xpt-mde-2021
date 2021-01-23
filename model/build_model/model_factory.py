@@ -124,7 +124,7 @@ class ModelFactory:
 
     def flow_net_factory(self, net_name, conv2d_f):
         if net_name == "PWCNet":
-            flownet = PWCNet(self.bshwc_shape, self.global_batch, conv2d_f, self.high_res)()
+            flownet = PWCNet(self.bshwc_shape, self.global_batch, conv2d_f)()
         else:
             raise WrongInputException("[flow_net_factory] wrong flow net name: " + net_name)
         return flownet

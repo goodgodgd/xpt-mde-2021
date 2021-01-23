@@ -100,8 +100,10 @@ def to_fixed_width_column(srcdict):
     # scale up small values
     middict = copy.deepcopy(srcdict)
     for key, val in srcdict.items():
-        if "smooth" in key.lower() or "reg" in key.lower():
+        if "smooth" in key.lower():
             middict[key] = val * 100.
+        elif "reg" in key.lower():
+            middict[key] = val * 1e-4
 
     # rename keys to shorter strings
     dstdict = dict()
@@ -119,8 +121,8 @@ def to_fixed_width_column(srcdict):
 
 def draw_and_save_plot(results, filename):
     # plot graphs of loss and metrics
-    sel_columns = ['loss ', 'TEA  ', 'TER  ', 'RE   ']
-    col_titles = ['Loss', 'Traj abs. Error', 'Traj rel. Error', 'Rotation Error']
+    sel_columns = ['loss ', 'TEA  ', 'TER  ', 'RE   ', 'DE   ']
+    col_titles = ['Loss', 'Traj abs. Error', 'Traj rel. Error', 'Rotation Error', 'Depth Error']
     numcols = len(col_titles)
     fig, axes = plt.subplots(numcols, 1)
     fig.set_size_inches(numcols*2, 7)
