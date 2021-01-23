@@ -1,5 +1,6 @@
 import os.path as op
 import numpy as np
+import PIL
 from PIL import Image
 import json
 from utils.util_class import MyExceptionToCatch
@@ -59,7 +60,13 @@ class CityscapesReader(DataReaderBase):
         else:
             image_bytes = self.zip_files["leftImg"].open(self.frame_names[index])
         image = Image.open(image_bytes)
-        image = np.array(image, np.uint8)
+
+        try:
+            image = np.array(image, np.uint8)
+        except TypeError as te:
+            print(f"\n[CityscapesReader.get_image] TypeError: {te}\n\tfile: {image_bytes}")
+            raise MyExceptionToCatch("[CityscapesReader.get_image] invalid file")
+
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         image = image[CITY_CROP[0]:CITY_CROP[1], CITY_CROP[2]:CITY_CROP[3]]
         assert image.shape[:2] == (CITY_CROP[1] - CITY_CROP[0], CITY_CROP[3] - CITY_CROP[2])
