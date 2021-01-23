@@ -64,7 +64,7 @@ class TfrecordMakerBase:
                 self.example_maker.init_reader(drive_path)
                 loop_range = self.example_maker.get_range()
                 num_frames = self.example_maker.num_frames()
-                first_example = dict()
+                drive_example = dict()
 
                 for ii, index in enumerate(loop_range):
                     time1 = timer()
@@ -75,7 +75,7 @@ class TfrecordMakerBase:
 
                     try:
                         example = self.example_maker.get_example(index)
-                        first_example = self.verify_example(first_example, example)
+                        drive_example = self.verify_example(drive_example, example)
                     except StopIteration as si:         # raised from xxx_reader._get_frame()
                         print("\n[StopIteration] stop this drive", si)
                         break
@@ -92,37 +92,37 @@ class TfrecordMakerBase:
                                              f"time: {timer() - time1:1.4f}")
 
                 print("")
-                self.write_tfrecord_config(first_example)
+                self.write_tfrecord_config(drive_example)
             pm.set_ok()
         self.wrap_up()
 
     def init_drive_tfrecord(self, drive_index=0):
         raise NotImplementedError()
 
-    def verify_example(self, first_example, example):
+    def verify_example(self, drive_example, example):
         if (not example) or ("image" not in example):
             raise MyExceptionToCatch(f"[verify_example] EMPTY example")
 
-        if not first_example:
-            first_example = copy.deepcopy(example)
-            print("[verify_example] Set first_example:", list(first_example.keys()))
-            return first_example
+        if not drive_example:
+            drive_example = copy.deepcopy(example)
+            print("[verify_example] Set drive_example:", list(drive_example.keys()))
+            return drive_example
 
-        for key in first_example:
+        for key in drive_example:
             if key not in example:
                 print(f"[verify_example] (WARNING) error count: {self.error_count}, {key} is not in example")
                 self.error_count += 1
                 assert self.error_count < 10
                 raise MyExceptionToCatch(f"{key} is not in example")
 
-            if first_example[key].shape != example[key].shape:
+            if drive_example[key].shape != example[key].shape:
                 print(f"[verify_example] (WARNING) error count: {self.error_count}, "
-                      f"different shape of {key}: {first_example[key].get_shape()} != {example[key].get_shape()}")
+                      f"different shape of {key}: {drive_example[key].get_shape()} != {example[key].get_shape()}")
                 self.error_count += 1
                 assert self.error_count < 10
                 raise MyExceptionToCatch(f"{key} is not in example")
 
-        return first_example
+        return drive_example
 
     def write_tfrecord(self, example_serial, drive_index):
         self.writer.write(example_serial)
@@ -139,6 +139,8 @@ class TfrecordMakerBase:
         raise NotImplementedError()
 
     def write_tfrecord_config(self, example):
+        if self.example_count_in_drive == 0:
+            return
         if ('image' not in example) or (example['image'] is None):
             return
         config = inspect_properties(example)
@@ -180,10 +182,12 @@ class TfrecordMakerSingleDir(TfrecordMakerBase):
 
     def open_new_writer(self, drive_index):
         outfile = f"{self.tfr_drive_path}/shard_{self.shard_count:03d}.tfrecord"
-        print("open a new tfrecord:", op.basename(outfile))
+        print("\n==== Open a new tfrecord:", op.basename(outfile))
         self.writer = tf.io.TFRecordWriter(outfile)
 
     def write_tfrecord_config(self, example):
+        if self.example_count_in_drive == 0:
+            return
         config = inspect_properties(example)
         config["length"] = self.total_example_count
         config["imshape"] = self.shwc_shape

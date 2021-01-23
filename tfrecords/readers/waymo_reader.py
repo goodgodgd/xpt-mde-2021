@@ -2,6 +2,8 @@ import os.path as op
 import numpy as np
 from scipy import sparse
 import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')
+
 from waymo_open_dataset.utils import frame_utils
 from waymo_open_dataset import dataset_pb2 as open_dataset
 
@@ -190,7 +192,7 @@ def get_waymo_depth_map(frame, srcshape_hw, dstshape_hw, intrinsic):
 # ======================================================================
 import cv2
 import utils.util_funcs as uf
-from config import opts
+import tfrecords.tfr_util as tu
 
 
 def test_waymo_reader():
@@ -200,13 +202,20 @@ def test_waymo_reader():
         reader = WaymoReader("train")
         reader.init_drive(drive_path)
         pose_bef = np.zeros((4, 4))
+        rszshape_hw = (256, 384)
         for fi in range(50000):
             try:
                 frame = reader._get_frame(fi)
                 image = reader.get_image(fi)
                 pose = reader.get_pose(fi)
                 intrinsic = reader.get_intrinsic(fi)
-                depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "waymo"), intrinsic)
+                # depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "waymo"), intrinsic)
+
+                intrinsic_rsz = rescale_intrinsic(intrinsic, image.shape[:2], rszshape_hw)
+                point_cloud = reader.get_point_cloud(fi, False)
+                depth = tu.point_cloud_to_depth_map(point_cloud, intrinsic_rsz, rszshape_hw)
+                depth[(depth > 20.) & (depth < 23.)] = 0
+
             except StopIteration as si:
                 print("StopIteration:", si)
                 break
@@ -225,6 +234,17 @@ def test_waymo_reader():
             if key == ord('q'):
                 break
             pose_bef = pose
+
+
+def rescale_intrinsic(intrinsic, rawshape_hw, rszshape_hw):
+    intrinsic_rsz = intrinsic.copy()
+    # rescale fx, cx
+    intrinsic_rsz[0] *= (rszshape_hw[1] / rawshape_hw[1])
+    # rescale fy, cy
+    intrinsic_rsz[1] *= (rszshape_hw[0] / rawshape_hw[0])
+    print("rescale_intrinsic", rawshape_hw, rszshape_hw, "\n", intrinsic, "\n", intrinsic_rsz)
+
+    return intrinsic_rsz
 
 
 if __name__ == "__main__":
