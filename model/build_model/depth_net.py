@@ -146,11 +146,8 @@ class DepthNetPretrained(DepthNetNoResize):
         if self.high_res:
             conv6 = self.conv2d_d(conv5, 512, 3, strides=2, name="dp_conv6a")
             conv6 = self.conv2d_d(conv6, 512, 3, strides=1, name="dp_conv6b")
-            conv6 = self.conv2d_d(conv6, 512, 3, strides=1, name="dp_conv6b")
-            conv7 = self.conv2d_d(conv6, 512, 3, strides=2, name="dp_conv7a")
             # decoder by upsampling
-            upconv6 = self.upconv_with_skip_connection(conv7, conv6, 512, "dp_up6")     # 1/64
-            upconv5 = self.upconv_with_skip_connection(upconv6, conv5, 512, "dp_up5")   # 1/32
+            upconv5 = self.upconv_with_skip_connection(conv6, conv5, 512, "dp_up5")     # 1/64
             upconv4 = self.upconv_with_skip_connection(upconv5, conv4, 256, "dp_up4")   # 1/16
         else:
             # decoder by upsampling

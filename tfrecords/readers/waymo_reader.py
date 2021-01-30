@@ -8,7 +8,6 @@ from waymo_open_dataset.utils import frame_utils
 from waymo_open_dataset import dataset_pb2 as open_dataset
 
 from tfrecords.readers.reader_base import DataReaderBase
-from tfrecords.tfr_util import depth_map_to_point_cloud
 from utils.util_class import MyExceptionToCatch
 
 T_C2V = tf.constant([[0, 0, 1, 0], [-1, 0, 0, 0], [0, -1, 0, 0], [0, 0, 0, 1]], dtype=tf.float32)
@@ -193,11 +192,12 @@ def get_waymo_depth_map(frame, srcshape_hw, dstshape_hw, intrinsic):
 import cv2
 import utils.util_funcs as uf
 import tfrecords.tfr_util as tu
+import config
 
 
 def test_waymo_reader():
     for di in range(0, 28):
-        drive_path = f"/media/ian/IanBook2/datasets/waymo/training_{di:04d}"
+        drive_path = f"{config.RAW_DATA_PATHS['waymo']}/training_{di:04d}"
         print("\n!!! New drive start !!!", drive_path)
         reader = WaymoReader("train")
         reader.init_drive(drive_path)

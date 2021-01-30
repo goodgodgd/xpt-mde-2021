@@ -433,10 +433,10 @@ def test_remap():
 
 
 if __name__ == "__main__":
-    # convert_tar_to_vanilla_zip()
+    convert_tar_to_vanilla_zip()
     # test_read_npz()
     # visualize_depth_map()
-    test_a2d2_reader()
+    # test_a2d2_reader()
     # test_remap()
 
 

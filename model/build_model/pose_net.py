@@ -51,7 +51,6 @@ class PoseNetImproved(PoseNetBasic):
 
     def __call__(self):
         batch, snippet, height, width, channel = self.input_shape
-        numsrc = snippet - 1
         image_shape = (snippet, height, width, channel)
         input_tensor = layers.Input(shape=image_shape, batch_size=self.global_batch, name="posenet_input")
         # posenet_input: [batch, height, width, snippet*channel]
@@ -64,28 +63,28 @@ class PoseNetImproved(PoseNetBasic):
         conv4 = self.conv2d_p(conv3, 128, 3, strides=2, name="vo_conv4")
         conv5 = self.conv2d_p(conv4, 256, 3, strides=2, name="vo_conv5")
         conv6 = self.conv2d_p(conv5, 256, 3, strides=2, name="vo_conv6_1")
-        conv6 = self.conv2d_p(conv6, 256, 3, strides=2, name="vo_conv6_2")
+        conv6 = self.conv2d_p(conv6, 256, 3, name="vo_conv6_2")
+        conv6 = self.conv2d_p(conv6, 256, 3, name="vo_conv6_3")
 
-        poses = self.output_process(conv6, height, width, numsrc)
+        poses = self.output_process(conv6)
         posenet = tf.keras.Model(inputs=input_tensor, outputs={"pose": poses}, name="posenet")
         return posenet
 
-    def output_process(self, conv6, height, width, numsrc):
-        # e.g. (128, 512) -> (2, 4), (256, 1024) -> (4, 8)
-        height6, width7 = height // 64, width // 128
-        conv7 = lo.resize_image(conv6, height6, width7, "vo7")
-        conv7 = self.conv2d_p(conv7, 512, 3, name="vo_conv7_1")
-        conv7 = self.conv2d_p(conv7, 512, 3, name="vo_conv7_2")
+    def output_process(self, conv6):
+        # e.g.      image       conv6
+        # kitti     128,512     2, 8
+        # kitti_2x  256,1024    4, 16
+        batch, snippet, height, width, channel = self.input_shape
+        numsrc = snippet - 1
 
         if self.high_res:
-            # e.g. (256, 1024) -> (2, 4)
-            height7, width8 = height // 128, width // 256
-            conv8 = lo.resize_image(conv7, height7, width8, "vo8")
-            conv8 = self.conv2d_p(conv8, 512, 3, name="vo_conv8_1")
-            conv_last = self.conv2d_p(conv8, 512, 3, name="vo_conv8_2")
+            conv7 = self.conv2d_p(conv6, 512, 3, strides=2, name="vo_conv7_1")
+            conv7 = self.conv2d_p(conv7, 512, 3, name="vo_conv7_2")
+            conv_last = self.conv2d_p(conv7, 512, 3, name="vo_conv7_3")
         else:
-            conv_last = conv7
+            conv_last = conv6
 
+        print("[PoseNet] output shape before GAP:", conv_last.get_shape())
         poses = self.conv2d_p(conv_last, numsrc*6, 1, activation="linear", name="vo_conv_last")
         poses = tf.keras.layers.GlobalAveragePooling2D("channels_last", name="vo_pred")(poses)
         poses = tf.keras.layers.Reshape((numsrc, 6), name="vo_reshape")(poses)
@@ -135,7 +134,7 @@ class PoseNetDeep(PoseNetImproved):
         conv6 = self.conv2d_p(conv6, 128, 1, name="vo_conv6_2")
         conv6 = self.conv2d_p(conv6, 256, 3, name="vo_conv6_3")
 
-        poses = self.output_process(conv6, height, width, numsrc)
+        poses = self.output_process(conv6)
         posenet = tf.keras.Model(inputs=input_tensor, outputs={"pose": poses}, name="posenet")
         return posenet
 
@@ -160,7 +159,7 @@ class PoseNetPreTrained(PoseNetImproved):
         conv6 = self.conv2d_p(conv6, 128, 1, name="vo_conv6_2")
         conv6 = self.conv2d_p(conv6, 256, 3, name="vo_conv6_3")
 
-        poses = self.output_process(conv6, height, width, numsrc)
+        poses = self.output_process(conv6)
         posenet = tf.keras.Model(inputs=input_tensor, outputs={"pose": poses}, name="posenet")
         return posenet
 
