@@ -16,11 +16,7 @@ class PoseNetBasic:
     def __call__(self):
         batch, snippet, height, width, channel = self.input_shape
         numsrc = snippet - 1
-        image_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=image_shape, batch_size=self.global_batch, name="posenet_input")
-        # posenet_input: [batch, height, width, snippet*channel]
-        posenet_input = layers.Lambda(lambda image: self.restack_on_channels(image),
-                                      name="channel_stack")(input_tensor)
+        input_tensor, posenet_input = self.create_inputs()
 
         conv1 = self.conv2d_p(posenet_input, 16, 7, strides=2, name="vo_conv1")
         conv2 = self.conv2d_p(conv1, 32, 5, strides=2, name="vo_conv2")
@@ -36,6 +32,16 @@ class PoseNetBasic:
         posenet = tf.keras.Model(inputs=input_tensor, outputs={"pose": poses}, name="posenet")
         return posenet
 
+    def create_inputs(self):
+        batch, snippet, height, width, channel = self.input_shape
+        image_shape = (snippet, height, width, channel)
+        input_tensor = layers.Input(shape=image_shape, batch_size=self.global_batch, name="posenet_input")
+        # posenet_input: [batch, height, width, snippet*channel]
+        posenet_input = layers.Lambda(lambda image: self.restack_on_channels(image),
+                                      name="channel_stack")(input_tensor)
+        return input_tensor, posenet_input
+
+
     def restack_on_channels(self, image5d):
         batch, snippet, height, width, channel = self.input_shape
         # transpose image: [batch, snippet, height, width, channel] -> [batch, height, width, snippet, channel]
@@ -50,12 +56,7 @@ class PoseNetImproved(PoseNetBasic):
         super().__init__(input_shape, global_batch, conv2d, high_res)
 
     def __call__(self):
-        batch, snippet, height, width, channel = self.input_shape
-        image_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=image_shape, batch_size=self.global_batch, name="posenet_input")
-        # posenet_input: [batch, height, width, snippet*channel]
-        posenet_input = layers.Lambda(lambda image: self.restack_on_channels(image),
-                                      name="channel_stack")(input_tensor)
+        input_tensor, posenet_input = self.create_inputs()
 
         conv1 = self.conv2d_p(posenet_input, 32, 5, strides=2, name="vo_conv1")
         conv2 = self.conv2d_p(conv1, 32, 5, strides=2, name="vo_conv2")
@@ -96,13 +97,7 @@ class PoseNetDeep(PoseNetImproved):
         super().__init__(input_shape, global_batch, conv2d, high_res)
 
     def __call__(self):
-        batch, snippet, height, width, channel = self.input_shape
-        numsrc = snippet - 1
-        image_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=image_shape, batch_size=self.global_batch, name="posenet_input")
-        # posenet_input: [batch, height, width, snippet*channel]
-        posenet_input = layers.Lambda(lambda image: self.restack_on_channels(image),
-                                      name="channel_stack")(input_tensor)
+        input_tensor, posenet_input = self.create_inputs()
 
         conv0 = self.conv2d_p(posenet_input, 32, 5, name="vo_conv0")
         conv1 = tf.keras.layers.MaxPool2D(pool_size=(2, 2), name="vo_pool1")(conv0)
@@ -146,12 +141,9 @@ class PoseNetPreTrained(PoseNetImproved):
         self.pretrained = pretrained
 
     def __call__(self):
-        batch, snippet, height, width, channel = self.input_shape
-        numsrc = snippet - 1
-        image_shape = (snippet, height, width, channel)
-        input_tensor = layers.Input(shape=image_shape, batch_size=self.global_batch, name="posenet_input")
+        input_tensor, posenet_input = self.create_inputs()
 
-        features_ms = PretrainedModel(self.net_name, self.pretrained).encode(input_tensor)
+        features_ms = PretrainedModel(self.net_name, False).encode(posenet_input)
         conv1, conv2, conv3, conv4, conv5 = features_ms
 
         conv6 = tf.keras.layers.MaxPool2D(pool_size=(2, 2), name="vo_pool6")(conv5)

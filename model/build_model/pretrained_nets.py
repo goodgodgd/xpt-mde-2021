@@ -17,8 +17,8 @@ class PretrainedModel:
         """
         :param input_image: (batch, height, width, channel)
         """
-        input_shape = input_image.get_shape()
-        height, width = input_shape[1:3]
+        input_shape = input_image.get_shape()[1:]
+        height, width = input_shape[:2]
         net_name = self.net_name
         weights = "imagenet" if self.pretrained_weight else None
 
