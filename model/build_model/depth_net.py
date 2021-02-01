@@ -143,15 +143,15 @@ class DepthNetPretrained(DepthNetNoResize):
         conv1, conv2, conv3, conv4, conv5 = features_ms
         batch, snippet, height, width, channel = self.total_shape
 
-        if self.high_res:
-            conv6 = self.conv2d_d(conv5, 512, 3, strides=2, name="dp_conv6a")
-            conv6 = self.conv2d_d(conv6, 512, 3, strides=1, name="dp_conv6b")
-            # decoder by upsampling
-            upconv5 = self.upconv_with_skip_connection(conv6, conv5, 512, "dp_up5")     # 1/64
-            upconv4 = self.upconv_with_skip_connection(upconv5, conv4, 256, "dp_up4")   # 1/16
-        else:
-            # decoder by upsampling
-            upconv4 = self.upconv_with_skip_connection(conv5, conv4, 256, "dp_up4")     # 1/16
+        # if self.high_res:
+        #     conv6 = self.conv2d_d(conv5, 512, 3, strides=2, name="dp_conv6a")
+        #     conv6 = self.conv2d_d(conv6, 512, 3, strides=1, name="dp_conv6b")
+        #     # decoder by upsampling
+        #     upconv5 = self.upconv_with_skip_connection(conv6, conv5, 512, "dp_up5")     # 1/64
+        #     upconv4 = self.upconv_with_skip_connection(upconv5, conv4, 256, "dp_up4")   # 1/16
+        # else:
+        #     # decoder by upsampling
+        upconv4 = self.upconv_with_skip_connection(conv5, conv4, 256, "dp_up4")     # 1/16
 
         upconv3 = self.upconv_with_skip_connection(upconv4, conv3, 128, "dp_up3")       # 1/8
         depth3, dpconv2_up, dpconv3 = self.get_scaled_depth(upconv3, height // 4, width // 4, "dp_depth3")   # 1/8

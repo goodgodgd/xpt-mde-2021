@@ -221,7 +221,10 @@ def get_center_depths(features, preds):
     depth_true = depth_true[:, ys:ye, xs:xe, :]
     mean_true = []
     for depth in depth_true:
-        mean_d = depth[depth > 0].mean()
+        if depth[depth > 0].sum() > 0:
+            mean_d = depth[depth > 0].mean()
+        else:
+            mean_d = 0
         mean_true.append(mean_d)
     mean_true = np.array(mean_true)
     mean_pred = np.mean(depth_pred[:, ys:ye, xs:xe, :], axis=(1, 2, 3))

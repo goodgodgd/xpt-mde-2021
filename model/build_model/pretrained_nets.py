@@ -17,7 +17,7 @@ class PretrainedModel:
         """
         :param input_image: (batch, height, width, channel)
         """
-        input_shape = input_image.get_shape()
+        input_shape = input_image.get_shape()[1:]
         height, width = input_shape[1:3]
         net_name = self.net_name
         weights = "imagenet" if self.pretrained_weight else None
@@ -64,10 +64,20 @@ class PretrainedModel:
             pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_xception")(input_image)
             ptmodel = tfapp.Xception(input_shape=xception_shape, include_top=False, weights=weights)
 
-        elif net_name == "ResNet50V2":
-            from tensorflow.keras.applications.resnet import preprocess_input
-            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_resnet")(input_image)
-            ptmodel = tfapp.ResNet50V2(input_shape=input_shape, include_top=False, weights=weights)
+        elif net_name == "EfficientNetB0":
+            from tensorflow.keras.applications.efficientnet import preprocess_input
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_effinet")(input_image)
+            ptmodel = tfapp.EfficientNetB0(input_shape=input_shape, include_top=False, weights=weights)
+
+        elif net_name == "EfficientNetB3":
+            from tensorflow.keras.applications.efficientnet import preprocess_input
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_effinet")(input_image)
+            ptmodel = tfapp.EfficientNetB3(input_shape=input_shape, include_top=False, weights=weights)
+
+        elif net_name == "EfficientNetB5":
+            from tensorflow.keras.applications.efficientnet import preprocess_input
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_effinet")(input_image)
+            ptmodel = tfapp.EfficientNetB5(input_shape=input_shape, include_top=False, weights=weights)
 
         elif net_name == "NASNetLarge":
             from tensorflow.keras.applications.nasnet import preprocess_input
@@ -79,6 +89,12 @@ class PretrainedModel:
                 return x
             pproc_img = layers.Lambda(lambda x: preprocess_layer(x), name="preprocess_nasnet")(input_image)
             ptmodel = tfapp.NASNetLarge(input_shape=nasnet_shape, include_top=False, weights=weights)
+
+        elif net_name == "ResNet50V2":
+            from tensorflow.keras.applications.resnet import preprocess_input
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_resnet")(input_image)
+            ptmodel = tfapp.ResNet50V2(input_shape=input_shape, include_top=False, weights=weights)
+
         else:
             raise WrongInputException("Wrong pretrained model name: " + net_name)
 

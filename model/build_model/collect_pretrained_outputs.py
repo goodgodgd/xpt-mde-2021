@@ -25,10 +25,15 @@ def collect_models():
     models["MobileNetV2"] = tfapp.MobileNetV2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
     models["NASNetMobile"] = tfapp.NASNetMobile(input_shape=NASNET_SHAPE, include_top=False, weights='imagenet')
     models["DenseNet121"] = tfapp.DenseNet121(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
-    models["VGG16"] = tfapp.VGG16(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
-    models["Xception"] = tfapp.Xception(input_shape=EXCEPTION_SHAPE, include_top=False, weights='imagenet')
     models["ResNet50V2"] = tfapp.ResNet50V2(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
     models["NASNetLarge"] = tfapp.NASNetLarge(input_shape=NASNET_SHAPE, include_top=False, weights='imagenet')
+    # tobe tested
+    models["VGG16"] = tfapp.VGG16(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
+    models["Xception"] = tfapp.Xception(input_shape=EXCEPTION_SHAPE, include_top=False, weights='imagenet')
+    # 2021.01 added
+    models["EfficientNetB0"] = tfapp.EfficientNetB0(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
+    models["EfficientNetB3"] = tfapp.EfficientNetB3(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
+    models["EfficientNetB5"] = tfapp.EfficientNetB5(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
 
     # omit non 2^n shape
     # models["InceptionV3"] = tfapp.InceptionV3(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
@@ -58,7 +63,7 @@ def collect_layers(models, print_layer_shapes=True):
             if print_layer_shapes:
                 print("layer info:", layer_index, layer.name, layer.output_shape, layer.input_shape)
 
-            if "input" in layer.name:
+            if ("input" in layer.name) or (len(layer.output_shape) < 4):
                 continue
 
             out_height, out_width = layer.output_shape[1:3]

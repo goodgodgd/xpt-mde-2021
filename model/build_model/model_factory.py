@@ -11,7 +11,8 @@ import model.build_model.model_wrappers as mw
 import model.model_util.layer_ops as lo
 
 
-PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"]
+PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",
+                     "EfficientNetB0", "EfficientNetB3", "EfficientNetB5"]
 
 
 class ModelFactory:
