@@ -87,6 +87,7 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
     # during joint training, flownet is frozen
     if ("depth" in net_names) and ("flow" in net_names):
         model.set_trainable("flownet", False)
+        # model.set_trainable("depthnet", False)
 
     # model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)

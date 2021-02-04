@@ -279,6 +279,59 @@ class CombinedLossMultiScale(PhotometricLoss):
         return self.merge_multi_scale_losses(losses, op_name)
 
 
+class MD2CombLossMultiScale(PhotometricLoss):
+    """
+    mask static flow loss where static flow < optical flow, and average masked static loss
+    """
+    def __init__(self, method, scale_weights, key_suffix=""):
+        super().__init__(method, scale_weights, key_suffix)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.append_data()'
+        :return: photo_loss [batch]
+        """
+        synth_target_ms = augm_data["synth_target_ms" + self.key_suffix]
+        warped_target_ms = augm_data["warped_target_ms" + self.key_suffix]
+        original_target = augm_data["target" + self.key_suffix]
+        Ho, Wo = original_target.shape[1:3]
+
+        # compare multi scale static flow with fixed scale optical flow with 1/4 scale
+        warped_target = warped_target_ms[0]
+        warped_target = resize_bilinear(warped_target, (Ho, Wo))
+        op_name = f"comb_flow_loss_{0}" + self.key_suffix
+        # flow loss: [batch, numsrc, height, width, 3]
+        flow_loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                  name=op_name)([warped_target, original_target])
+
+        losses = []
+        for i, synt_target in enumerate(synth_target_ms):
+            # resize synthesized target to original image size
+            synt_target_rsz = resize_bilinear(synt_target, (Ho, Wo))
+            op_name = f"md2comb_loss_{i}" + self.key_suffix
+            # compute L1 loss without reduce_mean [batch, numsrc, height, width, channel]
+            static_loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                        name=op_name)([synt_target_rsz, original_target])
+
+            # add large value where static loss is larger than flow loss [batch, numsrc, height, width, channel]
+            mask = tf.cast(static_loss > flow_loss * 2., tf.float32)
+            static_loss = static_loss + mask * 1000.
+
+            # take minimum loss over sources for each pixel -> [batch, height, width, channel]
+            op_name = f"md2comb_loss_min_{i}" + self.key_suffix
+            static_loss = layers.Lambda(lambda x: tf.reduce_min(x, axis=1), name=op_name)(static_loss)
+
+            # average static over non-large values -> loss: [batch]
+            mask = tf.cast(static_loss < 1000., tf.float32)
+            op_name = f"md2comb_photo_sum_{i}" + self.key_suffix
+            loss = tf.reduce_sum(static_loss * mask, axis=[1, 2, 3], name=op_name) / tf.math.count_nonzero(mask)
+            losses.append(loss)
+
+        op_name = f"comb_photo_sum" + self.key_suffix
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, op_name)
+
+
 def resize_bilinear(srcimg, dst_hw):
     Hd, Wd = dst_hw
     B, N, Hs, Ws, C = srcimg.get_shape()

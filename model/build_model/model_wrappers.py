@@ -97,6 +97,7 @@ class ModelWrapper:
         for netname, model in self.models.items():
             save_path = op.join(ckpt_dir_path, f"{netname}_{suffix}.h5")
             model.save_weights(save_path)
+            print(f"===== {netname} weights are saved to", save_path)
 
     def load_weights(self, ckpt_dir_path, suffix):
         for netname in self.models.keys():
