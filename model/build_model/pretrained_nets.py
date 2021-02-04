@@ -55,7 +55,7 @@ class PretrainedModel:
 
         elif net_name == "Xception":
             from tensorflow.keras.applications.xception import preprocess_input
-            assert height == 128
+            # assert height == 128
 
             def preprocess_layer(x):
                 x = preprocess_input(x)
