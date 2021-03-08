@@ -267,12 +267,54 @@ class CombinedLossMultiScale(PhotometricLoss):
                                         name=op_name)([synt_target_rsz, original_target])
 
             # extract static loss lower than optical flow loss
-            mask = tf.cast(static_loss < flow_loss, tf.float32)
+            mask = tf.cast(static_loss < flow_loss * 2., tf.float32)
             static_loss = static_loss * mask
             # reduce mean -> [batch]
             op_name = f"comb_photo_mean_{i}" + self.key_suffix
             loss = layers.Lambda(lambda x: tf.reduce_mean(x, axis=[1, 2, 3, 4]), name=op_name)(static_loss)
             losses.append(loss)
+
+        op_name = f"comb_photo_sum" + self.key_suffix
+        # weighted sum over scales: [scales, batch] -> [batch]
+        return self.merge_multi_scale_losses(losses, op_name)
+
+
+class MoALossMultiScale(PhotometricLoss):
+    """
+    minimum over temporal photometric losses and stereo photometric loss
+    """
+    def __init__(self, method, scale_weights, key_suffix=""):
+        super().__init__(method, scale_weights, key_suffix)
+
+    def __call__(self, features, predictions, augm_data):
+        """
+        desciptions of inputs are available in 'TotalLoss.append_data()'
+        :return: photo_loss [batch]
+        """
+        temp_synth_target_ms = augm_data["synth_target_ms" + self.key_suffix]
+        stro_synth_target_ms = augm_data["stereo_synth_ms"]
+        original_target = augm_data["target" + self.key_suffix]
+        Ho, Wo = original_target.shape[1:3]
+
+        losses = []
+        for i, (temp_target, stro_target) in enumerate(zip(temp_synth_target_ms, stro_synth_target_ms)):
+            # resize synthesized target to original image size
+            temp_target_rs = resize_bilinear(temp_target, (Ho, Wo))
+            stro_target_rs = resize_bilinear(stro_target, (Ho, Wo))
+
+            # photometric loss: [batch, numsrc, height, width, 3]
+            op_name = f"moa_temp_loss_{i}" + self.key_suffix
+            temp_loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                        name=op_name)([temp_target_rs, original_target])
+            op_name = f"moa_stro_loss_{i}" + self.key_suffix
+            stro_loss = layers.Lambda(lambda inputs: self.photometric_loss(inputs[0], inputs[1], False),
+                                      name=op_name)([stro_target_rs, original_target])
+            # moa loss: [batch, numsrc*2, height, width, 3]
+            moa_loss = tf.concat([temp_loss, stro_loss], axis=1, name=f"moa_cat_{i}" + self.key_suffix)
+            # moa loss: [batch, height, width, 3]
+            moa_loss = tf.reduce_min(moa_loss, axis=1, name=f"moa_loss_{i}" + self.key_suffix)
+            moa_loss = tf.reduce_mean(moa_loss, axis=[1, 2, 3], name=f"moa_loss_mean_{i}" + self.key_suffix)
+            losses.append(moa_loss)
 
         op_name = f"comb_photo_sum" + self.key_suffix
         # weighted sum over scales: [scales, batch] -> [batch]

@@ -3,16 +3,14 @@ import numpy as np
 
 # TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
 RAW_DATA_PATHS = {
-    "kitti_raw": "/media/ian/IanBook2/datasets/kitti_raw_data",
-    "kitti_odom": "/media/ian/IanBook2/datasets/kitti_odometry",
-    "cityscapes__sequence": "/media/ian/IanBook2/datasets/raw_zips/cityscapes",
-    "waymo": "/media/ian/IanBook2/datasets/waymo",
-    "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
+    "kitti_raw": "/media/ri-bear/IntHDD/datasets/kitti_raw_data",
+    "kitti_odom": "/media/ri-bear/IntHDD/datasets/kitti_odometry",
+    "cityscapes__sequence": "/media/ri-bear/IntHDD/datasets/raw_zips/cityscapes",
+    "waymo": "/media/ri-bear/IntHDD/datasets/waymo",
+    "a2d2": "/media/ri-bear/IntHDD/datasets/raw_zips/a2d2/zips",
 }
-# RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_stereo_1227"
-# make tfrecords
-RESULT_DATAPATH_LOW = "/media/ian/2BD062D9593700DF/vode_data/vode_0103"
-RESULT_DATAPATH_HIGH = "/media/ian/IanBook2/vode_data/vode_0106_high"
+RESULT_DATAPATH_LOW = "/media/ri-bear/IntHDD/vode_data/vode_0103"
+RESULT_DATAPATH_HIGH = "/media/ri-bear/IntHDD/vode_data/vode_0106_high"
 
 
 class FixedOptions:
@@ -20,7 +18,7 @@ class FixedOptions:
     data options
     """
     STEREO = True
-    HIGH_RES = True
+    HIGH_RES = False
     SNIPPET_LEN = 5
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
@@ -52,7 +50,7 @@ class FixedOptions:
     """
     JOINT_NET = {"depth": ["DepthNetBasic", "DepthNetNoResize", "MobileNetV2", "NASNetMobile",
                            "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",
-                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5"][3],
+                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5"][11],
                  "camera": ["PoseNetBasic", "PoseNetImproved", "PoseNetDeep"][1],
                  "flow": "PWCNet"
                  }
@@ -71,13 +69,14 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode16"
-    DEVICE = "/GPU:0"
+    CKPT_NAME = "vode23_ef5_comb_loss"
+    DEVICE = "/GPU:1"
     IMAGE_GRADIENT_FACTOR = 4
     SMOOTHNESS_FACTOR = 20
 
     DATAPATH = RESULT_DATAPATH_HIGH if FixedOptions.HIGH_RES else RESULT_DATAPATH_LOW
-    assert (op.isdir(DATAPATH))
+    print(f"=== DATAPATH: {op.isdir(DATAPATH)}, {DATAPATH}")
+    assert op.isdir(DATAPATH), f"=== DATAPATH: {DATAPATH}"
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
     DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
     DATAPATH_CKP = op.join(DATAPATH, "checkpts")
@@ -91,16 +90,16 @@ class VodeOptions(FixedOptions):
 
     data options
     """
-    DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
-                           "kitti_odom": ["train", "test"],
-                           "cityscapes__sequence": ["train"],
+    DATASETS_TO_PREPARE = {"cityscapes__sequence": ["train"],
                            "waymo": ["train"],
                            "a2d2": ["train"],
+                           "kitti_raw": ["train", "test"],
+                           "kitti_odom": ["train", "test"],
                            }
     # only when making small tfrecords to test training
     FRAME_PER_DRIVE = 0
     TOTAL_FRAME_LIMIT = 0
-    VALIDATION_FRAMES = 100
+    VALIDATION_FRAMES = 500
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}
@@ -124,30 +123,27 @@ class VodeOptions(FixedOptions):
     LOSS_RIGID_T2 = {
         "L1": (1. - SSIM_RATIO), "L1_R": (1. - SSIM_RATIO),
         "SSIM": SSIM_RATIO, "SSIM_R": SSIM_RATIO,
-        "smoothe": 1., "smoothe_R": 1.,
-        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
-        "stereoPose": 1.,
-    }
-    LOSS_RIGID_T3 = {
-        "L1": (1. - SSIM_RATIO) * 0.1, "L1_R": (1. - SSIM_RATIO) * 0.1,
-        "SSIM": SSIM_RATIO * 0.1, "SSIM_R": SSIM_RATIO * 0.1,
-        "smoothe": 1., "smoothe_R": 1.,
-        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
-        "stereoPose": 1.,
-    }
-    LOSS_RIGID_T2_sm = {
-        "L1": (1. - SSIM_RATIO), "L1_R": (1. - SSIM_RATIO),
-        "SSIM": SSIM_RATIO, "SSIM_R": SSIM_RATIO,
         "smoothe": SMOOTHNESS_FACTOR, "smoothe_R": SMOOTHNESS_FACTOR,
         "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
         "stereoPose": 1.,
     }
-    LOSS_RIGID_T3_sm = {
-        "L1": (1. - SSIM_RATIO) * 0.1, "L1_R": (1. - SSIM_RATIO) * 0.1,
-        "SSIM": SSIM_RATIO * 0.1, "SSIM_R": SSIM_RATIO * 0.1,
+    LOSS_RIGID_COMB = {
+        "cmbL1": (1. - SSIM_RATIO) * 10, "cmbL1_R": (1. - SSIM_RATIO) * 10,
+        "cmbSSIM": SSIM_RATIO, "cmbSSIM_R": SSIM_RATIO,
         "smoothe": SMOOTHNESS_FACTOR, "smoothe_R": SMOOTHNESS_FACTOR,
         "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
         "stereoPose": 1.,
+    }
+    LOSS_RIGID_MOA = {
+        "moaL1": (1. - SSIM_RATIO) * 10, "moaL1_R": (1. - SSIM_RATIO) * 10,
+        "moaSSIM": SSIM_RATIO, "moaSSIM_R": SSIM_RATIO,
+        "smoothe": SMOOTHNESS_FACTOR, "smoothe_R": SMOOTHNESS_FACTOR,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_FLOW = {
+        "flowL2": 1., "flowL2_R": 1.,
+        "flow_reg": 4e-7
     }
     LOSS_RIGID_MD2 = {
         "md2L1": (1. - SSIM_RATIO), "md2L1_R": (1. - SSIM_RATIO),
@@ -156,58 +152,53 @@ class VodeOptions(FixedOptions):
         "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
         "stereoPose": 1.,
     }
-    LOSS_RIGID_COMB = {
-        "md2L1": (1. - SSIM_RATIO), "md2L1_R": (1. - SSIM_RATIO),
-        "md2SSIM": SSIM_RATIO, "md2SSIM_R": SSIM_RATIO,
-        "cmbL1": (1. - SSIM_RATIO), "cmbL1_R": (1. - SSIM_RATIO),
-        "cmbSSIM": SSIM_RATIO, "cmbSSIM_R": SSIM_RATIO,
-        "smoothe": 1., "smoothe_R": 1.,
-        "stereoL1": 0.01, "stereoSSIM": 0.01,
-        "stereoPose": 1.,
-    }
-    LOSS_FLOW = {
-        "flowL2": 1., "flowL2_R": 1.,
-        "flow_reg": 4e-7
-    }
 
-    PRE_TRAINING_PLAN_16 = [
-        # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+    PRE_TRAINING_PLAN_23 = [
         # pretraining flow net
+        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
         (FixedOptions.FLOW_NET, "kitti_raw", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "a2d2", 7, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "waymo", 7, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
         (FixedOptions.FLOW_NET, "kitti_odom", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "a2d2", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "waymo", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "cityscapes", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "cityscapes", 6, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        # pretraining rigid net
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
     ]
 
-    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_16
+    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_23
 
-    FINE_TRAINING_PLAN_KITTI_RAW = [
-        (FixedOptions.FLOW_NET, "kitti_raw", 10, 0.00001, LOSS_FLOW, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_T2, True),
+    FINE_TRAINING_PLAN_KITTI_RAW_MOA = [
+        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
     ]
-
+    FINE_TRAINING_PLAN_KITTI_RAW_COMB = [
+        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
+    ]
     FINE_TRAINING_PLAN_KITTI_ODOM = [
-        (FixedOptions.FLOW_NET, "kitti_odom", 10, 0.00001, LOSS_FLOW, True),
-        (FixedOptions.RIGID_NET, "kitti_odom", 5, 0.0001, LOSS_RIGID_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, True),
-        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.00001, LOSS_RIGID_T2, True),
+        (FixedOptions.FLOW_NET, "kitti_odom", 5, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "kitti_odom", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.00001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
     ]
 
-    FINE_TRAINING_PLAN = FINE_TRAINING_PLAN_KITTI_RAW
+    FINE_TRAINING_PLAN = FINE_TRAINING_PLAN_KITTI_RAW_COMB
+    PRE_TRAINING_PLAN.extend(FINE_TRAINING_PLAN)
+
     TEST_PLAN = [
-        (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "ep10"),
-        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"], "ep10"),
-        (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "ep20"),
-        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"], "ep20"),
+        (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "latest"),
     ]
 
     @classmethod
