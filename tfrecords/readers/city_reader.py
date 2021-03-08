@@ -1,5 +1,6 @@
 import os.path as op
 import numpy as np
+import PIL
 from PIL import Image
 import json
 from utils.util_class import MyExceptionToCatch
@@ -59,7 +60,13 @@ class CityscapesReader(DataReaderBase):
         else:
             image_bytes = self.zip_files["leftImg"].open(self.frame_names[index])
         image = Image.open(image_bytes)
+
+        # try:
         image = np.array(image, np.uint8)
+        # except TypeError as te:
+        #     print(f"\n[CityscapesReader.get_image] TypeError: {te}\n\tfile: {image_bytes}")
+        #     raise MyExceptionToCatch("[CityscapesReader.get_image] invalid file")
+
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
         image = image[CITY_CROP[0]:CITY_CROP[1], CITY_CROP[2]:CITY_CROP[3]]
         assert image.shape[:2] == (CITY_CROP[1] - CITY_CROP[0], CITY_CROP[3] - CITY_CROP[2])
@@ -176,15 +183,20 @@ def test_city_reader():
             image = reader.get_image(fi)
             intrinsic = reader.get_intrinsic(fi)
             extrinsic = reader.get_stereo_extrinsic(fi)
+            depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "cityscapes"), intrinsic)
+            depth_center = depth[130:140, 200:210]
+            depth_center = np.mean(depth_center[depth_center > 0])
+            depth[(depth > 20.) & (depth < 23.)] = 0
             print("intrinsic\n", intrinsic)
             print("extrinsic\n", extrinsic)
-            depth = reader.get_depth(fi, image.shape[:2], opts.get_img_shape("HW", "cityscapes"), intrinsic)
+            print("depth center (130:140, 200:210)", depth_center)
+
             print(f"== test_city_reader) drive: {op.basename(drive_path)}, frame: {fi}")
             view = image[0:-1:5, 0:-1:5, :]
             depth_view = apply_color_map(depth)
             cv2.imshow("image", view)
             cv2.imshow("dstdepth", depth_view)
-            key = cv2.waitKey(500)
+            key = cv2.waitKey(0)
             if key == ord('q'):
                 break
 
@@ -221,6 +233,8 @@ def test_city_stereo_synthesis():
         right_source = features["image5d_R"][:, 4:5]    # numsrc = 1
         intrinsic = features["intrinsic"]
         depth_ms = uf.multi_scale_depths(features["depth_gt"], [1, 2, 4, 8])
+        depth = depth_ms[0][batid].numpy()
+
         pose_r2l = tf.linalg.inv(features["stereo_T_LR"])
         print("intrinsic", intrinsic)
         pose_r2l = tf.expand_dims(pose_r2l, axis=1)
@@ -231,7 +245,7 @@ def test_city_stereo_synthesis():
         src_image = right_source[batid, srcid]
         tgt_image = left_target[batid]
         syn_image = synth_ms[0][batid, srcid]
-        depth_view = apply_color_map(depth_ms[0][batid].numpy())
+        depth_view = apply_color_map(depth)
         view = tf.concat([src_image, tgt_image, syn_image], axis=0)
         view = uf.to_uint8_image(view).numpy()
         view = np.concatenate([view, depth_view], axis=0)

@@ -17,10 +17,13 @@ import model.train_val as tv
 
 
 def train_by_plan(plan):
+    set_configs()
+    print(f"\n===== [CONFIG] device={opts.DEVICE}, ckpt={opts.CKPT_NAME}")
     target_epoch = 0
     for net_names, dataset_name, epoch, learning_rate, loss_weights, scale_weights, save_ckpt in plan:
         target_epoch += epoch
-        train(net_names, dataset_name, target_epoch, learning_rate, loss_weights, scale_weights, save_ckpt)
+        with tf.device(opts.DEVICE):
+            train(net_names, dataset_name, target_epoch, learning_rate, loss_weights, scale_weights, save_ckpt)
 
 
 def train(net_names, dataset_name, target_epoch, learning_rate, loss_weights, scale_weights, save_ckpt):
@@ -29,7 +32,6 @@ def train(net_names, dataset_name, target_epoch, learning_rate, loss_weights, sc
         print(f"!! target_epoch {target_epoch} <= initial_epoch {initial_epoch}, no need to train")
         return
 
-    set_configs()
     log.copy_or_check_same()
     dataset_train, tfr_config, train_steps = get_dataset(dataset_name, "train", True)
     dataset_val, _, val_steps = get_dataset(dataset_name, "val", False)
@@ -60,6 +62,7 @@ def set_configs():
 
     # set gpu configs
     gpus = tf.config.experimental.list_physical_devices('GPU')
+    print("Physical GPUs:", gpus)
     if gpus:
         try:
             # Currently, memory growth needs to be the same across GPUs
@@ -67,6 +70,7 @@ def set_configs():
                 tf.config.experimental.set_memory_growth(gpu, True)
 
             logical_gpus = tf.config.experimental.list_logical_devices('GPU')
+            print("Logical GPUs:", logical_gpus)
             print(len(gpus), "Physical GPUs,", len(logical_gpus), "Logical GPUs")
         except RuntimeError as e:
             # Memory growth must be set before GPUs have been initialized
@@ -83,6 +87,7 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
     # during joint training, flownet is frozen
     if ("depth" in net_names) and ("flow" in net_names):
         model.set_trainable("flownet", False)
+        # model.set_trainable("depthnet", False)
 
     # model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)

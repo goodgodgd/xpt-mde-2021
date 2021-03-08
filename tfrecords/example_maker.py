@@ -53,8 +53,8 @@ class ExampleMaker:
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
         example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
-        if self.check_static_sequence(example):
-            return dict()
+        self.check_static_sequence(example)
+
         example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:
             example["depth_gt"] = self.load_depth_map(frame_id, rawshape_hw, rszshape_hw)
@@ -146,10 +146,8 @@ class ExampleMaker:
             diff_pixels = np.sum(diffmap > 20).astype(int)
             if diff_pixels > diff_thresh:
                 dynamic_frames += 1
-        if dynamic_frames > 1:
-            return False
-        else:
-            return True
+        if dynamic_frames < 2:
+            raise MyExceptionToCatch("[check_static_sequence] static sequence")
 
     def load_intrinsic(self, index, rawshape_hw, rszshape_hw, right=False):
         intrinsic_raw = self.data_reader.get_intrinsic(index, right=right)
@@ -184,6 +182,8 @@ class ExampleMaker:
         if point_cloud is None: return None
         depth_map = point_cloud_to_depth_map(point_cloud, intrinsic_rsz, rszshape_hw)
         # depth_map = self.data_reader.get_depth(index, rawshape_hw, rszshape_hw, intrinsic, right)
+        if depth_map.ndim == 2:
+            depth_map = depth_map[..., np.newaxis]
         return depth_map.astype(np.float32)
 
     def rescale_intrinsic(self, intrinsic, rawshape_hw, rszshape_hw):

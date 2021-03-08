@@ -1,5 +1,7 @@
 import os.path as op
 import numpy as np
+import tensorflow as tf
+tf.config.set_visible_devices([], 'GPU')
 
 import settings
 from config import opts
@@ -37,11 +39,11 @@ def tfrecord_maker_factory(dataset, split, srcpath, tfrpath):
         return tm.KittiOdomTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     elif dataset.startswith("cityscapes"):
         return tm.CityscapesTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
-    elif dataset is "waymo":
+    elif dataset == "waymo":
         return tm.WaymoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
-    elif dataset is "a2d2":
+    elif dataset == "a2d2":
         return tm.A2D2TfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
-    elif dataset is "driving_stereo":
+    elif dataset == "driving_stereo":
         return tm.DrivingStereoTfrecordMaker(dataset, split, srcpath, tfrpath, 2000, opts.STEREO, dstshape)
     else:
         assert 0, f"Invalid dataset: {dataset}"

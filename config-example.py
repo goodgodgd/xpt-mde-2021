@@ -9,7 +9,10 @@ RAW_DATA_PATHS = {
     "waymo": "/media/ian/IanBook2/datasets/waymo",
     "a2d2": "/media/ian/IanBook2/datasets/raw_zips/a2d2/zips",
 }
-RESULT_DATAPATH = "/media/ian/2BD062D9593700DF/vode_data/vode_0103"
+# RESULT_DATAPATH = "/media/ian/IanBook2/vode_data/vode_stereo_1227"
+# make tfrecords
+RESULT_DATAPATH_LOW = "/media/ian/2BD062D9593700DF/vode_data/vode_0103"
+RESULT_DATAPATH_HIGH = "/media/ian/IanBook2/vode_data/vode_0106_high"
 
 
 class FixedOptions:
@@ -17,16 +20,23 @@ class FixedOptions:
     data options
     """
     STEREO = True
+    HIGH_RES = True
     SNIPPET_LEN = 5
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
-    IMAGE_SIZES = {"kitti_raw": (128, 512),     # 2:8 65536
-                   "kitti_odom": (128, 512),
-                   "cityscapes": (192, 512),    # 3:8
-                   "waymo": (256, 384),         # 4:6 98304
-                   "a2d2": (192, 384),          # 3:6 73728
-                   "driving_stereo": (192, 384),     # 3:6 73728
-                   }
+    IMAGE_SIZES_SMALL = {"kitti_raw": (128, 512),  # 2:8 65536
+                         "kitti_odom": (128, 512),
+                         "cityscapes": (192, 512),  # 3:8
+                         "waymo": (256, 384),  # 4:6 98304
+                         "a2d2": (192, 384),  # 3:6 73728
+                         }
+    IMAGE_SIZES_LARGE = {"kitti_raw": (256, 1024),  # 2:8
+                         "kitti_odom": (256, 1024),
+                         "cityscapes": (384, 1024),  # 3:8
+                         "waymo": (512, 768),  # 4:6
+                         "a2d2": (384, 768),  # 3:6
+                         }
+    IMAGE_SIZES = IMAGE_SIZES_LARGE if HIGH_RES else IMAGE_SIZES_SMALL
 
     """
     training options
@@ -41,8 +51,9 @@ class FixedOptions:
     network options: network architecture, convolution args, ... 
     """
     JOINT_NET = {"depth": ["DepthNetBasic", "DepthNetNoResize", "MobileNetV2", "NASNetMobile",
-                           "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge"][3],
-                 "camera": "PoseNet",
+                           "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",
+                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5"][3],
+                 "camera": ["PoseNetBasic", "PoseNetImproved", "PoseNetDeep"][1],
                  "flow": "PWCNet"
                  }
     RIGID_NET = {"depth": JOINT_NET["depth"], "camera": JOINT_NET["camera"]}
@@ -60,10 +71,13 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode12"
+    CKPT_NAME = "vode16"
+    DEVICE = "/GPU:0"
+    IMAGE_GRADIENT_FACTOR = 4
+    SMOOTHNESS_FACTOR = 20
 
-    DATAPATH = RESULT_DATAPATH
-    assert(op.isdir(DATAPATH))
+    DATAPATH = RESULT_DATAPATH_HIGH if FixedOptions.HIGH_RES else RESULT_DATAPATH_LOW
+    assert (op.isdir(DATAPATH))
     DATAPATH_SRC = op.join(DATAPATH, "srcdata")
     DATAPATH_TFR = op.join(DATAPATH, "tfrecords")
     DATAPATH_CKP = op.join(DATAPATH, "checkpts")
@@ -73,17 +87,20 @@ class VodeOptions(FixedOptions):
     PROJECT_ROOT = op.dirname(__file__)
 
     """
+
+
     data options
     """
     DATASETS_TO_PREPARE = {"kitti_raw": ["train", "test"],
                            "kitti_odom": ["train", "test"],
                            "cityscapes__sequence": ["train"],
                            "waymo": ["train"],
+                           "a2d2": ["train"],
                            }
     # only when making small tfrecords to test training
     FRAME_PER_DRIVE = 0
     TOTAL_FRAME_LIMIT = 0
-    VALIDATION_FRAMES = 500
+    VALIDATION_FRAMES = 100
     AUGMENT_PROBS = {"CropAndResize": 0.2,
                      "HorizontalFlip": 0.2,
                      "ColorJitter": 0.2}
@@ -112,6 +129,27 @@ class VodeOptions(FixedOptions):
         "stereoPose": 1.,
     }
     LOSS_RIGID_T3 = {
+        "L1": (1. - SSIM_RATIO) * 0.1, "L1_R": (1. - SSIM_RATIO) * 0.1,
+        "SSIM": SSIM_RATIO * 0.1, "SSIM_R": SSIM_RATIO * 0.1,
+        "smoothe": 1., "smoothe_R": 1.,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_T2_sm = {
+        "L1": (1. - SSIM_RATIO), "L1_R": (1. - SSIM_RATIO),
+        "SSIM": SSIM_RATIO, "SSIM_R": SSIM_RATIO,
+        "smoothe": SMOOTHNESS_FACTOR, "smoothe_R": SMOOTHNESS_FACTOR,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_T3_sm = {
+        "L1": (1. - SSIM_RATIO) * 0.1, "L1_R": (1. - SSIM_RATIO) * 0.1,
+        "SSIM": SSIM_RATIO * 0.1, "SSIM_R": SSIM_RATIO * 0.1,
+        "smoothe": SMOOTHNESS_FACTOR, "smoothe_R": SMOOTHNESS_FACTOR,
+        "stereoL1": (1. - SSIM_RATIO), "stereoSSIM": SSIM_RATIO,
+        "stereoPose": 1.,
+    }
+    LOSS_RIGID_MD2 = {
         "md2L1": (1. - SSIM_RATIO), "md2L1_R": (1. - SSIM_RATIO),
         "md2SSIM": SSIM_RATIO, "md2SSIM_R": SSIM_RATIO,
         "smoothe": 1., "smoothe_R": 1.,
@@ -132,36 +170,44 @@ class VodeOptions(FixedOptions):
         "flow_reg": 4e-7
     }
 
-    PRE_TRAINING_PLAN_12 = [
+    PRE_TRAINING_PLAN_16 = [
         # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw",   5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T2, True),
-        (FixedOptions.RIGID_NET, "a2d2",  5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "a2d2",  5, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T2, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2_sm, SCALE_WEIGHT_T1, True),
+        # pretraining flow net
+        (FixedOptions.FLOW_NET, "kitti_raw", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "kitti_odom", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "a2d2", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "waymo", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.FLOW_NET, "cityscapes", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
     ]
 
-    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_12
+    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_16
 
     FINE_TRAINING_PLAN_KITTI_RAW = [
-        (FixedOptions.FLOW_NET, "kitti_raw",    10, 0.00001, LOSS_FLOW, True),
-        (FixedOptions.RIGID_NET, "kitti_raw",    5,  0.0001, LOSS_RIGID_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw",   10,  0.0001, LOSS_RIGID_T2, True),
-        (FixedOptions.JOINT_NET, "kitti_raw",   10, 0.00001, LOSS_RIGID_T2, True),
+        (FixedOptions.FLOW_NET, "kitti_raw", 10, 0.00001, LOSS_FLOW, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_T2, True),
     ]
 
     FINE_TRAINING_PLAN_KITTI_ODOM = [
-        (FixedOptions.FLOW_NET, "kitti_odom",   10, 0.00001, LOSS_FLOW, True),
-        (FixedOptions.RIGID_NET, "kitti_odom",   5, 0.0001, LOSS_RIGID_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_odom",  10, 0.0001, LOSS_RIGID_T2, True),
-        (FixedOptions.JOINT_NET, "kitti_odom",  10, 0.00001, LOSS_RIGID_T2, True),
+        (FixedOptions.FLOW_NET, "kitti_odom", 10, 0.00001, LOSS_FLOW, True),
+        (FixedOptions.RIGID_NET, "kitti_odom", 5, 0.0001, LOSS_RIGID_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, True),
+        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.00001, LOSS_RIGID_T2, True),
     ]
 
     FINE_TRAINING_PLAN = FINE_TRAINING_PLAN_KITTI_RAW
     TEST_PLAN = [
-        (FixedOptions.RIGID_NET, "kitti_raw",  ["depth"], "ep10"),
-        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"],  "ep10"),
-        (FixedOptions.RIGID_NET, "kitti_raw",  ["depth"], "ep20"),
-        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"],  "ep20"),
+        (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "ep10"),
+        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"], "ep10"),
+        (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "ep20"),
+        (FixedOptions.RIGID_NET, "kitti_odom", ["pose"], "ep20"),
     ]
 
     @classmethod
@@ -176,23 +222,23 @@ class VodeOptions(FixedOptions):
     @classmethod
     def get_img_shape(cls, code="HW", dataset="kitti_raw", scale_div=1):
         imsize = cls.IMAGE_SIZES[dataset]
-        if code is "H":
+        if code == "H":
             return imsize[0] // scale_div
-        elif code is "W":
+        elif code == "W":
             return imsize[1] // scale_div
-        elif code is "HW":
+        elif code == "HW":
             return imsize
-        elif code is "WH":
+        elif code == "WH":
             return imsize[1] // scale_div, imsize[0] // scale_div
-        elif code is "HWC":
+        elif code == "HWC":
             return imsize[0] // scale_div, imsize[1] // scale_div, 3
-        elif code is "SHW":
+        elif code == "SHW":
             return cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div
-        elif code is "SHWC":
+        elif code == "SHWC":
             return cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div, 3
-        elif code is "BSHWC":
+        elif code == "BSHWC":
             return cls.BATCH_SIZE, cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div, 3
-        elif code is "RSHWC":
+        elif code == "RSHWC":
             return cls.PER_REPLICA_BATCH, cls.SNIPPET_LEN, imsize[0] // scale_div, imsize[1] // scale_div, 3
         else:
             assert 0, f"Invalid code: {code}"

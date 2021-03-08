@@ -22,6 +22,11 @@ def loss_factory(dataset_cfg, loss_weights, scale_weights, stereo=opts.STEREO,
         "cmbSSIM": lm.CombinedLossMultiScale("SSIM", scale_weights),
         "cmbSSIM_R": lm.CombinedLossMultiScale("SSIM", scale_weights, key_suffix="_R"),
 
+        "m2cbL1": lm.CombinedLossMultiScale("L1", scale_weights),
+        "m2cbL1_R": lm.CombinedLossMultiScale("L1", scale_weights, key_suffix="_R"),
+        "m2cbSSIM": lm.CombinedLossMultiScale("SSIM", scale_weights),
+        "m2cbSSIM_R": lm.CombinedLossMultiScale("SSIM", scale_weights, key_suffix="_R"),
+
         "smoothe": lm.SmoothenessLossMultiScale(scale_weights),
         "smoothe_R": lm.SmoothenessLossMultiScale(scale_weights, key_suffix="_R"),
         "stereoL1": lm.StereoDepthLoss("L1", scale_weights),
