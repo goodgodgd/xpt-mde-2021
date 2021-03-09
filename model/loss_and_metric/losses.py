@@ -267,7 +267,7 @@ class CombinedLossMultiScale(PhotometricLoss):
                                         name=op_name)([synt_target_rsz, original_target])
 
             # extract static loss lower than optical flow loss
-            mask = tf.cast(static_loss < flow_loss * 2., tf.float32)
+            mask = tf.cast(static_loss < flow_loss, tf.float32)
             static_loss = static_loss * mask
             # reduce mean -> [batch]
             op_name = f"comb_photo_mean_{i}" + self.key_suffix
