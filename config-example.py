@@ -69,8 +69,8 @@ class VodeOptions(FixedOptions):
     """
     path options
     """
-    CKPT_NAME = "vode23_ef5_comb_loss"
-    DEVICE = "/GPU:1"
+    CKPT_NAME = "vode26_ef5_nopt_1"
+    DEVICE = "/GPU:0"
     IMAGE_GRADIENT_FACTOR = 4
     SMOOTHNESS_FACTOR = 20
 
@@ -169,33 +169,42 @@ class VodeOptions(FixedOptions):
         (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
     ]
-
-    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_23
-
-    FINE_TRAINING_PLAN_KITTI_RAW_MOA = [
-        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+    PRE_TRAINING_PLAN_26 = [
+        # pretraining rigid net
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
+    ]
+    PRE_TRAINING_PLAN_27 = [
+        # pretraining rigid net
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        # fine tuning
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
     ]
-    FINE_TRAINING_PLAN_KITTI_RAW_COMB = [
-        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+    PRE_TRAINING_PLAN_28 = [
+        # pretraining rigid net
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
-    ]
-    FINE_TRAINING_PLAN_KITTI_ODOM = [
-        (FixedOptions.FLOW_NET, "kitti_odom", 5, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "kitti_odom", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_odom", 10, 0.00001, LOSS_RIGID_COMB, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        # fine tuning
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
     ]
 
-    FINE_TRAINING_PLAN = FINE_TRAINING_PLAN_KITTI_RAW_COMB
-    PRE_TRAINING_PLAN.extend(FINE_TRAINING_PLAN)
+    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_26
 
     TEST_PLAN = [
         (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "latest"),
