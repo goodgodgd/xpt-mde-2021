@@ -3,7 +3,7 @@ import os.path as op
 import pandas as pd
 import matplotlib.pyplot as plt
 import cv2
-import tensorflow as tf
+import numpy as np
 import importlib
 import shutil
 import copy
@@ -25,15 +25,15 @@ def save_log(epoch, dataset_name, results_train, results_val):
     """
     :param epoch:
     :param dataset_name:
-    :param results_train: dict of losses, metrics and depths from training data
-    :param results_val: dict of losses, metrics and depths from validation data
+    :param results_train: (per-step log in dataframe, epoch time) from training data
+    :param results_val: (per-step log in dataframe, epoch time) from validation data
     """
-    summ_cols = ["loss", "trjabs", "trjrel", "roterr", "deprel"]
+    summ_cols = ["loss", "trjabs", "trjrel", "roterr", "deprel", "time"]
     summary = save_results(epoch, dataset_name, results_train, results_val, summ_cols, "history.csv")
-    other_cols = [colname for colname in results_train.keys() if colname not in summ_cols]
+    other_cols = [colname for colname in list(results_train[0]) if colname not in summ_cols]
     _ = save_results(epoch, dataset_name, results_train, results_val, other_cols, "mean_result.csv")
 
-    save_scales(epoch, results_train, results_val, "scales.txt")
+    save_scales(epoch, results_train[0], results_val[0], "scales.txt")
     draw_and_save_plot(summary, "history.png")
 
 
@@ -50,18 +50,11 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
       checkpts의 how-to-read-columns.txt 에서도 확인할 수 있다.
     - smootheness loss나 regularization loss는 크기가 작아서 1000을 곱해서 저장한다.
     """
-    train_result = results_train.mean(axis=0).to_dict()
-    val_result = results_val.mean(axis=0).to_dict()
-
     epoch_result = {"epoch": f"{epoch:>5}", "dataset": f"{dataset_name[:7]:<7}"}
-    for colname in columns:
-        if colname in train_result:
-            epoch_result[TRAIN_PREFIX + colname] = train_result[colname]
+    epoch_result = append_summary(epoch_result, results_train, columns, TRAIN_PREFIX)
     seperator = "  |   "
     epoch_result[seperator] = seperator
-    for colname in columns:
-        if colname in val_result:
-            epoch_result[VALID_PREFIX + colname] = val_result[colname]
+    epoch_result = append_summary(epoch_result, results_val, columns, VALID_PREFIX)
     epoch_result = to_fixed_width_column(epoch_result)
 
     # save "how-to-read-columns.json"
@@ -94,6 +87,16 @@ def save_results(epoch, dataset_name, results_train, results_val, columns, filen
     results.to_csv(filepath, encoding='utf-8', index=False, float_format='%.4f')
     print(f"write {filename}\n", results.tail())
     return results
+
+
+def append_summary(epoch_result, results, columns, prefix):
+    results, train_time = results
+    results = results.mean(axis=0).to_dict()
+    results["time"] = train_time
+    for colname in columns:
+        if colname in results:
+            epoch_result[prefix + colname] = results[colname]
+    return epoch_result
 
 
 def to_fixed_width_column(srcdict):
@@ -223,6 +226,9 @@ def stack_reconstruction_images(total_loss, features, predictions, indices):
 
 
 def copy_or_check_same():
+    latest_conf_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "latest_config.py")
+    shutil.copyfile(op.join(opts.PROJECT_ROOT, "config.py"), latest_conf_path)
+
     saved_conf_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "saved_config.py")
     if not op.isfile(saved_conf_path):
         shutil.copyfile(op.join(opts.PROJECT_ROOT, "config.py"), saved_conf_path)
@@ -245,6 +251,9 @@ def copy_or_check_same():
 
     for key, saved_val in saved_opts.items():
         curr_val = curr_opts[key]
-        assert saved_val == curr_val, f"key: {key}, {curr_val} != {saved_val}"
+        if isinstance(curr_val, np.ndarray):
+            assert np.isclose(saved_val, curr_val).all(), f"key: {key}, {curr_val} != {saved_val}"
+        else:
+            assert saved_val == curr_val, f"key: {key}, {curr_val} != {saved_val}"
 
     print("!! config comparison passed !!")

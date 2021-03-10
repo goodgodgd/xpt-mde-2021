@@ -192,6 +192,6 @@ def test_npz():
 
 
 if __name__ == "__main__":
-    train_by_plan(opts.PRE_TRAINING_PLAN)
+    train_by_plan(opts.TRAINING_PLAN)
     # predict_by_plan()
 

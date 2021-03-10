@@ -153,7 +153,7 @@ class VodeOptions(FixedOptions):
         "stereoPose": 1.,
     }
 
-    PRE_TRAINING_PLAN_23 = [
+    TRAINING_PLAN_23 = [
         # pretraining flow net
         (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
         (FixedOptions.FLOW_NET, "kitti_raw", 10, 0.0001, LOSS_FLOW, SCALE_WEIGHT_T1, True),
@@ -169,7 +169,7 @@ class VodeOptions(FixedOptions):
         (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
     ]
-    PRE_TRAINING_PLAN_26 = [
+    TRAINING_PLAN_26 = [
         # pretraining rigid net
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
@@ -178,7 +178,7 @@ class VodeOptions(FixedOptions):
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
     ]
-    PRE_TRAINING_PLAN_27 = [
+    TRAINING_PLAN_27 = [
         # pretraining rigid net
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
@@ -190,7 +190,7 @@ class VodeOptions(FixedOptions):
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
     ]
-    PRE_TRAINING_PLAN_28 = [
+    TRAINING_PLAN_28 = [
         # pretraining rigid net
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, SCALE_WEIGHT_T1, True),
@@ -204,7 +204,7 @@ class VodeOptions(FixedOptions):
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_MOA, SCALE_WEIGHT_T1, True),
     ]
 
-    PRE_TRAINING_PLAN = PRE_TRAINING_PLAN_26
+    TRAINING_PLAN = TRAINING_PLAN_26
 
     TEST_PLAN = [
         (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "latest"),

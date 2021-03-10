@@ -1,5 +1,6 @@
 import os
 import shutil
+from timeit import default_timer as timer
 
 
 class MyExceptionToCatch(Exception):
@@ -46,3 +47,16 @@ class PathManager:
                     shutil.rmtree(path)
             # to ensure the process stop here
             assert False
+
+
+class DurationTime:
+    def __init__(self):
+        self.start = 0
+        self.duration = 0
+
+    def __enter__(self):        # entering 'with' context
+        self.start = timer()
+        return self             # pass object by 'as'
+
+    def __exit__(self, type, value, trace_back):    # exiting 'with' context
+        self.duration = timer() - self.start
