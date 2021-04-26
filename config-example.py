@@ -49,9 +49,9 @@ class FixedOptions:
     network options: network architecture, convolution args, ... 
     """
     JOINT_NET = {"depth": ["DepthNetBasic", "DepthNetNoResize", "MobileNetV2", "NASNetMobile",
-                           "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",
-                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5"][11],
-                 "camera": ["PoseNetBasic", "PoseNetImproved", "PoseNetDeep"][1],
+                           "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",     # 4~
+                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5", "EfficientNetB7"][11],  # 9~
+                 "camera": "PoseNetImproved",
                  "flow": "PWCNet"
                  }
     RIGID_NET = {"depth": JOINT_NET["depth"], "camera": JOINT_NET["camera"]}
@@ -153,12 +153,13 @@ class LossOptions(FixedOptions):
     """
     STEP 2. select the best loss function
     """
-    LOSS_SELECT = [LOSS_RIGID_T2, LOSS_RIGID_MOA, LOSS_RIGID_MOA_WST][0]
+    LOSS_SELECT = [LOSS_RIGID_T2, LOSS_RIGID_MOA, LOSS_RIGID_MOA_WST][2]
     TRAINING_PLAN_27 = [
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 15, 0.00001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.000001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
     ]
     # !! import flow net from previous checkpoints
     TRAINING_PLAN_27_COMB = [
@@ -167,56 +168,62 @@ class LossOptions(FixedOptions):
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
         # fine-tune rigid net aided by flow net
         (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 15, 0.00001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 5, 0.000001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
     ]
     """
     STEP 3. select pretraining loss
     """
-    LOSS_FINETUNE_STEP3 = LOSS_RIGID_MOA    # best loss in step 2
-    LOSS_PRETRAIN_STEP3 = [LOSS_RIGID_T2, LOSS_FINETUNE_STEP3][0]
+    LOSS_PRETRAIN_STEP3 = [LOSS_RIGID_T2, LOSS_RIGID_MOA_WST][0]
+    LOSS_FINETUNE_STEP3 = [LOSS_RIGID_T2, LOSS_RIGID_MOA_WST, LOSS_RIGID_COMB][1]
+    FINE_TUNE_NET = [FixedOptions.RIGID_NET, FixedOptions.JOINT_NET][0]
     TRAINING_PLAN_28 = [
         # pretraining rigid net
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.00001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
         # fine tuning
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_FINETUNE_STEP3, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 15, 0.00001, LOSS_FINETUNE_STEP3, F.SCALE_WEIGHT_T1, True),
+        (FINE_TUNE_NET, "kitti_raw", 10, 0.0001, LOSS_FINETUNE_STEP3, F.SCALE_WEIGHT_T1, True),
+        (FINE_TUNE_NET, "kitti_raw", 10, 0.00001, LOSS_FINETUNE_STEP3, F.SCALE_WEIGHT_T1, True),
+        (FINE_TUNE_NET, "kitti_raw", 5, 0.000001, LOSS_FINETUNE_STEP3, F.SCALE_WEIGHT_T1, True),
     ]
     """
-    STEP 4. compare pretraining effect
+    STEP 4. compare pretraining effect without waymo
     """
-    LOSS_PRETRAIN_STEP4 = LOSS_RIGID_T2     # best pretrain loss in step 3
-    LOSS_FINETUNE_STEP4 = LOSS_FINETUNE_STEP3
-    TRAINING_PLAN_29_FULL = [
-        # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
-        # fine tuning
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 15, 0.00001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
-    ]
-    TRAINING_PLAN_29_STEREO = [
+    LOSS_PRETRAIN_STEP4 = LOSS_RIGID_T2
+    LOSS_FINETUNE_STEP4 = LOSS_RIGID_COMB
+    FINE_TUNE_NET = FixedOptions.JOINT_NET
+    TRAINING_PLAN_29 = [
         # pretraining rigid net
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.00001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_PRETRAIN_STEP4, F.SCALE_WEIGHT_T1, True),
         # fine tuning
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 15, 0.00001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
+        (FINE_TUNE_NET, "kitti_raw", 10, 0.0001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
+        (FINE_TUNE_NET, "kitti_raw", 10, 0.00001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
+        (FINE_TUNE_NET, "kitti_raw", 5, 0.000001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
     ]
+    """
+    STEP 5. compare backbones without multi dataset pretraining
+    """
+    TRAINING_PLAN_30_COMB = [
+        # pretraining rigid net
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
+        # fine-tune rigid net aided by flow net
+        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
+        (FixedOptions.JOINT_NET, "kitti_raw", 5, 0.000001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
+    ]
+
 
 
 class VodeOptions(LossOptions):
@@ -224,7 +231,7 @@ class VodeOptions(LossOptions):
     """
     path options
     """
-    CKPT_NAME = "vode26_base2"
+    CKPT_NAME = "vode30_ef5"
     DEVICE = "/GPU:1"
 
     DATAPATH = RESULT_DATAPATH_HIGH if FixedOptions.HIGH_RES else RESULT_DATAPATH_LOW
@@ -241,7 +248,7 @@ class VodeOptions(LossOptions):
     """
     training options
     """
-    TRAINING_PLAN = L.TRAINING_PLAN_26_COMMON
+    TRAINING_PLAN = L.TRAINING_PLAN_30_COMB
     TEST_PLAN = [
         (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "latest"),
     ]
