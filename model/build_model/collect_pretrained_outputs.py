@@ -34,6 +34,7 @@ def collect_models():
     models["EfficientNetB0"] = tfapp.EfficientNetB0(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
     models["EfficientNetB3"] = tfapp.EfficientNetB3(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
     models["EfficientNetB5"] = tfapp.EfficientNetB5(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
+    models["EfficientNetB7"] = tfapp.EfficientNetB5(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')
 
     # omit non 2^n shape
     # models["InceptionV3"] = tfapp.InceptionV3(input_shape=IMG_SHAPE, include_top=False, weights='imagenet')

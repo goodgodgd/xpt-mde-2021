@@ -79,6 +79,11 @@ class PretrainedModel:
             pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_effinet")(input_image)
             ptmodel = tfapp.EfficientNetB5(input_shape=input_shape, include_top=False, weights=weights)
 
+        elif net_name == "EfficientNetB7":
+            from tensorflow.keras.applications.efficientnet import preprocess_input
+            pproc_img = layers.Lambda(lambda x: preprocess_input(x), name="preprocess_effinet")(input_image)
+            ptmodel = tfapp.EfficientNetB7(input_shape=input_shape, include_top=False, weights=weights)
+
         elif net_name == "NASNetLarge":
             from tensorflow.keras.applications.nasnet import preprocess_input
             assert height == 128
