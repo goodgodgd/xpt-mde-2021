@@ -50,7 +50,7 @@ class FixedOptions:
     """
     JOINT_NET = {"depth": ["DepthNetBasic", "DepthNetNoResize", "MobileNetV2", "NASNetMobile",
                            "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",     # 4~
-                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5", "EfficientNetB7"][11],  # 9~
+                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5", "EfficientNetB7"][12],  # 9~
                  "camera": "PoseNetImproved",
                  "flow": "PWCNet"
                  }
@@ -175,8 +175,8 @@ class LossOptions(FixedOptions):
     STEP 3. select pretraining loss
     """
     LOSS_PRETRAIN_STEP3 = [LOSS_RIGID_T2, LOSS_RIGID_MOA_WST][0]
-    LOSS_FINETUNE_STEP3 = [LOSS_RIGID_T2, LOSS_RIGID_MOA_WST, LOSS_RIGID_COMB][1]
-    FINE_TUNE_NET = [FixedOptions.RIGID_NET, FixedOptions.JOINT_NET][0]
+    LOSS_FINETUNE_STEP3 = [LOSS_RIGID_T2, LOSS_RIGID_MOA_WST, LOSS_RIGID_COMB][2]
+    FINE_TUNE_NET = [FixedOptions.RIGID_NET, FixedOptions.JOINT_NET][1]
     TRAINING_PLAN_28 = [
         # pretraining rigid net
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
@@ -225,14 +225,13 @@ class LossOptions(FixedOptions):
     ]
 
 
-
 class VodeOptions(LossOptions):
     L = LossOptions
     """
     path options
     """
-    CKPT_NAME = "vode30_ef5"
-    DEVICE = "/GPU:1"
+    CKPT_NAME = "vode31_ef7_comb"
+    DEVICE = "/GPU:0"
 
     DATAPATH = RESULT_DATAPATH_HIGH if FixedOptions.HIGH_RES else RESULT_DATAPATH_LOW
     print(f"=== DATAPATH: {op.isdir(DATAPATH)}, {DATAPATH}")
@@ -248,9 +247,25 @@ class VodeOptions(LossOptions):
     """
     training options
     """
-    TRAINING_PLAN = L.TRAINING_PLAN_30_COMB
+    TRAINING_PLAN = L.TRAINING_PLAN_28
+    RIGID_EF0 = {"depth": "EfficientNetB0", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_EF3 = {"depth": "EfficientNetB3", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_EF5 = {"depth": "EfficientNetB5", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_EF7 = {"depth": "EfficientNetB7", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_MOBILE = {"depth": "MobileNetV2", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_NASMOB = {"depth": "NASNetMobile", "camera": "PoseNetImproved", "flow": "PWCNet"}
+
     TEST_PLAN = [
-        (FixedOptions.RIGID_NET, "kitti_raw", ["depth"], "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static_comb", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static_moa", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode29_nowaymo", "latest"),
+        (RIGID_EF0, "kitti_raw", ["depth"], "vode30_ef0", "latest"),
+        (RIGID_EF3, "kitti_raw", ["depth"], "vode30_ef3", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode30_ef5", "latest"),
+        (RIGID_EF7, "kitti_raw", ["depth"], "vode30_ef7", "latest"),
+        (RIGID_MOBILE, "kitti_raw", ["depth"], "vode30_mobile", "latest"),
+        (RIGID_NASMOB, "kitti_raw", ["depth"], "vode30_nasmob", "latest"),
     ]
 
     """

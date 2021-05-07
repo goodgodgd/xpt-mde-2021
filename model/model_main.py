@@ -7,6 +7,7 @@ import settings
 from config import opts
 from tfrecords.tfrecord_reader import TfrecordReader
 import utils.util_funcs as uf
+import utils.util_class as uc
 from model.build_model.model_factory import ModelFactory
 from model.model_util.augmentation import augmentation_factory
 from model.loss_and_metric.loss_factory import loss_factory
@@ -79,11 +80,11 @@ def set_configs():
 
 @StrategyScope
 def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights, scale_weights,
-                          net_names=None, weight_suffix='latest'):
+                          net_names=None, ckpt_name=opts.CKPT_NAME, weight_suffix='latest'):
     pretrained_weight = (initial_epoch == 0) and opts.PRETRAINED_WEIGHT
     model = ModelFactory(tfr_config, net_names=net_names, global_batch=opts.BATCH_SIZE,
                          pretrained_weight=pretrained_weight).get_model()
-    model = try_load_weights(model, weight_suffix)
+    model = try_load_weights(model, ckpt_name, weight_suffix)
     # during joint training, flownet is frozen
     if ("depth" in net_names) and ("flow" in net_names):
         model.set_trainable("flownet", False)
@@ -97,9 +98,9 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
     return model, augmenter, loss_object, optimizer
 
 
-def try_load_weights(model, weight_suffix='latest'):
+def try_load_weights(model, ckpt_name, weight_suffix):
     if opts.CKPT_NAME:
-        model_dir_path = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, "ckpt")
+        model_dir_path = op.join(opts.DATAPATH_CKP, ckpt_name, "ckpt")
         if op.isdir(model_dir_path):
             model.load_weights(model_dir_path, weight_suffix)
         else:
@@ -131,29 +132,34 @@ def save_model_weights(model, weights_suffix):
 
 
 def predict_by_plan():
-    for net_names, dataset_name, save_keys, weight_suffix in opts.TEST_PLAN:
-        predict(net_names, dataset_name, save_keys, weight_suffix)
-
-
-def predict(net_names, dataset_name, save_keys, weight_suffix):
     set_configs()
-    dataset, tfr_config, steps = get_dataset(dataset_name, "test", True)
-    model = ModelFactory(tfr_config, net_names=net_names).get_model()
-    model = try_load_weights(model, weight_suffix)
-    results = model.predict_dataset(dataset, save_keys, steps)
-    # {pose: [N, numsrc, 6], depth: [N, height, width, 1]}
-    for key, pred in results.items():
-        print(f"[predict] key={key}, shape={pred.shape}")
+    for net_names, dataset_name, save_keys, ckpt_name, weight_suffix in opts.TEST_PLAN:
+        predict(net_names, dataset_name, save_keys, ckpt_name, weight_suffix)
 
-    save_predictions(results, opts.CKPT_NAME, dataset_name, weight_suffix)
+
+def predict(net_names, dataset_name, save_keys, ckpt_name, weight_suffix):
+    pred_dir_path = op.join(opts.DATAPATH_PRD, ckpt_name)
+    if op.isdir(pred_dir_path):
+        print("\n[predict_by_plan] prediction was made in:", pred_dir_path)
+        return
+
+    with uc.PathManager([pred_dir_path], None) as pm:
+        dataset, tfr_config, steps = get_dataset(dataset_name, "test", True)
+        model = ModelFactory(tfr_config, net_names=net_names).get_model()
+        model = try_load_weights(model, ckpt_name, weight_suffix)
+        results = model.predict_dataset(dataset, save_keys, steps)
+        # {pose: [N, numsrc, 6], depth: [N, height, width, 1]}
+        for key, pred in results.items():
+            print(f"[predict] key={key}, shape={pred.shape}")
+
+        save_predictions(results, ckpt_name, dataset_name, weight_suffix)
+        pm.set_ok()
 
 
 def save_predictions(results, ckpt_name, dataset_name, weight_suffix):
-    pred_dir_path = op.join(opts.DATAPATH_PRD, ckpt_name)
-    print(f"save predictions in {pred_dir_path})")
-    os.makedirs(pred_dir_path, exist_ok=True)
-    print(f"\tsave {dataset_name}.npy")
-    np.savez(op.join(pred_dir_path, f"{dataset_name}_{weight_suffix}.npz"), **results)
+    pred_path = op.join(opts.DATAPATH_PRD, ckpt_name, f"{dataset_name}_{weight_suffix}.npz")
+    print(f"save predictions in {pred_path}")
+    np.savez(pred_path, **results)
 
 
 # ==================== tests ====================
