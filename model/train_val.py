@@ -42,24 +42,26 @@ class TrainValBase:
     # tf.data.Dataset object is reusable after a full iteration, check test_reuse_dataset()
     def run_an_epoch(self, dataset):
         results = []
-        for step, features in enumerate(dataset):
-            start = time.time()
-            preds, loss, loss_by_type = self.run_a_batch(features)
-            batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
-            uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
-                                     f"time={time.time() - start:1.4f}...")
-            inspect_model(preds, features, step, self.steps_per_epoch)
-            results.append(batch_result)
+        with uc.DurationTime() as epoch_time:
+            for step, features in enumerate(dataset):
+                with uc.DurationTime() as step_time:
+                    preds, loss, loss_by_type = self.run_a_batch(features)
+                    batch_result, log_msg = merge_results(features, preds, loss, loss_by_type, self.stereo)
+                uf.print_progress_status(f"    {self.train_val_name} {step}/{self.steps_per_epoch} steps, {log_msg}, "
+                                         f"time={step_time.duration:1.4f}...")
+                inspect_model(preds, features, step, self.steps_per_epoch)
+                results.append(batch_result)
 
         print("")
         # list of dict -> dataframe -> mean: single row dataframe -> to_dict: dict of mean values
         results = pd.DataFrame(results)
         mean_results = results.mean(axis=0).to_dict()
+        epoch_time = epoch_time.duration / 3600.  # second -> hour
         message = f"[{self.train_val_name} Epoch MEAN], result: "
         for key, val in mean_results.items():
             message += f"{key}={val:1.4f}, "
         print(message, "\n\n")
-        return results
+        return results, epoch_time
 
     def run_a_batch(self, features):
         raise NotImplementedError()

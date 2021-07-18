@@ -12,7 +12,7 @@ import model.model_util.layer_ops as lo
 
 
 PRETRAINED_MODELS = ["MobileNetV2", "NASNetMobile", "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",
-                     "EfficientNetB0", "EfficientNetB3", "EfficientNetB5"]
+                     "EfficientNetB0", "EfficientNetB3", "EfficientNetB5", "EfficientNetB7"]
 
 
 class ModelFactory:
