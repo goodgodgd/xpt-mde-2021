@@ -12,7 +12,7 @@ import settings
 from tfrecords.tfrecord_reader import TfrecordReader
 from config import opts
 import utils.convert_pose as cp
-import evaluate.eval_funcs as ef
+import evaluate.eval_utils as ef
 
 
 def show_poses():
@@ -82,31 +82,28 @@ def to_point_cloud(depth, K, color):
     return pcd
 
 
-def visualize(data_dir_name, model_name):
-    depths = np.load(op.join(opts.DATAPATH_PRD, model_name, "depth.npy"))
-    poses = np.load(op.join(opts.DATAPATH_PRD, model_name, "pose.npy"))
-    print(f"depth shape: {depths.shape}, pose shape: {poses.shape}")
+def visualize_depth(data_dir_name, model_name):
+    depths = np.load(op.join(opts.DATAPATH_PRD, model_name, "kitti_raw_latest.npz"))
+    print("depth keys:", depths.files)
+    print(f"depth shape:", depths["depth"].shape, depths["depth_gt"].shape, depths["intrinsic"].shape)
     tfrgen = TfrecordReader(op.join(opts.DATAPATH_TFR, data_dir_name), batch_size=1)
     dataset = tfrgen.get_dataset()
     fig = plt.figure()
     fig.subplots_adjust(top=0.99, bottom=0.01, left=0.2, right=0.99)
 
-    for i, (x, y) in enumerate(dataset):
-        image = tf.image.convert_image_dtype((x["image"] + 1.)/2., dtype=tf.uint8)
+    for i, features in enumerate(dataset):
+        image = tf.image.convert_image_dtype((features["image"] + 1.)/2., dtype=tf.uint8)
         image = image[0].numpy()
-
-        depth = np.squeeze(depths[i], axis=-1)
-        pose_snippet = poses[i]
-        print("source frame poses w.r.t target (center) frame")
-        print(pose_snippet)
-
+        depth = np.squeeze(depths["depth"][i], axis=-1)
         cv2.imshow("image", image)
-        cv2.waitKey(1000)
+        cv2.waitKey(100)
         print("depth", depth.shape)
-        plt.imshow(depth, cmap="viridis")
+        plt.imshow(depth, cmap="magma_r", vmax=50)
         plt.show()
 
 
 if __name__ == "__main__":
-    show_poses()
-    show_depths()
+    # show_poses()
+    # show_depths()
+    visualize_depth("kitti_raw_val", "vode28_static_comb")
+
