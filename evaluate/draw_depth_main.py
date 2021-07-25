@@ -21,6 +21,13 @@ def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
     # print("monodepth disp max", np.max(depth_md1), np.max(depth_md2))
     # print("monodepth dept max", np.max(1 / (depth_md1 + 1e-6)), np.max(1 / (depth_md2 + 1e-6)))
 
+    def close_event():
+        plt.close()  # timer calls this function after 3 seconds and closes the window
+
+    fig = plt.figure()
+    timer = fig.canvas.new_timer(interval=500)  # creating a timer object and setting an interval of 3000 milliseconds
+    timer.add_callback(close_event)
+
     for i in range(datlen):
         image = evaldata["image"][i]
         depth_gt = evaldata["depth_gt"][i]
@@ -28,10 +35,14 @@ def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
         for k in range(3):
             depth_fill = fill_zero_depth(depth_fill)
         depth_pr = evaldata["depth"][i]
+        print("--- eval depth:", i)
+        if i < 38:
+            continue
         
         plt.rcParams["figure.figsize"] = (6, 10)
-        show_images([image, depth_gt, depth_fill, depth_pr, depth_md1[i], depth_md2[i]])
+        show_images([image, depth_fill, depth_pr, depth_md1[i], depth_md2[i]])
         plt.subplots_adjust(top=0.99, bottom=0.01, left=0.1, right=0.9, hspace=-0.35)
+        # timer.start()
         plt.show()
 
 

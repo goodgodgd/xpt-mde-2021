@@ -72,10 +72,12 @@ class KittiRawReader(DataReaderBase):
         velo_file = self.drive_loader.velo_files[index]
         velo_index = int(op.basename(velo_file)[:-4])
         if index != velo_index:
-            index_file = [file for file in self.drive_loader.velo_files if file.endswith(f"{index:010d}.bin")]
-            if index_file:
-                velo_index = int(op.basename(index_file[0])[:-4])
-                print(f"---[get_point_cloud] replace index {index} to {velo_index}")
+            # NOTE: velodyne indices are misaligned with camera indices in sequence ('2011_09_26', '0009')
+            # 'index-4' is empirically determined
+            index_files = [file for file in self.drive_loader.velo_files if file.endswith(f"{index-4:010d}.bin")]
+            print(f"\n---[get_point_cloud] different camera-lidar index:", index, velo_index, op.basename(velo_file), "find:", op.basename(index_files[0]))
+            if index_files:
+                velo_index = int(op.basename(index_files[0])[:-4])
             else:
                 raise MyExceptionToCatch(f"[get_point_cloud] no velodyne file for index {index}")
 

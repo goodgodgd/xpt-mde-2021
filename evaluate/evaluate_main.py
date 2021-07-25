@@ -19,11 +19,16 @@ def evaluate_by_plan():
 def evaluate_dataset(dataset_name, ckpt_name, weight_suffix):
     eval_dir_path = op.join(opts.DATAPATH_EVL, ckpt_name)
     if op.isdir(eval_dir_path):
-        print("\n[evaluate_dataset] evaluation was made in:", eval_dir_path)
+        print("\n[evaluate_dataset] evaluation has already been made in:", eval_dir_path)
+        return
+
+    filename = op.join(opts.DATAPATH_PRD, ckpt_name, f"{dataset_name}_{weight_suffix}.npz")
+    if not op.isfile(filename):
+        print("!!! [evaluate_dataset] no file:", filename)
         return
 
     with uc.PathManager([eval_dir_path], None) as pm:
-        filename = op.join(opts.DATAPATH_PRD, ckpt_name, f"{dataset_name}_{weight_suffix}.npz")
+        print(f"==== Start evaluation from {filename.replace(opts.DATAPATH, '')} to {eval_dir_path.replace(opts.DATAPATH, '')}")
         results = np.load(filename)
         results = {key: results[key] for key in results.files}
 
