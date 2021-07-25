@@ -53,7 +53,8 @@ class ExampleMaker:
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
         example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
-        self.check_static_sequence(example)
+        if self.split != "test":
+            self.check_static_sequence(example)
 
         example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:

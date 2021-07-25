@@ -6,6 +6,7 @@ from collections import Counter
 
 from tfrecords.readers.reader_base import DataReaderBase
 from tfrecords.tfr_util import apply_color_map
+from utils.util_class import MyExceptionToCatch
 
 
 class KittiRawReader(DataReaderBase):
@@ -71,9 +72,14 @@ class KittiRawReader(DataReaderBase):
         velo_file = self.drive_loader.velo_files[index]
         velo_index = int(op.basename(velo_file)[:-4])
         if index != velo_index:
-            raise StopIteration(f"[get_point_cloud] index does NOT match velo file ID {index} != {velo_index}")
+            index_file = [file for file in self.drive_loader.velo_files if file.endswith(f"{index:010d}.bin")]
+            if index_file:
+                velo_index = int(op.basename(index_file[0])[:-4])
+                print(f"---[get_point_cloud] replace index {index} to {velo_index}")
+            else:
+                raise MyExceptionToCatch(f"[get_point_cloud] no velodyne file for index {index}")
 
-        velo_in_lidar = self.drive_loader.get_velo(index)
+        velo_in_lidar = self.drive_loader.get_velo(velo_index)
         T2cam = self.drive_loader.calib.T_cam3_velo if right else self.drive_loader.calib.T_cam2_velo
         # velodyne raw data [N, 4] is (forward, left, up, reflectance(0)->1)
         velo_in_lidar[:, 3] = 1
@@ -151,7 +157,7 @@ class KittiRawReader(DataReaderBase):
             test_frames = [line.strip("\n") for line in lines if line.startswith(drive_prefix)]
             print("[_read_frame_ids_test] test_frames:", len(test_frames), test_frames[:5])
             frame_ids = [int(frame.split()[-1]) for frame in test_frames]
-            frame_ids.sort()
+            # frame_ids.sort()
 
         return frame_ids
 

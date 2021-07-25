@@ -41,7 +41,6 @@ class PoseNetBasic:
                                       name="channel_stack")(input_tensor)
         return input_tensor, posenet_input
 
-
     def restack_on_channels(self, image5d):
         batch, snippet, height, width, channel = self.input_shape
         # transpose image: [batch, snippet, height, width, channel] -> [batch, height, width, snippet, channel]

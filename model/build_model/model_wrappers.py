@@ -31,7 +31,8 @@ class ModelWrapper:
         return results
 
     def init_output_structure(self, keys):
-        outputs = {key: [] for key in keys}
+        outputs = {"image": []}
+        outputs.update({key: [] for key in keys})
         outputs.update({key + "_gt": [] for key in keys})
         if "depth" in keys:
             outputs["intrinsic"] = []
@@ -50,6 +51,10 @@ class ModelWrapper:
         return predictions
 
     def append_outputs(self, features, predictions, outputs, suffix=""):
+        image = features["image5d" + suffix]
+        target_ind = image.shape[1] // 2
+        image = tf.image.convert_image_dtype((image[:, target_ind] + 1.) / 2., dtype=tf.uint8)
+        outputs["image" + suffix].append(image)
         if "pose" + suffix in outputs:
             # [batch, numsrc, 6]
             pose_gt = features["pose_gt" + suffix]

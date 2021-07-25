@@ -144,7 +144,7 @@ def predict(net_names, dataset_name, save_keys, ckpt_name, weight_suffix):
         return
 
     with uc.PathManager([pred_dir_path], None) as pm:
-        dataset, tfr_config, steps = get_dataset(dataset_name, "test", True)
+        dataset, tfr_config, steps = get_dataset(dataset_name, "test", False)
         model = ModelFactory(tfr_config, net_names=net_names).get_model()
         model = try_load_weights(model, ckpt_name, weight_suffix)
         results = model.predict_dataset(dataset, save_keys, steps)
@@ -198,6 +198,6 @@ def test_npz():
 
 
 if __name__ == "__main__":
-    train_by_plan(opts.TRAINING_PLAN)
-    # predict_by_plan()
+    # train_by_plan(opts.TRAINING_PLAN)
+    predict_by_plan()
 
