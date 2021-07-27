@@ -52,8 +52,8 @@ class ModelWrapper:
 
     def append_outputs(self, features, predictions, outputs, suffix=""):
         image = features["image5d" + suffix]
-        target_ind = image.shape[1] // 2
-        image = tf.image.convert_image_dtype((image[:, target_ind] + 1.) / 2., dtype=tf.uint8)
+        # target image is at end
+        image = tf.image.convert_image_dtype((image[:, -1] + 1.) / 2., dtype=tf.uint8)
         outputs["image" + suffix].append(image)
         if "pose" + suffix in outputs:
             # [batch, numsrc, 6]

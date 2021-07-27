@@ -1,3 +1,4 @@
+import os
 import os.path as op
 import cv2
 import numpy as np
@@ -13,37 +14,49 @@ MD2_FILE = "/media/ri-bear/IntHDD/vode_data/vode_0103/othermethod/monodepth2/mon
 
 
 def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
-    evaldata = np.load(op.join(opts.DATAPATH_PRD, ckpt_name, dataset_name + "_latest.npz"))
-    datlen = evaldata["image"].shape[0]
-    depth_md1 = 1. / (np.load(MD1_FILE) + 1e-6)
-    depth_md2 = 1. / (np.load(MD2_FILE) + 1e-6)
-    print("monodepth shape", depth_md1.shape, depth_md2.shape)
-    # print("monodepth disp max", np.max(depth_md1), np.max(depth_md2))
-    # print("monodepth dept max", np.max(1 / (depth_md1 + 1e-6)), np.max(1 / (depth_md2 + 1e-6)))
+    pred_data = np.load(op.join(opts.DATAPATH_PRD, ckpt_name, dataset_name + "_latest.npz"))
+    print("pred_data.files:", pred_data.files)
+    images = pred_data["image"]
+    datlen, height, width, _ = images.shape
+    evaldata = dict()
+    evaldata["depth_md1"] = 1. / (np.load(MD1_FILE) + 1e-6)
+    evaldata["depth_md2"] = 1. / (np.load(MD2_FILE) + 1e-6)
+    evaldata["depth_xpt"] = pred_data["depth"]
+    dirname = op.join(opts.DATAPATH_EVL, ckpt_name, "comparison")
+    os.makedirs(dirname, exist_ok=True)
 
-    def close_event():
-        plt.close()  # timer calls this function after 3 seconds and closes the window
-
-    fig = plt.figure()
-    timer = fig.canvas.new_timer(interval=500)  # creating a timer object and setting an interval of 3000 milliseconds
-    timer.add_callback(close_event)
+    max_disp = 2.5
 
     for i in range(datlen):
-        image = evaldata["image"][i]
-        depth_gt = evaldata["depth_gt"][i]
-        depth_fill = depth_gt.copy()
-        for k in range(3):
-            depth_fill = fill_zero_depth(depth_fill)
-        depth_pr = evaldata["depth"][i]
-        print("--- eval depth:", i)
-        if i < 38:
-            continue
-        
-        plt.rcParams["figure.figsize"] = (6, 10)
-        show_images([image, depth_fill, depth_pr, depth_md1[i], depth_md2[i]])
-        plt.subplots_adjust(top=0.99, bottom=0.01, left=0.1, right=0.9, hspace=-0.35)
-        # timer.start()
-        plt.show()
+        image = images[i]
+        result = [image]
+
+        for key, depths in evaldata.items():
+            depth = depths[i]
+            # print("eval data:", i, key, depth.shape)
+            if key == "depth_gt":
+                depth = fill_zero_depth(depth)
+                depth = fill_zero_depth(depth)
+
+            # disp = 1. / (depth + 1e-6)
+            disp = depth.copy()
+            disp[depth > 0] = 1 / depth[depth > 0]
+            if disp.shape[:2] != (128, 512):
+                disp = cv2.resize(disp, (512, 155))
+                disp = disp[18:-9]
+
+            scale = np.mean(disp[-50:, 128:-128])
+            disp = disp / scale
+            disp = np.clip(disp, 0, max_disp)
+            disp = (disp / max_disp * 255).astype(np.uint8)
+            disp_color = cv2.applyColorMap(disp, cv2.COLORMAP_MAGMA)
+            result.append(disp_color)
+
+        result = np.concatenate(result, axis=0)
+        result[128:-2:128] = 0
+        cv2.imwrite(op.join(dirname, f"compare_{i:03d}.png"), result)
+        cv2.imshow("result", result)
+        cv2.waitKey()
 
 
 def fill_zero_depth(depth):
