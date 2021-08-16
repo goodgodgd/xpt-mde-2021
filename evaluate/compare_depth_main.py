@@ -11,6 +11,7 @@ from config import opts
 
 MD1_FILE = "/media/ri-bear/IntHDD/vode_data/vode_0103/othermethod/monodepth/disparities_city2eigen_resnet/disparities_pp.npy"
 MD2_FILE = "/media/ri-bear/IntHDD/vode_data/vode_0103/othermethod/monodepth2/mono+stereo_1024x320_eigen.npy"
+RAW_IMAGE_RES = {"kitti_raw": (375, 1242)}
 
 
 def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
@@ -19,44 +20,44 @@ def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
     images = pred_data["image"]
     datlen, height, width, _ = images.shape
     evaldata = dict()
-    evaldata["depth_md1"] = 1. / (np.load(MD1_FILE) + 1e-6)
-    evaldata["depth_md2"] = 1. / (np.load(MD2_FILE) + 1e-6)
-    evaldata["depth_xpt"] = pred_data["depth"]
+    evaldata["disp_md1"] = np.load(MD1_FILE)
+    evaldata["disp_md2"] = np.load(MD2_FILE)
+    disp = pred_data["depth"].copy()
+    disp[disp > 0] = 1 / disp[disp > 0]
+    evaldata["disp_xpt"] = disp
+
     dirname = op.join(opts.DATAPATH_EVL, ckpt_name, "comparison")
     os.makedirs(dirname, exist_ok=True)
-
-    max_disp = 2.5
+    depth_res = opts.IMAGE_SIZES[dataset_name]
+    rawimg_res = RAW_IMAGE_RES[dataset_name]
 
     for i in range(datlen):
         image = images[i]
         result = [image]
 
-        for key, depths in evaldata.items():
-            depth = depths[i]
-            # print("eval data:", i, key, depth.shape)
-            if key == "depth_gt":
-                depth = fill_zero_depth(depth)
-                depth = fill_zero_depth(depth)
+        for key, disps in evaldata.items():
+            disp = disps[i]
+            if disp.shape[:2] != depth_res:
+                # resize with keeping raw image aspect ratio
+                rsz_height = round(rawimg_res[0] / rawimg_res[1] * depth_res[1])
+                disp = cv2.resize(disp, (depth_res[1], rsz_height))
+                # crop top and bottom to fit with our result
+                top = round((rsz_height - depth_res[0]) / 3. * 2.)
+                bot = round((rsz_height - depth_res[0]) / 3.)
+                disp = disp[top:-bot]
 
-            # disp = 1. / (depth + 1e-6)
-            disp = depth.copy()
-            disp[depth > 0] = 1 / depth[depth > 0]
-            if disp.shape[:2] != (128, 512):
-                disp = cv2.resize(disp, (512, 155))
-                disp = disp[18:-9]
-
-            scale = np.mean(disp[-50:, 128:-128])
-            disp = disp / scale
+            max_disp = np.quantile(disp[-50:, 128:-128], [0.9])[0] * 1.1
+            # print("max_disp:", i, key, max_disp)
             disp = np.clip(disp, 0, max_disp)
             disp = (disp / max_disp * 255).astype(np.uint8)
             disp_color = cv2.applyColorMap(disp, cv2.COLORMAP_MAGMA)
             result.append(disp_color)
 
         result = np.concatenate(result, axis=0)
-        result[128:-2:128] = 0
+        result[depth_res[0]:-2:depth_res[0]] = 0
         cv2.imwrite(op.join(dirname, f"compare_{i:03d}.png"), result)
         cv2.imshow("result", result)
-        cv2.waitKey()
+        cv2.waitKey(50)
 
 
 def fill_zero_depth(depth):
@@ -89,4 +90,5 @@ def show_images(images):
 
 
 if __name__ == "__main__":
-    visualize_depth("vode28_static_comb", "kitti_raw")
+    # visualize_depth("vode28_static_comb", "kitti_raw")
+    visualize_depth("vode30_t2_comb", "kitti_raw")

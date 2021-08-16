@@ -110,6 +110,8 @@ class ModelWrapper:
             if op.isfile(ckpt_file):
                 self.models[netname].load_weights(ckpt_file)
                 print(f"===== {netname} weights loaded from", ckpt_file)
+                num_params = tf.reduce_sum([tf.reduce_prod(v.shape) for v in self.models[netname].trainable_variables])
+                print(f"      {netname} num params:", num_params)
             else:
                 print(f"===== Failed to load weights of {netname}, train from scratch ...")
                 print(f"      tried to load file:", ckpt_file)
