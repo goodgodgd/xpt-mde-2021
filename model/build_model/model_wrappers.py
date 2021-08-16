@@ -31,7 +31,8 @@ class ModelWrapper:
         return results
 
     def init_output_structure(self, keys):
-        outputs = {key: [] for key in keys}
+        outputs = {"image": []}
+        outputs.update({key: [] for key in keys})
         outputs.update({key + "_gt": [] for key in keys})
         if "depth" in keys:
             outputs["intrinsic"] = []
@@ -50,6 +51,10 @@ class ModelWrapper:
         return predictions
 
     def append_outputs(self, features, predictions, outputs, suffix=""):
+        image = features["image5d" + suffix]
+        # target image is at end
+        image = tf.image.convert_image_dtype((image[:, -1] + 1.) / 2., dtype=tf.uint8)
+        outputs["image" + suffix].append(image)
         if "pose" + suffix in outputs:
             # [batch, numsrc, 6]
             pose_gt = features["pose_gt" + suffix]
@@ -105,6 +110,8 @@ class ModelWrapper:
             if op.isfile(ckpt_file):
                 self.models[netname].load_weights(ckpt_file)
                 print(f"===== {netname} weights loaded from", ckpt_file)
+                num_params = tf.reduce_sum([tf.reduce_prod(v.shape) for v in self.models[netname].trainable_variables])
+                print(f"      {netname} num params:", num_params)
             else:
                 print(f"===== Failed to load weights of {netname}, train from scratch ...")
                 print(f"      tried to load file:", ckpt_file)

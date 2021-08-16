@@ -20,12 +20,13 @@ class ExampleMaker:
         self.data_reader = WaymoReader()
         self.reader_args = reader_args
         self.max_frame_id = 0
+        self.example_count = 0
 
     def init_reader(self, drive_path):
         self.data_reader = self.data_reader_factory()
         self.data_reader.init_drive(drive_path)
         if len(self.get_range()) > 0:
-            self.max_frame_id = self.get_range()[-1]
+            self.max_frame_id = max(self.get_range())
 
     def data_reader_factory(self):
         if self.dataset == "kitti_raw":
@@ -53,7 +54,10 @@ class ExampleMaker:
         frame_id, frame_seq_ids = self.make_snippet_ids(index)
         example = dict()
         example["image"], rawshape_hw, rszshape_hw = self.load_snippet_images(frame_seq_ids)
-        self.check_static_sequence(example)
+        if self.split != "test":
+            self.check_static_sequence(example)
+
+        self.example_count += 1
 
         example["intrinsic"] = self.load_intrinsic(frame_id, rawshape_hw, rszshape_hw)
         if "depth_gt" in self.data_keys:
@@ -82,13 +86,15 @@ class ExampleMaker:
             show_example(example, 200, print_param=True, max_height=0, suffix="_crop")
         elif index % 100 == 10:
             show_example(example, 200, max_height=0, suffix="_crop")
+        # elif self.example_count > 36:
+        #     print("self.example_count:", self.example_count, index, frame_id, frame_seq_ids)
+        #     show_example(example, 0, max_height=0, suffix="_crop")
         example = self.verify_snippet(example)
         return example
 
     def make_snippet_ids(self, frame_index):
         frame_id = self.data_reader.index_to_id(frame_index)
         halflen = self.shwc_shape[0] // 2
-        # max_frame_id = list(self.get_range())[-1]
         if (self.dataset == "a2d2") or (self.dataset.startswith("cityscapes")):
             frame_seq_ids = np.arange(frame_id-halflen*2, frame_id+halflen*2+1, 2)
         else:

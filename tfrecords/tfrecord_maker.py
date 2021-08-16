@@ -208,7 +208,6 @@ class KittiRawTfrecordMaker(TfrecordMakerSingleDir):
         return ExampleMaker(dataset, split, shwc_shape, data_keys, self.srcpath)
 
     def list_drive_paths(self, srcpath, split):
-        # create drive paths like : ("2011_09_26", "0001")
         split_ = "train" if split == "train" else "test"
         code_tfrecord_path = op.dirname(op.abspath(__file__))
         filename = op.join(code_tfrecord_path, "resources", f"kitti_raw_{split_}_scenes.txt")

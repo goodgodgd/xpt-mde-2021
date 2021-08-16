@@ -18,7 +18,7 @@ RENAMER = {"trjabs": "TEA", "trjrel": "TER", "roterr": "RE", "deprel": "DE", "de
            "stereoPose": "stps", "_reg": "Rg", "_R": "R"}
 TRAIN_PREFIX = ":"
 VALID_PREFIX = "!"
-RECON_SAMPLES = 14
+RECON_SAMPLES = 100
 
 
 def save_log(epoch, dataset_name, results_train, results_val):
@@ -145,13 +145,28 @@ def draw_and_save_plot(results, filename):
 
 
 def save_reconstruction_samples(model, dataset, total_steps, epoch):
-    views = make_reconstructed_views(model, dataset, total_steps)
     savepath = op.join(opts.DATAPATH_CKP, opts.CKPT_NAME, 'reconimg')
     if not op.isdir(savepath):
         os.makedirs(savepath, exist_ok=True)
-    for i, view in enumerate(views):
+    print("[save_reconstruction_samples] image save path:", savepath)
+
+    # 7 file are in a row in file explorer
+    stride = 7  # min(total_steps, RECON_SAMPLES*50) // RECON_SAMPLES
+    max_steps = stride * RECON_SAMPLES
+    total_loss = lm.TotalLoss()
+    scaleidx, batchidx, srcidx = 0, 0, 0
+
+    for i, features in enumerate(dataset):
+        if i % stride != 1:
+            continue
+        if i > max_steps:
+            break
+
+        predictions = model(features)
+        view1 = stack_reconstruction_images(total_loss, features, predictions, (scaleidx, batchidx, srcidx))
         filename = op.join(savepath, f"ep{epoch:03d}_{i:02d}.png")
-        cv2.imwrite(filename, view)
+        cv2.imwrite(filename, view1)
+        print("--- save log image", i)
 
 
 def save_scales(epoch, results_train, results_val, filename):
@@ -204,25 +219,38 @@ def stack_reconstruction_images(total_loss, features, predictions, indices):
 
     if "depth_ms" in predictions:
         target_depth = predictions["depth_ms"][0][batchidx]
-        # target_depth = tf.clip_by_value(target_depth, 0., 20.) / 10. - 1.
         view_imgs["target_depth"] = target_depth
 
     view_imgs[f"source_{srcidx}"] = augm_data["source"][batchidx, srcidx]
 
     if "synth_target_ms" in augm_data:
         view_imgs[f"synthesized_from_src{srcidx}"] = augm_data["synth_target_ms"][scaleidx][batchidx, srcidx]
-        # view_imgs["time_diff"] = tf.abs(view_imgs["left_target"] - view_imgs[f"synthesized_from_src{srcidx}"])
 
     if "warped_target_ms" in augm_data:
+        view_imgs["flow"] = flow_to_image(predictions["flow_ms"][scaleidx][batchidx, srcidx])
         view_imgs["synthesized_by_flow"] = augm_data["warped_target_ms"][scaleidx][batchidx, srcidx]
 
     if opts.STEREO and ("stereo_synth_ms" in augm_data):
         view_imgs["right_source"] = augm_data["target_R"][batchidx]
         view_imgs["synthesized_from_right"] = augm_data["stereo_synth_ms"][scaleidx][batchidx, srcidx]
-        # view_imgs["stereo_diff"] = tf.abs(view_imgs["left_target"] - view_imgs["synthesized_from_right"])
 
     view1 = uf.stack_titled_images(view_imgs)
+    # cv2.imshow("log image", view1)
+    # cv2.waitKey()
     return view1
+
+
+def flow_to_image(flow):
+    flow = flow.numpy()
+    height, width, _ = flow.shape
+    flow = np.clip(flow, -10, 10) / 10
+    image = np.ones((height, width, 3), dtype=np.float32)
+    image[:, :, 0] = 1 - flow[:, :, 0]
+    image[:, :, 1] = 1 + flow[:, :, 0]
+    image[:, :, 2] = 1 - np.abs(flow[:, :, 1])
+    image = np.clip(image, -1, 1)
+    image = cv2.resize(image, (width*4, height*4))
+    return image
 
 
 def copy_or_check_same():

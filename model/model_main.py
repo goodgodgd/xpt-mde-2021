@@ -88,9 +88,7 @@ def create_training_parts(initial_epoch, tfr_config, learning_rate, loss_weights
     # during joint training, flownet is frozen
     if ("depth" in net_names) and ("flow" in net_names):
         model.set_trainable("flownet", False)
-        # model.set_trainable("depthnet", False)
 
-    # model.compile(optimizer='sgd', loss='mean_absolute_error')
     augmenter = augmentation_factory(opts.AUGMENT_PROBS)
     loss_object = loss_factory(tfr_config, loss_weights, scale_weights,
                                weights_to_regularize=model.weights_to_regularize())
@@ -144,7 +142,7 @@ def predict(net_names, dataset_name, save_keys, ckpt_name, weight_suffix):
         return
 
     with uc.PathManager([pred_dir_path], None) as pm:
-        dataset, tfr_config, steps = get_dataset(dataset_name, "test", True)
+        dataset, tfr_config, steps = get_dataset(dataset_name, "test", False)
         model = ModelFactory(tfr_config, net_names=net_names).get_model()
         model = try_load_weights(model, ckpt_name, weight_suffix)
         results = model.predict_dataset(dataset, save_keys, steps)
@@ -160,6 +158,18 @@ def save_predictions(results, ckpt_name, dataset_name, weight_suffix):
     pred_path = op.join(opts.DATAPATH_PRD, ckpt_name, f"{dataset_name}_{weight_suffix}.npz")
     print(f"save predictions in {pred_path}")
     np.savez(pred_path, **results)
+
+
+def log_images():
+    set_configs()
+    net_names, dataset_name = opts.JOINT_NET, "kitti_raw"
+    dataset_val, tfr_config, val_steps = get_dataset(dataset_name, "val", False)
+    model = ModelFactory(tfr_config, net_names=net_names, global_batch=opts.BATCH_SIZE, pretrained_weight=False).get_model()
+    model = try_load_weights(model, opts.CKPT_NAME, "latest")
+
+    print(f"\n\n========== START IMAGE LOGGING ON {opts.CKPT_NAME} ==========")
+    log.save_reconstruction_samples(model, dataset_val, val_steps, 100)
+
 
 
 # ==================== tests ====================
@@ -200,4 +210,5 @@ def test_npz():
 if __name__ == "__main__":
     train_by_plan(opts.TRAINING_PLAN)
     # predict_by_plan()
+    # log_images()
 
