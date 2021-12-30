@@ -17,11 +17,11 @@ from model.model_util.distributer import StrategyScope, StrategyDataset
 import model.train_val as tv
 
 
-def train_by_plan(plan):
+def train_by_plan():
     set_configs()
     print(f"\n===== [CONFIG] device={opts.DEVICE}, ckpt={opts.CKPT_NAME}")
     target_epoch = 0
-    for net_names, dataset_name, epoch, learning_rate, loss_weights, scale_weights, save_ckpt in plan:
+    for net_names, dataset_name, epoch, learning_rate, loss_weights, scale_weights, save_ckpt in opts.TRAINING_PLAN:
         target_epoch += epoch
         with tf.device(opts.DEVICE):
             train(net_names, dataset_name, target_epoch, learning_rate, loss_weights, scale_weights, save_ckpt)
@@ -208,7 +208,7 @@ def test_npz():
 
 
 if __name__ == "__main__":
-    train_by_plan(opts.TRAINING_PLAN)
+    train_by_plan()
     # predict_by_plan()
     # log_images()
 

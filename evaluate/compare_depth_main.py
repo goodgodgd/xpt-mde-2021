@@ -9,10 +9,6 @@ import matplotlib.pyplot as plt
 import settings
 from config import opts
 
-MD1_FILE = "/media/ri-bear/IntHDD/vode_data/vode_0103/othermethod/monodepth/disparities_city2eigen_resnet/disparities_pp.npy"
-MD2_FILE = "/media/ri-bear/IntHDD/vode_data/vode_0103/othermethod/monodepth2/mono+stereo_1024x320_eigen.npy"
-RAW_IMAGE_RES = {"kitti_raw": (375, 1242)}
-
 
 def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
     pred_data = np.load(op.join(opts.DATAPATH_PRD, ckpt_name, dataset_name + "_latest.npz"))
@@ -20,8 +16,8 @@ def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
     images = pred_data["image"]
     datlen, height, width, _ = images.shape
     evaldata = dict()
-    evaldata["disp_md1"] = np.load(MD1_FILE)
-    evaldata["disp_md2"] = np.load(MD2_FILE)
+    evaldata["disp_md1"] = np.load(opts.MONODEPTH1_FILE)
+    evaldata["disp_md2"] = np.load(opts.MONODEPTH2_FILE)
     disp = pred_data["depth"].copy()
     disp[disp > 0] = 1 / disp[disp > 0]
     evaldata["disp_xpt"] = disp
@@ -29,7 +25,7 @@ def visualize_depth(ckpt_name, dataset_name="kitti_raw"):
     dirname = op.join(opts.DATAPATH_EVL, ckpt_name, "comparison")
     os.makedirs(dirname, exist_ok=True)
     depth_res = opts.IMAGE_SIZES[dataset_name]
-    rawimg_res = RAW_IMAGE_RES[dataset_name]
+    rawimg_res = opts.RAW_IMAGE_RES[dataset_name]
 
     for i in range(datlen):
         image = images[i]

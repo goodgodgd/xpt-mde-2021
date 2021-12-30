@@ -3,14 +3,14 @@ import numpy as np
 
 # TODO: add or change RAW_DATA_PATHS as dataset paths in your PC
 RAW_DATA_PATHS = {
-    "kitti_raw": "/media/ri-bear/IntHDD/datasets/kitti_raw_data",
+    "kitti_raw": "/media/ri-bear/IanBook8T/datasets/kitti_raw_data",
     "kitti_odom": "/media/ri-bear/IntHDD/datasets/kitti_odometry",
     "cityscapes__sequence": "/media/ri-bear/IntHDD/datasets/raw_zips/cityscapes",
     "waymo": "/media/ri-bear/IntHDD/datasets/waymo",
     "a2d2": "/media/ri-bear/IntHDD/datasets/raw_zips/a2d2/zips",
 }
-RESULT_DATAPATH_LOW = "/media/ri-bear/IntHDD/vode_data/vode_0103"
-RESULT_DATAPATH_HIGH = "/media/ri-bear/IntHDD/vode_data/vode_0106_high"
+RESULT_DATAPATH_LOW = "/media/ri-bear/IntHDD/vode_data/vode_0724_test"
+RESULT_DATAPATH_HIGH = "/media/ri-bear/IntHDD/vode_data/vode_0121_2x"
 
 
 class FixedOptions:
@@ -18,7 +18,7 @@ class FixedOptions:
     data options
     """
     STEREO = True
-    HIGH_RES = False
+    HIGH_RES = True
     SNIPPET_LEN = 5
     MIN_DEPTH = 1e-3
     MAX_DEPTH = 80
@@ -39,7 +39,7 @@ class FixedOptions:
     """
     training options
     """
-    PER_REPLICA_BATCH = 2
+    PER_REPLICA_BATCH = 1
     BATCH_SIZE = PER_REPLICA_BATCH
     OPTIMIZER = ["adam_constant"][0]
     DEPTH_ACTIVATION = ["InverseSigmoid", "Exponential"][0]
@@ -50,7 +50,7 @@ class FixedOptions:
     """
     JOINT_NET = {"depth": ["DepthNetBasic", "DepthNetNoResize", "MobileNetV2", "NASNetMobile",
                            "DenseNet121", "VGG16", "Xception", "ResNet50V2", "NASNetLarge",     # 4~
-                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5", "EfficientNetB7"][12],  # 9~
+                           "EfficientNetB0", "EfficientNetB3", "EfficientNetB5", "EfficientNetB7"][11],  # 9~
                  "camera": "PoseNetImproved",
                  "flow": "PWCNet"
                  }
@@ -119,66 +119,14 @@ class LossOptions(FixedOptions):
         "stereoPose": 1.,
     }
 
-    TRAINING_PLAN_22_OLD = [
-        # pretraining flow net
-        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "kitti_raw", 10, 0.0001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "a2d2", 7, 0.0001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "waymo", 7, 0.0001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "kitti_odom", 10, 0.0001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "cityscapes", 6, 0.0001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "waymo", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_odom", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "cityscapes", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        # fine-tune flow net
-        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.0001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.FLOW_NET, "kitti_raw", 5, 0.00001, LOSS_FLOW, F.SCALE_WEIGHT_T1, True),
-        # fine-tune rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
-    ]
-
     """
-    STEP 1. make multiple base models and select the best
-    """
-    TRAINING_PLAN_26_COMMON = [
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-    ]
-    """
-    STEP 2. select the best loss function
-    """
-    LOSS_SELECT = [LOSS_RIGID_T2, LOSS_RIGID_MOA, LOSS_RIGID_MOA_WST][2]
-    TRAINING_PLAN_27 = [
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.00001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.000001, LOSS_SELECT, F.SCALE_WEIGHT_T1, True),
-    ]
-    # !! import flow net from previous checkpoints
-    TRAINING_PLAN_27_COMB = [
-        # pretraining rigid net
-        (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
-        # fine-tune rigid net aided by flow net
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 10, 0.00001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
-        (FixedOptions.JOINT_NET, "kitti_raw", 5, 0.000001, LOSS_RIGID_COMB, F.SCALE_WEIGHT_T1, True),
-    ]
-    """
-    STEP 3. select pretraining loss
+    TRAINING PLAN to make best performance
     """
     LOSS_PRETRAIN_STEP3 = [LOSS_RIGID_T2, LOSS_RIGID_MOA_WST][0]
     LOSS_FINETUNE_STEP3 = [LOSS_RIGID_T2, LOSS_RIGID_MOA_WST, LOSS_RIGID_COMB][2]
     FINE_TUNE_NET = [FixedOptions.RIGID_NET, FixedOptions.JOINT_NET][1]
     TRAINING_PLAN_28 = [
-        # pretraining rigid net
+        # pretraining
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "a2d2", 10, 0.0001, LOSS_PRETRAIN_STEP3, F.SCALE_WEIGHT_T1, True),
@@ -192,7 +140,7 @@ class LossOptions(FixedOptions):
         (FINE_TUNE_NET, "kitti_raw", 5, 0.000001, LOSS_FINETUNE_STEP3, F.SCALE_WEIGHT_T1, True),
     ]
     """
-    STEP 4. compare pretraining effect without waymo
+    TRAINING PLAN without waymo (ablation study)
     """
     LOSS_PRETRAIN_STEP4 = LOSS_RIGID_T2
     LOSS_FINETUNE_STEP4 = LOSS_RIGID_COMB
@@ -211,9 +159,9 @@ class LossOptions(FixedOptions):
         (FINE_TUNE_NET, "kitti_raw", 5, 0.000001, LOSS_FINETUNE_STEP4, F.SCALE_WEIGHT_T1, True),
     ]
     """
-    STEP 5. compare backbones without multi dataset pretraining
+    TRAINING PLAN to compare backbones without multi dataset pretraining (ablation study)
     """
-    TRAINING_PLAN_30_COMB = [
+    TRAINING_PLAN_30 = [
         # pretraining rigid net
         (FixedOptions.RIGID_NET, "kitti_raw", 5, 0.00001, LOSS_RIGID_T1, F.SCALE_WEIGHT_T1, True),
         (FixedOptions.RIGID_NET, "kitti_raw", 10, 0.0001, LOSS_RIGID_T2, F.SCALE_WEIGHT_T1, True),
@@ -230,7 +178,7 @@ class VodeOptions(LossOptions):
     """
     path options
     """
-    CKPT_NAME = "vode31_ef7_comb"
+    CKPT_NAME = "mde01"
     DEVICE = "/GPU:0"
 
     DATAPATH = RESULT_DATAPATH_HIGH if FixedOptions.HIGH_RES else RESULT_DATAPATH_LOW
@@ -243,30 +191,6 @@ class VodeOptions(LossOptions):
     DATAPATH_PRD = op.join(DATAPATH, "prediction")
     DATAPATH_EVL = op.join(DATAPATH, "evaluation")
     PROJECT_ROOT = op.dirname(__file__)
-
-    """
-    training options
-    """
-    TRAINING_PLAN = L.TRAINING_PLAN_28
-    RIGID_EF0 = {"depth": "EfficientNetB0", "camera": "PoseNetImproved", "flow": "PWCNet"}
-    RIGID_EF3 = {"depth": "EfficientNetB3", "camera": "PoseNetImproved", "flow": "PWCNet"}
-    RIGID_EF5 = {"depth": "EfficientNetB5", "camera": "PoseNetImproved", "flow": "PWCNet"}
-    RIGID_EF7 = {"depth": "EfficientNetB7", "camera": "PoseNetImproved", "flow": "PWCNet"}
-    RIGID_MOBILE = {"depth": "MobileNetV2", "camera": "PoseNetImproved", "flow": "PWCNet"}
-    RIGID_NASMOB = {"depth": "NASNetMobile", "camera": "PoseNetImproved", "flow": "PWCNet"}
-
-    TEST_PLAN = [
-        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static", "latest"),
-        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static_comb", "latest"),
-        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static_moa", "latest"),
-        (RIGID_EF5, "kitti_raw", ["depth"], "vode29_nowaymo", "latest"),
-        (RIGID_EF0, "kitti_raw", ["depth"], "vode30_ef0", "latest"),
-        (RIGID_EF3, "kitti_raw", ["depth"], "vode30_ef3", "latest"),
-        (RIGID_EF5, "kitti_raw", ["depth"], "vode30_ef5", "latest"),
-        (RIGID_EF7, "kitti_raw", ["depth"], "vode30_ef7", "latest"),
-        (RIGID_MOBILE, "kitti_raw", ["depth"], "vode30_mobile", "latest"),
-        (RIGID_NASMOB, "kitti_raw", ["depth"], "vode30_nasmob", "latest"),
-    ]
 
     """
     data options
@@ -286,11 +210,55 @@ class VodeOptions(LossOptions):
                      "ColorJitter": 0.2}
 
     """
+    training options
+    """
+    TRAINING_PLAN = L.TRAINING_PLAN_28
+    RIGID_EF0 = {"depth": "EfficientNetB0", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_EF3 = {"depth": "EfficientNetB3", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_EF5 = {"depth": "EfficientNetB5", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_EF7 = {"depth": "EfficientNetB7", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_MOBILE = {"depth": "MobileNetV2", "camera": "PoseNetImproved", "flow": "PWCNet"}
+    RIGID_NASMOB = {"depth": "NASNetMobile", "camera": "PoseNetImproved", "flow": "PWCNet"}
+
+    TEST_PLAN_LOW = [
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static_comb", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode28_static_moa", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode29_nowaymo", "latest"),
+        (RIGID_EF0, "kitti_raw", ["depth"], "vode30_ef0", "latest"),
+        (RIGID_EF3, "kitti_raw", ["depth"], "vode30_ef3", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode30_ef5", "latest"),
+        (RIGID_EF7, "kitti_raw", ["depth"], "vode30_ef7", "latest"),
+        (RIGID_MOBILE, "kitti_raw", ["depth"], "vode30_mobile", "latest"),
+        (RIGID_NASMOB, "kitti_raw", ["depth"], "vode30_nasmob", "latest"),
+    ]
+
+    TEST_PLAN_HIGH = [
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode24_ef5_main_flownet", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode24_ef5_nowaymo", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode29_fullpt", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode29_nowaymo", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode30_standard", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode30_t2_comb", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode30_t2_moa", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode30_t2_t2", "latest"),
+        (RIGID_EF5, "kitti_raw", ["depth"], "vode31_t2_comb_nopt", "latest"),
+    ]
+
+    TEST_PLAN = TEST_PLAN_HIGH if FixedOptions.HIGH_RES else TEST_PLAN_LOW
+
+    """
     other options
     """
     ENABLE_SHAPE_DECOR = False
     LOG_LOSS = True
     TRAIN_MODE = ["eager", "graph", "distributed"][1]
+
+    # download disparities_city2eigen_resnet.zip from http://visual.cs.ucl.ac.uk/pubs/monoDepth/results/
+    MONODEPTH1_FILE = "/media/ri-bear/IntHDD/vode_data/vode_0103/othermethod/monodepth/disparities_city2eigen_resnet/disparities_pp.npy"
+    # download mono+stereo 1024x320 from https://github.com/nianticlabs/monodepth2#-precomputed-results
+    MONODEPTH2_FILE = "/media/ri-bear/IntHDD/vode_data/vode_0103/othermethod/monodepth2/mono+stereo_1024x320_eigen.npy"
+    RAW_IMAGE_RES = {"kitti_raw": (375, 1242)}
 
     @classmethod
     def get_raw_data_path(cls, dataset_name):
