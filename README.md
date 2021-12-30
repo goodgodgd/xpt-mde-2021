@@ -7,7 +7,13 @@ This work aims at monocular depth estimation (MDE) which predicts a depth map fr
 
 
 
-The following manual guides you from dataset preparation to evaluation to reconstruct the best performance we marked.
+The following manual guides you from dataset preparation to evaluation to reconstruct the best performance we marked.  
+
+This project is implemented in the following environment.
+
+- Ubuntu 20.04
+- CUDA 11.1
+- Tensorflow 2.4
 
 
 
@@ -78,56 +84,54 @@ Download and unzip zip files at `RAW_DATA_PATHS["kitti_raw"]` in config.py .
 
 The directory structure should be like follows.
 
-> ./kitti_raw_data/
-> ├── 2011_09_26
-> │   ├── 2011_09_26_drive_0001_sync
-> │   ├── 2011_09_26_drive_0002_sync
->
-> ​      ...
->
-> │   ├── 2011_09_26_drive_0119_sync
-> │   ├── calib_cam_to_cam.txt
-> │   ├── calib_imu_to_velo.txt
-> │   └── calib_velo_to_cam.txt
-> ├── 2011_09_28
-> │   ├── 2011_09_28_drive_0001_sync
-> │   ├── 2011_09_28_drive_0002_sync
->
-> ​      ...
->
-> │   ├── 2011_09_28_drive_0225_sync
-> │   ├── calib_cam_to_cam.txt
-> │   ├── calib_imu_to_velo.txt
-> │   └── calib_velo_to_cam.txt
-> ├── 2011_09_29
-> │   ├── 2011_09_29_drive_0004_sync
-> │   ├── 2011_09_29_drive_0026_sync
-> │   ├── 2011_09_29_drive_0071_sync
-> │   ├── 2011_09_29_drive_0108_sync
-> │   ├── calib_cam_to_cam.txt
-> │   ├── calib_imu_to_velo.txt
-> │   └── calib_velo_to_cam.txt
-> ├── 2011_09_30
-> │   ├── 2011_09_30_drive_0016_sync
-> │   ├── 2011_09_30_drive_0018_sync
-> │   ├── 2011_09_30_drive_0020_sync
-> │   ├── 2011_09_30_drive_0027_sync
-> │   ├── 2011_09_30_drive_0028_sync
-> │   ├── 2011_09_30_drive_0033_sync
-> │   ├── 2011_09_30_drive_0034_sync
-> │   ├── 2011_09_30_drive_0072_sync
-> │   ├── calib_cam_to_cam.txt
-> │   ├── calib_imu_to_velo.txt
-> │   └── calib_velo_to_cam.txt
-> └── 2011_10_03
->     ├── 2011_10_03_drive_0027_sync
->     ├── 2011_10_03_drive_0034_sync
->     ├── 2011_10_03_drive_0042_sync
->     ├── 2011_10_03_drive_0047_sync
->     ├── 2011_10_03_drive_0058_sync
->     ├── calib_cam_to_cam.txt
->     ├── calib_imu_to_velo.txt
->     └── calib_velo_to_cam.txt
+```
+./kitti_raw_data/
+├── 2011_09_26
+│   ├── 2011_09_26_drive_0001_sync
+│   ├── 2011_09_26_drive_0002_sync
+    ...
+│   ├── 2011_09_26_drive_0119_sync
+│   ├── calib_cam_to_cam.txt
+│   ├── calib_imu_to_velo.txt
+│   └── calib_velo_to_cam.txt
+├── 2011_09_28
+│   ├── 2011_09_28_drive_0001_sync
+│   ├── 2011_09_28_drive_0002_sync
+    ...
+│   ├── 2011_09_28_drive_0225_sync
+│   ├── calib_cam_to_cam.txt
+│   ├── calib_imu_to_velo.txt
+│   └── calib_velo_to_cam.txt
+├── 2011_09_29
+│   ├── 2011_09_29_drive_0004_sync
+│   ├── 2011_09_29_drive_0026_sync
+│   ├── 2011_09_29_drive_0071_sync
+│   ├── 2011_09_29_drive_0108_sync
+│   ├── calib_cam_to_cam.txt
+│   ├── calib_imu_to_velo.txt
+│   └── calib_velo_to_cam.txt
+├── 2011_09_30
+│   ├── 2011_09_30_drive_0016_sync
+│   ├── 2011_09_30_drive_0018_sync
+│   ├── 2011_09_30_drive_0020_sync
+│   ├── 2011_09_30_drive_0027_sync
+│   ├── 2011_09_30_drive_0028_sync
+│   ├── 2011_09_30_drive_0033_sync
+│   ├── 2011_09_30_drive_0034_sync
+│   ├── 2011_09_30_drive_0072_sync
+│   ├── calib_cam_to_cam.txt
+│   ├── calib_imu_to_velo.txt
+│   └── calib_velo_to_cam.txt
+└── 2011_10_03
+ ├── 2011_10_03_drive_0027_sync
+ ├── 2011_10_03_drive_0034_sync
+ ├── 2011_10_03_drive_0042_sync
+ ├── 2011_10_03_drive_0047_sync
+ ├── 2011_10_03_drive_0058_sync
+ ├── calib_cam_to_cam.txt
+ ├── calib_imu_to_velo.txt
+ └── calib_velo_to_cam.txt
+```
 
 
 
@@ -139,15 +143,15 @@ Download and unzip zip files at `RAW_DATA_PATHS["kitti_odom"]` in config.py . Yo
 
 The directory structure should be like follows.  
 
-> ./kitti_odometry/
-> ├── poses
-> └── sequences
->     ├── 00
->     ├── 01
->
-> ​    ...
->
-> ​    └── 21
+```
+./kitti_odometry/
+├── poses
+└── sequences
+ ├── 00
+ ├── 01
+ ...
+ └── 21
+```
 
 
 
@@ -159,13 +163,15 @@ Download only `**_sequence_trainvaltest.zip` files to `RAW_DATA_PATHS["cityscape
 
 The file structure should be like follows.  
 
-> ./cityscapes/
-> ├── camera_trainvaltest.zip
-> ├── disparity_sequence_trainvaltest.zip
-> ├── disparity_trainvaltest.zip
-> ├── leftImg8bit_sequence_trainvaltest.zip
-> ├── rightImg8bit_sequence_trainvaltest.zip
-> └── vehicle_sequence.zip
+```
+./cityscapes/
+├── camera_trainvaltest.zip
+├── disparity_sequence_trainvaltest.zip
+├── disparity_trainvaltest.zip
+├── leftImg8bit_sequence_trainvaltest.zip
+├── rightImg8bit_sequence_trainvaltest.zip
+└── vehicle_sequence.zip
+```
 
 
 
@@ -179,18 +185,17 @@ Batch download tool: <https://github.com/RalphMao/Waymo-Dataset-Tool>
 
 The directory structure should be like follows.  
 
-> └── waymo
->     ├── training_0000
->     ├── training_0001
->     ...
->
-> ​    ├── training_0027
-> ​    ├── validation_0000
-> ​    ├── validation_0001
->
-> ​    ...
->
-> ​    └── validation_0007
+```
+└── waymo
+ ├── training_0000
+ ├── training_0001
+ ...
+ ├── training_0027
+ ├── validation_0000
+ ├── validation_0001
+ ...
+ └── validation_0007
+```
 
 
 
@@ -206,41 +211,43 @@ It takes long time to read a large tar file but zip files are almost like direct
 
 The file structure should be like follows.  
 
-> ./a2d2/
-> ├── Audi Autonomous Driving Dataset.pdf
-> ├── camera_lidar-20180810150607_camera_frontcenter.tar
-> ├── camera_lidar-20180810150607_camera_frontleft.tar
-> ├── camera_lidar-20180810150607_camera_frontright.tar
-> ├── camera_lidar-20180810150607_lidar_frontcenter.tar
-> ├── camera_lidar-20180810150607_lidar_frontleft.tar
-> ├── camera_lidar-20180810150607_lidar_frontright.tar
-> ├── camera_lidar-20190401121727_camera_frontcenter.tar
-> ├── camera_lidar-20190401121727_camera_frontleft.tar
-> ├── camera_lidar-20190401121727_camera_frontright.tar
-> ├── camera_lidar-20190401121727_lidar_frontcenter.tar
-> ├── camera_lidar-20190401121727_lidar_frontleft.tar
-> ├── camera_lidar-20190401121727_lidar_frontright.tar
-> ├── camera_lidar-20190401145936_camera_frontcenter.tar
-> ├── camera_lidar-20190401145936_camera_frontleft.tar
-> ├── camera_lidar-20190401145936_camera_frontright.tar
-> ├── camera_lidar-20190401145936_lidar_frontcenter.tar
-> ├── camera_lidar-20190401145936_lidar_frontleft.tar
-> ├── camera_lidar-20190401145936_lidar_frontright.tar
-> ├── camera_lidars.json
-> └── zips
->     ├── camera_lidar-20180810150607_camera_frontleft.zip
->     ├── camera_lidar-20180810150607_camera_frontright.zip
->     ├── camera_lidar-20180810150607_lidar_frontleft.zip
->     ├── camera_lidar-20180810150607_lidar_frontright.zip
->     ├── camera_lidar-20190401121727_camera_frontleft.zip
->     ├── camera_lidar-20190401121727_camera_frontright.zip
->     ├── camera_lidar-20190401121727_lidar_frontleft.zip
->     ├── camera_lidar-20190401121727_lidar_frontright.zip
->     ├── camera_lidar-20190401145936_camera_frontleft.zip
->     ├── camera_lidar-20190401145936_camera_frontright.zip
->     ├── camera_lidar-20190401145936_lidar_frontleft.zip
->     ├── camera_lidar-20190401145936_lidar_frontright.zip
->     └── cams_lidars.json
+```
+./a2d2/
+├── Audi Autonomous Driving Dataset.pdf
+├── camera_lidar-20180810150607_camera_frontcenter.tar
+├── camera_lidar-20180810150607_camera_frontleft.tar
+├── camera_lidar-20180810150607_camera_frontright.tar
+├── camera_lidar-20180810150607_lidar_frontcenter.tar
+├── camera_lidar-20180810150607_lidar_frontleft.tar
+├── camera_lidar-20180810150607_lidar_frontright.tar
+├── camera_lidar-20190401121727_camera_frontcenter.tar
+├── camera_lidar-20190401121727_camera_frontleft.tar
+├── camera_lidar-20190401121727_camera_frontright.tar
+├── camera_lidar-20190401121727_lidar_frontcenter.tar
+├── camera_lidar-20190401121727_lidar_frontleft.tar
+├── camera_lidar-20190401121727_lidar_frontright.tar
+├── camera_lidar-20190401145936_camera_frontcenter.tar
+├── camera_lidar-20190401145936_camera_frontleft.tar
+├── camera_lidar-20190401145936_camera_frontright.tar
+├── camera_lidar-20190401145936_lidar_frontcenter.tar
+├── camera_lidar-20190401145936_lidar_frontleft.tar
+├── camera_lidar-20190401145936_lidar_frontright.tar
+├── camera_lidars.json
+└── zips
+ ├── camera_lidar-20180810150607_camera_frontleft.zip
+ ├── camera_lidar-20180810150607_camera_frontright.zip
+ ├── camera_lidar-20180810150607_lidar_frontleft.zip
+ ├── camera_lidar-20180810150607_lidar_frontright.zip
+ ├── camera_lidar-20190401121727_camera_frontleft.zip
+ ├── camera_lidar-20190401121727_camera_frontright.zip
+ ├── camera_lidar-20190401121727_lidar_frontleft.zip
+ ├── camera_lidar-20190401121727_lidar_frontright.zip
+ ├── camera_lidar-20190401145936_camera_frontleft.zip
+ ├── camera_lidar-20190401145936_camera_frontright.zip
+ ├── camera_lidar-20190401145936_lidar_frontleft.zip
+ ├── camera_lidar-20190401145936_lidar_frontright.zip
+ └── cams_lidars.json
+```
 
 
 
